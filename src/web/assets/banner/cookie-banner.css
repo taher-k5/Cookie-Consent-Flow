@@ -1,0 +1,520 @@
+/* ==========================================================================
+   Cookie Consent Kit — Frontend Banner Stylesheet
+   All colour/size values are driven by CSS custom properties injected
+   by the banner template's inline <style> block.
+   ========================================================================== */
+
+/* --------------------------------------------------------------------------
+   Base reset & accessibility
+   -------------------------------------------------------------------------- */
+#cck-banner *,
+#cck-banner *::before,
+#cck-banner *::after,
+#cck-preferences *,
+#cck-preferences *::before,
+#cck-preferences *::after {
+  box-sizing: border-box;
+}
+
+/* Visually hide elements that are logically hidden */
+#cck-banner[hidden],
+#cck-preferences[hidden] {
+  display: none !important;
+}
+
+/* --------------------------------------------------------------------------
+   Shared: Banner shell
+   -------------------------------------------------------------------------- */
+.cck-banner {
+  background: var(--cck-banner-bg, #fff);
+  border: 1px solid var(--cck-banner-border, #e5e7eb);
+  box-shadow: var(--cck-shadow, 0 4px 24px rgba(0, 0, 0, 0.12));
+  border-radius: var(--cck-radius, 8px);
+  padding: var(--cck-padding, 24px);
+  max-width: var(--cck-max-width, 600px);
+  font-family: inherit;
+  z-index: 99990;
+}
+
+/* --------------------------------------------------------------------------
+   Layout: Bottom Bar
+   -------------------------------------------------------------------------- */
+.cck-layout--bottom-bar {
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  max-width: 100%;
+  border-radius: var(--cck-radius, 8px) var(--cck-radius, 8px) 0 0;
+  border-bottom: none;
+}
+
+.cck-layout--bottom-bar .cck-banner__inner {
+  max-width: 1200px;
+  margin: 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 24px;
+  flex-wrap: wrap;
+}
+
+/* --------------------------------------------------------------------------
+   Layout: Top Bar
+   -------------------------------------------------------------------------- */
+.cck-layout--top-bar {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  max-width: 100%;
+  border-radius: 0 0 var(--cck-radius, 8px) var(--cck-radius, 8px);
+  border-top: none;
+}
+
+.cck-layout--top-bar .cck-banner__inner {
+  max-width: 1200px;
+  margin: 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 24px;
+  flex-wrap: wrap;
+}
+
+/* --------------------------------------------------------------------------
+   Layout: Center Popup
+   -------------------------------------------------------------------------- */
+.cck-layout--center-popup {
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: calc(100% - 32px);
+}
+
+.cck-layout--center-popup::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  background: var(--cck-overlay, rgba(0, 0, 0, 0.5));
+  z-index: -1;
+}
+
+.cck-layout--center-popup .cck-banner__inner {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+/* --------------------------------------------------------------------------
+   Layout: Corner Popup — bottom-right
+   -------------------------------------------------------------------------- */
+.cck-layout--corner-popup {
+  position: fixed;
+  bottom: 24px;
+  right: 24px;
+  width: calc(100% - 48px);
+}
+
+.cck-layout--corner-popup.cck-corner--bottom-left {
+  right: auto;
+  left: 24px;
+}
+
+.cck-layout--corner-popup .cck-banner__inner {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+/* --------------------------------------------------------------------------
+   Banner inner content
+   -------------------------------------------------------------------------- */
+.cck-banner__content {
+  flex: 1 1 300px;
+}
+
+.cck-banner__heading {
+  margin: 0 0 8px;
+  font-size: 1rem;
+  font-weight: 600;
+  color: var(--cck-heading-color, #111827);
+  line-height: 1.4;
+}
+
+.cck-banner__description {
+  margin: 0 0 8px;
+  font-size: 0.875rem;
+  color: var(--cck-desc-color, #6b7280);
+  line-height: 1.6;
+}
+
+.cck-banner__link {
+  font-size: 0.875rem;
+  color: var(--cck-link-color, #2563eb);
+  text-decoration: underline;
+}
+
+.cck-banner__link:hover {
+  text-decoration: none;
+}
+
+/* --------------------------------------------------------------------------
+   Banner actions
+   -------------------------------------------------------------------------- */
+.cck-banner__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  flex-shrink: 0;
+}
+
+/* --------------------------------------------------------------------------
+   Shared button styles
+   -------------------------------------------------------------------------- */
+.cck-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 10px 18px;
+  border-radius: var(--cck-radius, 8px);
+  font-size: 0.875rem;
+  font-weight: 500;
+  line-height: 1;
+  cursor: pointer;
+  border: 1px solid transparent;
+  transition: background-color 0.15s ease, color 0.15s ease, border-color 0.15s ease;
+  white-space: nowrap;
+  text-decoration: none;
+  font-family: inherit;
+}
+
+.cck-btn:focus-visible {
+  outline: 2px solid var(--cck-link-color, #2563eb);
+  outline-offset: 2px;
+}
+
+/* Accept */
+.cck-btn--accept {
+  background: var(--cck-accept-bg, #2563eb);
+  color: var(--cck-accept-text, #fff);
+  border-color: var(--cck-accept-border, #2563eb);
+}
+.cck-btn--accept:hover {
+  background: var(--cck-accept-hover-bg, #1d4ed8);
+  color: var(--cck-accept-hover-text, #fff);
+}
+
+/* Reject */
+.cck-btn--reject {
+  background: var(--cck-reject-bg, #f9fafb);
+  color: var(--cck-reject-text, #374151);
+  border-color: var(--cck-reject-border, #d1d5db);
+}
+.cck-btn--reject:hover {
+  background: var(--cck-reject-hover-bg, #f3f4f6);
+  color: var(--cck-reject-hover-text, #374151);
+}
+
+/* Customize */
+.cck-btn--customize {
+  background: var(--cck-customize-bg, transparent);
+  color: var(--cck-customize-text, #6b7280);
+  border-color: var(--cck-customize-border, #d1d5db);
+}
+.cck-btn--customize:hover {
+  background: var(--cck-customize-hover-bg, #f3f4f6);
+  color: var(--cck-customize-hover-text, #374151);
+}
+
+/* Reopen / Reset (outside banner) */
+.cck-btn--reopen,
+.cck-btn--reset {
+  background: var(--cck-customize-bg, transparent);
+  color: var(--cck-customize-text, #6b7280);
+  border-color: var(--cck-customize-border, #d1d5db);
+  padding: 8px 16px;
+  font-size: 0.8125rem;
+}
+.cck-btn--reopen:hover,
+.cck-btn--reset:hover {
+  background: var(--cck-customize-hover-bg, #f3f4f6);
+  color: var(--cck-customize-hover-text, #374151);
+}
+
+/* --------------------------------------------------------------------------
+   Preferences Modal Overlay
+   -------------------------------------------------------------------------- */
+.cck-preferences {
+  position: fixed;
+  inset: 0;
+  z-index: 99999;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+}
+
+.cck-preferences__overlay {
+  position: absolute;
+  inset: 0;
+  background: var(--cck-overlay, rgba(0, 0, 0, 0.5));
+  cursor: pointer;
+}
+
+/* --------------------------------------------------------------------------
+   Preferences Modal Panel
+   -------------------------------------------------------------------------- */
+.cck-preferences__panel {
+  position: relative;
+  background: var(--cck-banner-bg, #fff);
+  border: 1px solid var(--cck-banner-border, #e5e7eb);
+  box-shadow: var(--cck-shadow, 0 8px 40px rgba(0, 0, 0, 0.18));
+  border-radius: var(--cck-radius, 8px);
+  padding: var(--cck-padding, 24px);
+  width: 100%;
+  max-width: 560px;
+  max-height: 90vh;
+  overflow-y: auto;
+  z-index: 1;
+}
+
+.cck-preferences__header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 16px;
+}
+
+.cck-preferences__title {
+  margin: 0;
+  font-size: 1.125rem;
+  font-weight: 600;
+  color: var(--cck-heading-color, #111827);
+}
+
+.cck-preferences__description {
+  margin: 0 0 20px;
+  font-size: 0.875rem;
+  color: var(--cck-desc-color, #6b7280);
+  line-height: 1.6;
+}
+
+/* Close button */
+.cck-preferences__close {
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 4px;
+  color: var(--cck-close-color, #9ca3af);
+  border-radius: 4px;
+  flex-shrink: 0;
+  line-height: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.cck-preferences__close:hover {
+  color: var(--cck-heading-color, #111827);
+}
+.cck-preferences__close:focus-visible {
+  outline: 2px solid var(--cck-link-color, #2563eb);
+  outline-offset: 2px;
+}
+
+/* --------------------------------------------------------------------------
+   Cookie Categories
+   -------------------------------------------------------------------------- */
+.cck-categories {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-bottom: 24px;
+}
+
+.cck-category {
+  border: 1px solid var(--cck-banner-border, #e5e7eb);
+  border-radius: calc(var(--cck-radius, 8px) - 2px);
+  padding: 16px;
+}
+
+.cck-category__header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.cck-category__info {
+  flex: 1;
+}
+
+.cck-category__name {
+  margin: 0 0 4px;
+  font-size: 0.9375rem;
+  font-weight: 600;
+  color: var(--cck-heading-color, #111827);
+}
+
+.cck-category__desc {
+  margin: 0;
+  font-size: 0.8125rem;
+  color: var(--cck-desc-color, #6b7280);
+  line-height: 1.5;
+}
+
+.cck-category--locked .cck-category__name::after {
+  content: ' 🔒';
+  font-size: 0.75em;
+}
+
+/* --------------------------------------------------------------------------
+   Toggle switch
+   -------------------------------------------------------------------------- */
+.cck-toggle {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.cck-toggle input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+  margin: 0;
+}
+
+.cck-toggle__track {
+  display: block;
+  width: 44px;
+  height: 24px;
+  border-radius: 12px;
+  background: #d1d5db;
+  transition: background-color 0.2s ease;
+  position: relative;
+}
+
+.cck-toggle__track::after {
+  content: '';
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
+  transition: transform 0.2s ease;
+}
+
+.cck-toggle input:checked + .cck-toggle__track {
+  background: var(--cck-accept-bg, #2563eb);
+}
+
+.cck-toggle input:checked + .cck-toggle__track::after {
+  transform: translateX(20px);
+}
+
+.cck-toggle input:focus-visible + .cck-toggle__track {
+  outline: 2px solid var(--cck-link-color, #2563eb);
+  outline-offset: 2px;
+}
+
+.cck-toggle--disabled {
+  cursor: not-allowed;
+  opacity: 0.7;
+}
+
+/* --------------------------------------------------------------------------
+   Preferences modal footer
+   -------------------------------------------------------------------------- */
+.cck-preferences__footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  padding-top: 16px;
+  border-top: 1px solid var(--cck-banner-border, #e5e7eb);
+}
+
+.cck-btn--save {
+  background: var(--cck-save-bg, #2563eb);
+  color: var(--cck-save-text, #fff);
+  border-color: var(--cck-save-bg, #2563eb);
+}
+.cck-btn--save:hover {
+  filter: brightness(0.9);
+}
+
+/* --------------------------------------------------------------------------
+   Responsive
+   -------------------------------------------------------------------------- */
+@media (max-width: 600px) {
+  .cck-layout--bottom-bar .cck-banner__inner,
+  .cck-layout--top-bar .cck-banner__inner {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .cck-banner__actions {
+    flex-direction: column;
+  }
+
+  .cck-btn {
+    width: 100%;
+    justify-content: center;
+  }
+
+  .cck-layout--corner-popup {
+    bottom: 0;
+    right: 0;
+    left: 0;
+    width: 100%;
+    border-radius: var(--cck-radius, 8px) var(--cck-radius, 8px) 0 0;
+  }
+
+  .cck-layout--corner-popup.cck-corner--bottom-left {
+    left: 0;
+  }
+}
+
+/* --------------------------------------------------------------------------
+   Animation
+   -------------------------------------------------------------------------- */
+@keyframes cck-slide-up {
+  from { transform: translateY(100%); opacity: 0; }
+  to   { transform: translateY(0);    opacity: 1; }
+}
+@keyframes cck-slide-down {
+  from { transform: translateY(-100%); opacity: 0; }
+  to   { transform: translateY(0);     opacity: 1; }
+}
+@keyframes cck-fade-in {
+  from { opacity: 0; transform: translate(-50%, -48%) scale(0.96); }
+  to   { opacity: 1; transform: translate(-50%, -50%) scale(1);    }
+}
+@keyframes cck-pop-in {
+  from { opacity: 0; transform: scale(0.95); }
+  to   { opacity: 1; transform: scale(1);    }
+}
+
+.cck-banner.cck-visible.cck-layout--bottom-bar { animation: cck-slide-up 0.3s ease forwards; }
+.cck-banner.cck-visible.cck-layout--top-bar    { animation: cck-slide-down 0.3s ease forwards; }
+.cck-banner.cck-visible.cck-layout--center-popup { animation: cck-fade-in 0.25s ease forwards; }
+.cck-banner.cck-visible.cck-layout--corner-popup { animation: cck-pop-in 0.25s ease forwards; }
+
+.cck-preferences:not([hidden]) .cck-preferences__panel { animation: cck-pop-in 0.2s ease forwards; }
+
+/* --------------------------------------------------------------------------
+   Print: hide the banner
+   -------------------------------------------------------------------------- */
+@media print {
+  #cck-banner,
+  #cck-preferences {
+    display: none !important;
+  }
+}

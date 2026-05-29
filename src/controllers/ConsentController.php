@@ -5,6 +5,7 @@ namespace sfsinfotech\craftcookieconsentkit\controllers;
 use Craft;
 use craft\web\Controller;
 use sfsinfotech\craftcookieconsentkit\Plugin;
+use yii\web\BadRequestHttpException;
 use yii\web\Response;
 
 /**
@@ -12,38 +13,80 @@ use yii\web\Response;
  */
 class ConsentController extends Controller
 {
-    protected array|int|bool $allowAnonymous = ['save'];
+    protected array|int|bool $allowAnonymous = ['save', 'status'];
 
     /**
      * POST /actions/cookie-consent-kit/consent/save
      *
-     * Accepts a JSON body with the visitor's consent selections and persists them.
+     * Expected JSON body:
+     *   { "action": "accept_all|reject_all|custom", "categories": ["necessary", ...] }
      *
-     * TODO: Implement body parsing and delegation to ConsentService::saveConsent().
+     * Returns JSON:
+     *   { "success": true, "visitorUuid": "..." }
      */
     public function actionSave(): Response
     {
         $this->requirePostRequest();
         $this->requireAcceptsJson();
 
-        // TODO: validate CSRF token, parse categories from request body,
-        //       delegate to Plugin::getInstance()->consent->saveConsent()
+        $request = Craft::$app->getRequest();
 
-        return $this->asJson(['success' => true]);
+        // Validate CSRF token (sent via X-CSRF-Token or request body)
+        if (!$request->validateCsrfToken()) {
+            throw new BadRequestHttpException('Invalid CSRF token.');
+        }
+
+        $body       = $request->getBodyParams();
+        $action     = $body['action'] ?? '';
+        $categories = $body['categories'] ?? [];
+
+        // Sanitise action
+        $validActions = ['accept_all', 'reject_all', 'custom'];
+        if (!in_array($action, $validActions, true)) {
+            return $this->asJson(['success' => false, 'error' => 'Invalid action.'])->setStatusCode(400);
+        }
+
+        // Ensure categories is a flat array of strings
+        $categories = array_values(array_filter(
+            array_map('strval', (array) $categories),
+            fn(string $k) => preg_match('/^[a-z0-9_\-]{1,64}$/', $k)
+        ));
+
+        $result = Plugin::getInstance()->consent->saveConsent($action, $categories);
+
+        // Set first-party visitor UUID cookie (1 year)
+        $response = $this->asJson(['success' => true, 'visitorUuid' => $result['visitorUuid']]);
+        $response->getCookies()->add(new \yii\web\Cookie([
+            'name'     => 'cck_visitor',
+            'value'    => $result['visitorUuid'],
+            'expire'   => time() + 365 * 24 * 3600,
+            'httpOnly' => true,
+            'secure'   => Craft::$app->getRequest()->getIsSecureConnection(),
+            'sameSite' => \yii\web\Cookie::SAME_SITE_LAX,
+        ]));
+
+        return $response;
     }
 
     /**
      * GET /actions/cookie-consent-kit/consent/status
      *
-     * Returns the current visitor's consent state as JSON.
-     *
-     * TODO: Implement delegation to ConsentService::getConsent().
+     * Looks up the most recent consent record for the visitor UUID cookie.
+     * Returns null if no record exists.
      */
     public function actionStatus(): Response
     {
         $this->requireAcceptsJson();
 
-        // TODO: return current consent record for this visitor
-        return $this->asJson(['consent' => null]);
+        $request     = Craft::$app->getRequest();
+        $visitorUuid = $request->getCookies()->getValue('cck_visitor');
+
+        if (!$visitorUuid) {
+            return $this->asJson(['consent' => null]);
+        }
+
+        $consent = Plugin::getInstance()->consent->getConsent($visitorUuid);
+
+        return $this->asJson(['consent' => $consent]);
     }
 }

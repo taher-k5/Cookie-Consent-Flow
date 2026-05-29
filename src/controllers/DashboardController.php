@@ -5,7 +5,6 @@ namespace sfsinfotech\craftcookieconsentkit\controllers;
 use Craft;
 use craft\web\Controller;
 use sfsinfotech\craftcookieconsentkit\Plugin;
-use yii\web\ForbiddenHttpException;
 use yii\web\Response;
 
 /**
@@ -19,8 +18,12 @@ class DashboardController extends Controller
     {
         $this->requireCpRequest();
 
+        $plugin = Plugin::getInstance();
+
         return $this->renderTemplate('cookie-consent-kit/dashboard/index', [
-            'plugin' => Plugin::getInstance(),
+            'plugin'   => $plugin,
+            'settings' => $plugin->getSettings(),
+            'stats'    => $plugin->consent->getStats(),
         ]);
     }
 }

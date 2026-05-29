@@ -1,0 +1,169 @@
+{#
+  Cookie Consent Kit — Banner + Preferences Modal
+  Rendered by CookieConsentVariable::renderBanner().
+  The banner is hidden by default; JS reveals it when no consent is stored.
+#}
+
+{# ----- Dynamic CSS custom properties ----- #}
+<style>{{ settings.cssVars|raw }}</style>
+
+{# ----- Consent Banner ----- #}
+{% set layoutClass = 'cck-layout--' ~ settings.bannerLayout %}
+{% set cornerClass = (settings.bannerLayout == 'corner-popup') ? ' cck-corner--' ~ settings.cornerPosition : '' %}
+
+<div
+  id="cck-banner"
+  class="cck-banner {{ layoutClass }}{{ cornerClass }}"
+  role="region"
+  aria-label="{{ settings.bannerHeading|e('html_attr') }}"
+  aria-live="polite"
+  hidden
+>
+  <div class="cck-banner__inner">
+
+    {# Content #}
+    <div class="cck-banner__content">
+      {% if settings.bannerHeading %}
+        <h2 class="cck-banner__heading">{{ settings.bannerHeading }}</h2>
+      {% endif %}
+
+      {% if settings.bannerDescription %}
+        <p class="cck-banner__description">{{ settings.bannerDescription|raw }}</p>
+      {% endif %}
+
+      {% if settings.privacyPolicyUrl %}
+        <a
+          href="{{ settings.privacyPolicyUrl|e('html_attr') }}"
+          class="cck-banner__link"
+          target="_blank"
+          rel="noopener noreferrer"
+        >{{ settings.privacyPolicyLinkText }}</a>
+      {% endif %}
+    </div>
+
+    {# Action buttons #}
+    <div class="cck-banner__actions" role="group" aria-label="{{ 'Cookie consent options'|t('cookie-consent-kit') }}">
+      <button
+        type="button"
+        class="cck-btn cck-btn--accept"
+        data-cck-action="accept-all"
+        aria-label="{{ settings.acceptButtonText|e('html_attr') }}"
+      >{{ settings.acceptButtonText }}</button>
+
+      <button
+        type="button"
+        class="cck-btn cck-btn--reject"
+        data-cck-action="reject-all"
+        aria-label="{{ settings.rejectButtonText|e('html_attr') }}"
+      >{{ settings.rejectButtonText }}</button>
+
+      <button
+        type="button"
+        class="cck-btn cck-btn--customize"
+        data-cck-action="open-preferences"
+        aria-haspopup="dialog"
+        aria-controls="cck-preferences"
+        aria-label="{{ settings.customizeButtonText|e('html_attr') }}"
+      >{{ settings.customizeButtonText }}</button>
+    </div>
+
+  </div>{# /.cck-banner__inner #}
+</div>{# /#cck-banner #}
+
+
+{# ----- Preferences Modal ----- #}
+<div
+  id="cck-preferences"
+  class="cck-preferences"
+  role="dialog"
+  aria-modal="true"
+  aria-labelledby="cck-pref-title"
+  aria-hidden="true"
+  hidden
+>
+  {# Overlay backdrop #}
+  <div
+    class="cck-preferences__overlay"
+    data-cck-action="close-preferences"
+    aria-hidden="true"
+    tabindex="-1"
+  ></div>
+
+  {# Panel #}
+  <div class="cck-preferences__panel">
+
+    {# Header #}
+    <div class="cck-preferences__header">
+      <h2 id="cck-pref-title" class="cck-preferences__title">
+        {{ settings.customizeButtonText }}
+      </h2>
+      <button
+        type="button"
+        class="cck-preferences__close"
+        data-cck-action="close-preferences"
+        aria-label="{{ settings.closeButtonText|e('html_attr') }}"
+        title="{{ settings.closeButtonText }}"
+      >
+        {# Close icon (SVG inline for zero-dependency) #}
+        <svg width="20" height="20" viewBox="0 0 20 20" fill="none" aria-hidden="true" focusable="false">
+          <path d="M15 5L5 15M5 5l10 10" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"/>
+        </svg>
+      </button>
+    </div>
+
+    {# Description #}
+    {% if settings.bannerDescription %}
+      <p class="cck-preferences__description">{{ settings.bannerDescription|raw }}</p>
+    {% endif %}
+
+    {# Category toggles #}
+    <div class="cck-categories" role="list">
+      {% for category in settings.categories %}
+        <div
+          class="cck-category{% if category.locked %} cck-category--locked{% endif %}"
+          role="listitem"
+        >
+          <div class="cck-category__header">
+            <div class="cck-category__info">
+              <h3 class="cck-category__name">{{ category.label }}</h3>
+              {% if category.description %}
+                <p class="cck-category__desc">{{ category.description }}</p>
+              {% endif %}
+            </div>
+
+            <label
+              class="cck-toggle{% if category.locked %} cck-toggle--disabled{% endif %}"
+              aria-label="{{ category.label }} — {{ category.locked ? 'always enabled'|t('cookie-consent-kit') : 'toggle'|t('cookie-consent-kit') }}"
+              title="{{ category.label }}"
+            >
+              <input
+                type="checkbox"
+                data-category="{{ category.key|e('html_attr') }}"
+                {% if category.locked or category.default %}checked{% endif %}
+                {% if category.locked %}disabled aria-disabled="true"{% endif %}
+              >
+              <span class="cck-toggle__track" aria-hidden="true"></span>
+            </label>
+          </div>
+        </div>
+      {% endfor %}
+    </div>{# /.cck-categories #}
+
+    {# Footer #}
+    <div class="cck-preferences__footer">
+      <button
+        type="button"
+        class="cck-btn cck-btn--reject"
+        data-cck-action="reject-all"
+      >{{ settings.rejectButtonText }}</button>
+
+      <button
+        type="button"
+        class="cck-btn cck-btn--save"
+        data-cck-action="save-preferences"
+        aria-label="{{ settings.savePreferencesText|e('html_attr') }}"
+      >{{ settings.savePreferencesText }}</button>
+    </div>
+
+  </div>{# /.cck-preferences__panel #}
+</div>{# /#cck-preferences #}

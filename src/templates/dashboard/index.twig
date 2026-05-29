@@ -5,24 +5,80 @@
 {% block content %}
 <div class="cck-dashboard">
     <div class="readable">
-        <h2>{{ "Dashboard"|t('cookie-consent-kit') }}</h2>
-        <p class="light">{{ "Consent activity summary will appear here once logging is configured."|t('cookie-consent-kit') }}</p>
 
-        {# TODO: render real stats from ConsentService once implemented #}
-        <div class="meta">
-            <div class="data">
-                <h5 class="heading">{{ "Total Consents Logged"|t('cookie-consent-kit') }}</h5>
-                <div class="value">—</div>
+        {# Stats #}
+        <div class="cck-stat-grid">
+            <div class="cck-stat">
+                <div class="cck-stat__number">{{ stats.total }}</div>
+                <div class="cck-stat__label">{{ "Total Consents"|t('cookie-consent-kit') }}</div>
             </div>
-            <div class="data">
-                <h5 class="heading">{{ "Accepted All"|t('cookie-consent-kit') }}</h5>
-                <div class="value">—</div>
+            <div class="cck-stat">
+                <div class="cck-stat__number">{{ stats.acceptAll }}</div>
+                <div class="cck-stat__label">{{ "Accepted All"|t('cookie-consent-kit') }}</div>
             </div>
-            <div class="data">
-                <h5 class="heading">{{ "Rejected All"|t('cookie-consent-kit') }}</h5>
-                <div class="value">—</div>
+            <div class="cck-stat">
+                <div class="cck-stat__number">{{ stats.rejectAll }}</div>
+                <div class="cck-stat__label">{{ "Rejected All"|t('cookie-consent-kit') }}</div>
+            </div>
+            <div class="cck-stat">
+                <div class="cck-stat__number">{{ stats.custom }}</div>
+                <div class="cck-stat__label">{{ "Custom Choices"|t('cookie-consent-kit') }}</div>
             </div>
         </div>
+
+        {# Quick settings summary #}
+        <h2>{{ "Current Configuration"|t('cookie-consent-kit') }}</h2>
+        <div class="meta read-only">
+            <div class="data">
+                <h5 class="heading">{{ "Banner Status"|t('cookie-consent-kit') }}</h5>
+                <div class="value">
+                    {% if settings.bannerEnabled %}
+                        <span class="status on">{{ "Enabled"|t('cookie-consent-kit') }}</span>
+                    {% else %}
+                        <span class="status off">{{ "Disabled"|t('cookie-consent-kit') }}</span>
+                    {% endif %}
+                </div>
+            </div>
+            <div class="data">
+                <h5 class="heading">{{ "Layout"|t('cookie-consent-kit') }}</h5>
+                <div class="value">{{ settings.bannerLayout }}</div>
+            </div>
+            <div class="data">
+                <h5 class="heading">{{ "Consent Logging"|t('cookie-consent-kit') }}</h5>
+                <div class="value">
+                    {% if settings.logEnabled %}
+                        <span class="status on">{{ "On"|t('cookie-consent-kit') }}</span>
+                    {% else %}
+                        <span class="status off">{{ "Off"|t('cookie-consent-kit') }}</span>
+                    {% endif %}
+                </div>
+            </div>
+            <div class="data">
+                <h5 class="heading">{{ "Geo-targeting"|t('cookie-consent-kit') }}</h5>
+                <div class="value">
+                    {% if settings.geoEnabled %}
+                        <span class="status on">{{ "On"|t('cookie-consent-kit') }}</span>
+                        {% if settings.geoTargetCountries %}
+                            — {{ settings.geoTargetCountries|join(', ') }}
+                        {% endif %}
+                    {% else %}
+                        <span class="status off">{{ "Off"|t('cookie-consent-kit') }}</span>
+                    {% endif %}
+                </div>
+            </div>
+            <div class="data">
+                <h5 class="heading">{{ "Categories"|t('cookie-consent-kit') }}</h5>
+                <div class="value">{{ settings.categories|length }}</div>
+            </div>
+        </div>
+
+        <p>
+            <a href="{{ cpUrl('cookie-consent-kit/settings') }}" class="btn">
+                {{ "Edit Settings"|t('cookie-consent-kit') }}
+            </a>
+        </p>
+
     </div>
 </div>
 {% endblock %}
+

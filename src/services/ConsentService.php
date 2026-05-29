@@ -2,31 +2,131 @@
 
 namespace sfsinfotech\craftcookieconsentkit\services;
 
+use Craft;
 use craft\base\Component;
+use craft\helpers\Json;
+use sfsinfotech\craftcookieconsentkit\events\AfterConsentSaveEvent;
+use sfsinfotech\craftcookieconsentkit\helpers\ConsentHelper;
+use sfsinfotech\craftcookieconsentkit\Plugin;
+use sfsinfotech\craftcookieconsentkit\records\ConsentLogRecord;
 
 /**
- * Consent Service — handles reading, writing, and managing user consent records.
- *
- * TODO: Implement consent logic in future iterations.
+ * Consent Service — handles recording, retrieving, and managing consent records.
  */
 class ConsentService extends Component
 {
-    // Placeholder: record a user's consent choices.
-    public function saveConsent(): void
+    /**
+     * Persists a visitor's consent choice and fires the AfterConsentSave event.
+     *
+     * @param  string   $action     'accept_all' | 'reject_all' | 'custom'
+     * @param  string[] $categories Category keys the visitor accepted.
+     * @return array{visitorUuid: string, action: string, categories: string[]}
+     */
+    public function saveConsent(string $action, array $categories): array
     {
-        // TODO: persist consent record to {{%cookieconsent_log}}
+        $settings = Plugin::getInstance()->getSettings();
+        $request  = Craft::$app->getRequest();
+
+        // Resolve visitor UUID
+        $visitorUuid = $request->getCookies()->getValue('cck_visitor') ?? ConsentHelper::generateVisitorUuid();
+
+        // Fire event (allow third-party code to react / cancel logging)
+        $event = new AfterConsentSaveEvent([
+            'action'      => $action,
+            'categories'  => $categories,
+            'visitorUuid' => $visitorUuid,
+        ]);
+        Plugin::getInstance()->trigger(
+            Plugin::EVENT_AFTER_CONSENT_SAVE,
+            $event
+        );
+
+        if ($settings->logEnabled) {
+            $record              = new ConsentLogRecord();
+            $record->visitorUuid = $visitorUuid;
+            $record->ipHash      = ConsentHelper::hashIp($request->getRemoteIP() ?? '0.0.0.0');
+            $record->siteId      = Craft::$app->getSites()->getCurrentSite()->id;
+            $record->categories  = Json::encode($categories);
+            $record->action      = $action;
+            $record->countryCode = Plugin::getInstance()->geo->getCountryCode();
+            $record->userAgent   = mb_substr(
+                (string) $request->getHeaders()->get('user-agent', ''),
+                0,
+                500
+            );
+            if (!$record->save()) {
+                Craft::error(
+                    'Cookie consent log save failed: ' .
+                    Json::encode($record->getErrors()),
+                    __METHOD__
+                );
+            }
+        }
+
+        return [
+            'visitorUuid' => $visitorUuid,
+            'action'      => $action,
+            'categories'  => $categories,
+        ];
     }
 
-    // Placeholder: retrieve the latest consent record for the current visitor.
-    public function getConsent(): ?array
+    /**
+     * Returns the most recent consent record for a visitor UUID, or null.
+     *
+     * @return array{action: string, categories: string[], dateCreated: string}|null
+     */
+    public function getConsent(string $visitorUuid): ?array
     {
-        // TODO: look up by cookie UUID / IP hash
-        return null;
+        $record = ConsentLogRecord::find()
+            ->where(['visitorUuid' => $visitorUuid])
+            ->orderBy(['dateCreated' => SORT_DESC])
+            ->one();
+
+        if (!$record) {
+            return null;
+        }
+
+        return [
+            'action'      => $record->action,
+            'categories'  => Json::decode($record->categories),
+            'dateCreated' => $record->dateCreated,
+        ];
     }
 
-    // Placeholder: purge log records older than the configured retention period.
-    public function purgeOldLogs(): void
+    /**
+     * Returns aggregated dashboard statistics for the current Craft site.
+     *
+     * @return array{total: int, acceptAll: int, rejectAll: int, custom: int}
+     */
+    public function getStats(): array
     {
-        // TODO: delete records past Settings::$logRetentionDays
+        $siteId = Craft::$app->getSites()->getCurrentSite()->id;
+
+        $query = ConsentLogRecord::find()->where(['siteId' => $siteId]);
+
+        return [
+            'total'     => (int) (clone $query)->count(),
+            'acceptAll' => (int) (clone $query)->andWhere(['action' => 'accept_all'])->count(),
+            'rejectAll' => (int) (clone $query)->andWhere(['action' => 'reject_all'])->count(),
+            'custom'    => (int) (clone $query)->andWhere(['action' => 'custom'])->count(),
+        ];
+    }
+
+    /**
+     * Deletes consent log records older than the configured retention period.
+     * Call from a queue job or console command on a schedule.
+     */
+    public function purgeOldLogs(): int
+    {
+        $days = Plugin::getInstance()->getSettings()->logRetentionDays;
+
+        if ($days === 0) {
+            return 0;
+        }
+
+        $cutoff = (new \DateTime())->modify("-{$days} days")->format('Y-m-d H:i:s');
+
+        return (int) ConsentLogRecord::deleteAll(['<', 'dateCreated', $cutoff]);
     }
 }
+

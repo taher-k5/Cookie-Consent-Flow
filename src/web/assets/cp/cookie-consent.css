@@ -1,23 +1,137 @@
 /**
- * Cookie Consent Kit — CP stylesheet placeholder.
- *
- * TODO: Add control-panel styles for the consent dashboard and settings pages.
+ * Cookie Consent Kit — Control Panel stylesheet.
  */
 
-/* ---- Dashboard ----------------------------------------------------------- */
-
-.cck-dashboard {
-    /* placeholder */
+/* --------------------------------------------------------------------------
+   Settings page – colour input swatches
+   -------------------------------------------------------------------------- */
+.cck-color-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+    gap: 0 24px;
+    margin-bottom: 16px;
 }
 
-/* ---- Settings ------------------------------------------------------------ */
-
-.cck-settings {
-    /* placeholder */
+.cck-color-input {
+    padding-left: 40px !important;
+    background-repeat: no-repeat;
+    background-position: 10px center;
+    background-size: 18px 18px;
 }
 
-/* ---- Widget -------------------------------------------------------------- */
-
-.cck-widget {
-    /* placeholder */
+.cck-color-swatch {
+    position: absolute;
+    left: 10px;
+    top: 50%;
+    transform: translateY(-50%);
+    width: 18px;
+    height: 18px;
+    border-radius: 3px;
+    border: 1px solid rgba(0, 0, 0, 0.15);
+    pointer-events: none;
 }
+
+.cck-field-wrap {
+    position: relative;
+    display: flex;
+    align-items: center;
+}
+
+/* --------------------------------------------------------------------------
+   Settings page – layout grid
+   -------------------------------------------------------------------------- */
+.cck-layout-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+    gap: 0 24px;
+    margin-bottom: 16px;
+}
+
+/* --------------------------------------------------------------------------
+   Categories list
+   -------------------------------------------------------------------------- */
+.cck-category-row {
+    background: var(--white, #fff);
+    border: 1px solid var(--hairline-color, #e5e7eb);
+    border-radius: 4px;
+    padding: 16px;
+    margin-bottom: 12px;
+}
+
+.cck-category-row__fields {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 0 24px;
+}
+
+.cck-category-row__fields > .field:nth-child(3) {
+    grid-column: span 2;
+}
+
+.cck-category-row__toggles {
+    grid-column: span 2;
+    display: flex;
+    gap: 32px;
+}
+
+.cck-remove-category {
+    margin-top: 12px;
+}
+
+/* --------------------------------------------------------------------------
+   Dashboard stats
+   -------------------------------------------------------------------------- */
+.cck-stat-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+    gap: 16px;
+    margin-bottom: 32px;
+}
+
+.cck-stat {
+    background: var(--white, #fff);
+    border: 1px solid var(--hairline-color, #e5e7eb);
+    border-radius: 6px;
+    padding: 20px 16px;
+    text-align: center;
+}
+
+.cck-stat__number {
+    font-size: 2rem;
+    font-weight: 700;
+    line-height: 1;
+    color: var(--link-color, #2563eb);
+    margin-bottom: 6px;
+}
+
+.cck-stat__label {
+    font-size: 0.75rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--medium-dark-text-color, #6b7280);
+}
+
+/* --------------------------------------------------------------------------
+   Banner live-preview panel
+   -------------------------------------------------------------------------- */
+#cck-preview-wrap {
+    position: sticky;
+    top: 56px;
+}
+
+#cck-preview-frame {
+    width: 100%;
+    height: 300px;
+    border: 1px solid var(--hairline-color, #e5e7eb);
+    border-radius: 6px;
+    overflow: hidden;
+    pointer-events: none;
+}
+
+.cck-preview-note {
+    font-size: 0.75rem;
+    color: var(--medium-dark-text-color, #6b7280);
+    margin-top: 8px;
+}
+

@@ -11,73 +11,27 @@ class Install extends Migration
 {
     public string $driver;
 
-    // -------------------------------------------------------------------------
     // Install
-    // -------------------------------------------------------------------------
 
     public function safeUp(): bool
     {
         $this->driver = \Craft::$app->getConfig()->getDb()->driver;
 
-        $this->_createSettingsTable();
         $this->_createConsentLogTable();
 
         return true;
     }
 
-    // -------------------------------------------------------------------------
     // Uninstall
-    // -------------------------------------------------------------------------
 
     public function safeDown(): bool
     {
         $this->dropTableIfExists('{{%cookieconsent_log}}');
-        $this->dropTableIfExists('{{%cookieconsent_settings}}');
 
         return true;
     }
 
-    // -------------------------------------------------------------------------
     // Private helpers
-    // -------------------------------------------------------------------------
-
-    private function _createSettingsTable(): void
-    {
-        if ($this->db->tableExists('{{%cookieconsent_settings}}')) {
-            return;
-        }
-
-        $this->createTable('{{%cookieconsent_settings}}', [
-            'id'                 => $this->primaryKey(),
-            'bannerEnabled'      => $this->boolean()->notNull()->defaultValue(true),
-            'bannerPosition'     => $this->string(20)->notNull()->defaultValue('bottom'),
-            'bannerHeading'      => $this->string(255)->notNull()->defaultValue(''),
-            'bannerBody'         => $this->text()->notNull(),
-            'categories'         => $this->text()->notNull(),
-            'geoEnabled'         => $this->boolean()->notNull()->defaultValue(false),
-            'geoTargetCountries' => $this->text()->notNull(),
-            'logEnabled'         => $this->boolean()->notNull()->defaultValue(true),
-            'logRetentionDays'   => $this->integer()->notNull()->defaultValue(365),
-            'siteOverrides'      => $this->mediumText()->notNull(),
-            'dateCreated'        => $this->dateTime()->notNull(),
-            'dateUpdated'        => $this->dateTime()->notNull(),
-            'uid'                => $this->uid(),
-        ]);
-
-        // Seed with default settings row.
-        $this->insert('{{%cookieconsent_settings}}', [
-            'bannerEnabled'      => true,
-            'bannerPosition'     => 'bottom',
-            'bannerHeading'      => '',
-            'bannerBody'         => '',
-            'categories'         => '["necessary","analytics","marketing","preferences"]',
-            'geoEnabled'         => false,
-            'geoTargetCountries' => '[]',
-            'logEnabled'         => true,
-            'logRetentionDays'   => 365,
-            'siteOverrides'      => '[]',
-        ]);
-    }
 
     private function _createConsentLogTable(): void
     {
@@ -99,17 +53,8 @@ class Install extends Migration
             'uid'         => $this->uid(),
         ]);
 
-        $this->createIndex(null, '{{%cookieconsent_log}}', ['visitorUuid']);
-        $this->createIndex(null, '{{%cookieconsent_log}}', ['siteId', 'dateCreated']);
-
-        $this->addForeignKey(
-            null,
-            '{{%cookieconsent_log}}',
-            ['siteId'],
-            '{{%sites}}',
-            ['id'],
-            'CASCADE',
-            null
-        );
+        $this->createIndex(null, '{{%cookieconsent_log}}', 'visitorUuid');
+        $this->createIndex(null, '{{%cookieconsent_log}}', ['siteId', 'action']);
     }
 }
+
