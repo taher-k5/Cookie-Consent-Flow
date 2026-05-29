@@ -1,0 +1,60 @@
+{
+    "name": "sfs-infotech/craft-cookie-consent-kit",
+    "description": "Cookie consent and compliance management for Craft CMS 5 — banners, categories, geo-targeting, consent logs, and multi-site support.",
+    "type": "craft-plugin",
+    "version": "1.0.0",
+    "license": "MIT",
+    "keywords": [
+        "craft",
+        "craftcms",
+        "cookie",
+        "consent",
+        "gdpr",
+        "ccpa",
+        "cookie-banner",
+        "compliance"
+    ],
+    "support": {
+        "email": "hello@softwareforsolution.com",
+        "issues": "https://github.com/sfsinfotech/cookie-consent-kit/issues?state=open",
+        "source": "https://github.com/sfsinfotech/cookie-consent-kit",
+        "docs": "https://github.com/sfsinfotech/cookie-consent-kit",
+        "rss": "https://github.com/sfsinfotech/cookie-consent-kit/releases.atom"
+    },
+    "require": {
+        "php": ">=8.2.0",
+        "craftcms/cms": "^5.0"
+    },
+    "require-dev": {
+        "craftcms/ecs": "dev-main",
+        "craftcms/phpstan": "dev-main"
+    },
+    "autoload": {
+        "psr-4": {
+            "sfsinfotech\\craftcookieconsentkit\\": "src/"
+        }
+    },
+    "extra": {
+        "handle": "cookie-consent-kit",
+        "name": "Cookie Consent Kit",
+        "developer": "SFS Infotech",
+        "developerUrl": "https://softwareforsolution.com",
+        "documentationUrl": "https://github.com/sfsinfotech/cookie-consent-kit",
+        "changelogUrl": "https://raw.githubusercontent.com/sfsinfotech/cookie-consent-kit/main/CHANGELOG.md"
+    },
+    "scripts": {
+        "check-cs": "ecs check --ansi",
+        "fix-cs": "ecs check --ansi --fix",
+        "phpstan": "phpstan --memory-limit=1G"
+    },
+    "config": {
+        "sort-packages": true,
+        "platform": {
+            "php": "8.2.0"
+        },
+        "allow-plugins": {
+            "yiisoft/yii2-composer": true,
+            "craftcms/plugin-installer": true
+        }
+    }
+}

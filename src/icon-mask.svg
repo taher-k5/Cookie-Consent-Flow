@@ -1,0 +1,32 @@
+<svg width="100%" viewBox="0 0 210 210" role="img" xmlns="http://www.w3.org/2000/svg" style="">
+  <title style="fill:rgb(0, 0, 0);stroke:none;color:rgb(255, 255, 255);stroke-width:1px;stroke-linecap:butt;stroke-linejoin:miter;opacity:1;font-family:&quot;Anthropic Sans&quot;, -apple-system, BlinkMacSystemFont, &quot;Segoe UI&quot;, sans-serif;font-size:16px;font-weight:400;text-anchor:start;dominant-baseline:auto">Cookie Consent Icon</title>
+  <rect x="0" y="0" width="200" height="200" rx="44" fill="#1C2B36" style="fill:rgb(28, 43, 54);stroke:none;color:rgb(255, 255, 255);stroke-width:1px;stroke-linecap:butt;stroke-linejoin:miter;opacity:1;font-family:&quot;Anthropic Sans&quot;, -apple-system, BlinkMacSystemFont, &quot;Segoe UI&quot;, sans-serif;font-size:16px;font-weight:400;text-anchor:start;dominant-baseline:auto"/>
+
+  <defs>
+    <clipPath id="cookie-clip">
+      <circle cx="100" cy="100" r="57"/>
+    </clipPath>
+  </defs>
+
+  <!-- Cookie circle -->
+  <circle cx="100" cy="100" r="57" fill="none" stroke="#31D2C4" stroke-width="7" style="fill:none;stroke:rgb(49, 210, 196);color:rgb(255, 255, 255);stroke-width:7px;stroke-linecap:butt;stroke-linejoin:miter;opacity:1;font-family:&quot;Anthropic Sans&quot;, -apple-system, BlinkMacSystemFont, &quot;Segoe UI&quot;, sans-serif;font-size:16px;font-weight:400;text-anchor:start;dominant-baseline:auto"/>
+
+  <!-- Bite removed -->
+  <path d="M129 56 A57 57 0 0 1 156 87" fill="none" stroke="#1C2B36" stroke-width="22" stroke-linecap="butt" style="fill:none;stroke:rgb(28, 43, 54);color:rgb(255, 255, 255);stroke-width:22px;stroke-linecap:butt;stroke-linejoin:miter;opacity:1;font-family:&quot;Anthropic Sans&quot;, -apple-system, BlinkMacSystemFont, &quot;Segoe UI&quot;, sans-serif;font-size:16px;font-weight:400;text-anchor:start;dominant-baseline:auto"/>
+
+  <!-- Jagged bite edge -->
+  <path d="M129 56 L135 66 L127 72 L137 80 L127 86 L137 90 L156 87" fill="none" stroke="#31D2C4" stroke-width="5" stroke-linecap="round" stroke-linejoin="round" style="fill:none;stroke:rgb(49, 210, 196);color:rgb(255, 255, 255);stroke-width:5px;stroke-linecap:round;stroke-linejoin:round;opacity:1;font-family:&quot;Anthropic Sans&quot;, -apple-system, BlinkMacSystemFont, &quot;Segoe UI&quot;, sans-serif;font-size:16px;font-weight:400;text-anchor:start;dominant-baseline:auto"/>
+
+  <!-- Text lines inside cookie, clipped -->
+  <g clip-path="url(#cookie-clip)" style="fill:rgb(0, 0, 0);stroke:none;color:rgb(255, 255, 255);stroke-width:1px;stroke-linecap:butt;stroke-linejoin:miter;opacity:1;font-family:&quot;Anthropic Sans&quot;, -apple-system, BlinkMacSystemFont, &quot;Segoe UI&quot;, sans-serif;font-size:16px;font-weight:400;text-anchor:start;dominant-baseline:auto">
+    <line x1="72" y1="82" x2="114" y2="82" stroke="#31D2C4" stroke-width="5" stroke-linecap="round" style="fill:rgb(0, 0, 0);stroke:rgb(49, 210, 196);color:rgb(255, 255, 255);stroke-width:5px;stroke-linecap:round;stroke-linejoin:miter;opacity:1;font-family:&quot;Anthropic Sans&quot;, -apple-system, BlinkMacSystemFont, &quot;Segoe UI&quot;, sans-serif;font-size:16px;font-weight:400;text-anchor:start;dominant-baseline:auto"/>
+    <line x1="72" y1="96" x2="120" y2="96" stroke="#31D2C4" stroke-width="5" stroke-linecap="round" style="fill:rgb(0, 0, 0);stroke:rgb(49, 210, 196);color:rgb(255, 255, 255);stroke-width:5px;stroke-linecap:round;stroke-linejoin:miter;opacity:1;font-family:&quot;Anthropic Sans&quot;, -apple-system, BlinkMacSystemFont, &quot;Segoe UI&quot;, sans-serif;font-size:16px;font-weight:400;text-anchor:start;dominant-baseline:auto"/>
+    <line x1="72" y1="110" x2="108" y2="110" stroke="#31D2C4" stroke-width="5" stroke-linecap="round" style="fill:rgb(0, 0, 0);stroke:rgb(49, 210, 196);color:rgb(255, 255, 255);stroke-width:5px;stroke-linecap:round;stroke-linejoin:miter;opacity:1;font-family:&quot;Anthropic Sans&quot;, -apple-system, BlinkMacSystemFont, &quot;Segoe UI&quot;, sans-serif;font-size:16px;font-weight:400;text-anchor:start;dominant-baseline:auto"/>
+    <line x1="72" y1="124" x2="116" y2="124" stroke="#31D2C4" stroke-width="5" stroke-linecap="round" style="fill:rgb(0, 0, 0);stroke:rgb(49, 210, 196);color:rgb(255, 255, 255);stroke-width:5px;stroke-linecap:round;stroke-linejoin:miter;opacity:1;font-family:&quot;Anthropic Sans&quot;, -apple-system, BlinkMacSystemFont, &quot;Segoe UI&quot;, sans-serif;font-size:16px;font-weight:400;text-anchor:start;dominant-baseline:auto"/>
+  </g>
+
+  <!-- Crumble near bite -->
+  <circle cx="142" cy="53" r="2.5" fill="#31D2C4" style="fill:rgb(49, 210, 196);stroke:none;color:rgb(255, 255, 255);stroke-width:1px;stroke-linecap:butt;stroke-linejoin:miter;opacity:1;font-family:&quot;Anthropic Sans&quot;, -apple-system, BlinkMacSystemFont, &quot;Segoe UI&quot;, sans-serif;font-size:16px;font-weight:400;text-anchor:start;dominant-baseline:auto"/>
+  <circle cx="152" cy="64" r="2" fill="#31D2C4" style="fill:rgb(49, 210, 196);stroke:none;color:rgb(255, 255, 255);stroke-width:1px;stroke-linecap:butt;stroke-linejoin:miter;opacity:1;font-family:&quot;Anthropic Sans&quot;, -apple-system, BlinkMacSystemFont, &quot;Segoe UI&quot;, sans-serif;font-size:16px;font-weight:400;text-anchor:start;dominant-baseline:auto"/>
+  <circle cx="157" cy="77" r="2" fill="#31D2C4" style="fill:rgb(49, 210, 196);stroke:none;color:rgb(255, 255, 255);stroke-width:1px;stroke-linecap:butt;stroke-linejoin:miter;opacity:1;font-family:&quot;Anthropic Sans&quot;, -apple-system, BlinkMacSystemFont, &quot;Segoe UI&quot;, sans-serif;font-size:16px;font-weight:400;text-anchor:start;dominant-baseline:auto"/>
+</svg>

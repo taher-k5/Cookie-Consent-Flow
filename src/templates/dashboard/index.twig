@@ -1,0 +1,28 @@
+{% extends "_layouts/cp" %}
+
+{% set title = "Cookie Consent Kit"|t('cookie-consent-kit') %}
+
+{% block content %}
+<div class="cck-dashboard">
+    <div class="readable">
+        <h2>{{ "Dashboard"|t('cookie-consent-kit') }}</h2>
+        <p class="light">{{ "Consent activity summary will appear here once logging is configured."|t('cookie-consent-kit') }}</p>
+
+        {# TODO: render real stats from ConsentService once implemented #}
+        <div class="meta">
+            <div class="data">
+                <h5 class="heading">{{ "Total Consents Logged"|t('cookie-consent-kit') }}</h5>
+                <div class="value">—</div>
+            </div>
+            <div class="data">
+                <h5 class="heading">{{ "Accepted All"|t('cookie-consent-kit') }}</h5>
+                <div class="value">—</div>
+            </div>
+            <div class="data">
+                <h5 class="heading">{{ "Rejected All"|t('cookie-consent-kit') }}</h5>
+                <div class="value">—</div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

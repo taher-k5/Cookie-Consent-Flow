@@ -1,0 +1,108 @@
+{% extends "_layouts/cp" %}
+{% import "_includes/forms" as forms %}
+
+{% set title = "Cookie Consent Kit Settings"|t('cookie-consent-kit') %}
+{% set fullPageForm = true %}
+
+{% block actionButton %}
+    <div class="btngroup">
+        <input type="submit" class="btn submit" value="{{ 'Save'|t('app') }}">
+    </div>
+{% endblock %}
+
+{% block content %}
+<input type="hidden" name="action" value="cookie-consent-kit/settings/save">
+{{ redirectInput('cookie-consent-kit/settings') }}
+{{ csrfInput() }}
+
+<div id="settings">
+
+    {# ---- Banner ---------------------------------------------------------- #}
+    <h2>{{ "Banner"|t('cookie-consent-kit') }}</h2>
+
+    {{ forms.lightswitchField({
+        label:        "Enable Cookie Banner"|t('cookie-consent-kit'),
+        instructions: "Show the consent banner to site visitors."|t('cookie-consent-kit'),
+        id:           'bannerEnabled',
+        name:         'settings[bannerEnabled]',
+        on:           settings.bannerEnabled,
+    }) }}
+
+    {{ forms.selectField({
+        label:        "Banner Position"|t('cookie-consent-kit'),
+        instructions: "Where on the screen the banner should appear."|t('cookie-consent-kit'),
+        id:           'bannerPosition',
+        name:         'settings[bannerPosition]',
+        value:        settings.bannerPosition,
+        options: [
+            { value: 'bottom',       label: "Bottom"|t('cookie-consent-kit') },
+            { value: 'top',          label: "Top"|t('cookie-consent-kit') },
+            { value: 'bottom-left',  label: "Bottom Left"|t('cookie-consent-kit') },
+            { value: 'bottom-right', label: "Bottom Right"|t('cookie-consent-kit') },
+        ],
+    }) }}
+
+    {{ forms.textField({
+        label:        "Banner Heading"|t('cookie-consent-kit'),
+        instructions: "Leave blank to use the default heading."|t('cookie-consent-kit'),
+        id:           'bannerHeading',
+        name:         'settings[bannerHeading]',
+        value:        settings.bannerHeading,
+    }) }}
+
+    {{ forms.textareaField({
+        label:        "Banner Body Text"|t('cookie-consent-kit'),
+        instructions: "Describe how your site uses cookies. HTML is allowed."|t('cookie-consent-kit'),
+        id:           'bannerBody',
+        name:         'settings[bannerBody]',
+        value:        settings.bannerBody,
+        rows:          4,
+    }) }}
+
+    <hr>
+
+    {# ---- Consent Logging ------------------------------------------------- #}
+    <h2>{{ "Consent Logging"|t('cookie-consent-kit') }}</h2>
+
+    {{ forms.lightswitchField({
+        label:        "Log Consent Events"|t('cookie-consent-kit'),
+        instructions: "Store a privacy-safe record of each consent action in the database."|t('cookie-consent-kit'),
+        id:           'logEnabled',
+        name:         'settings[logEnabled]',
+        on:           settings.logEnabled,
+    }) }}
+
+    {{ forms.textField({
+        label:        "Log Retention (days)"|t('cookie-consent-kit'),
+        instructions: "How long to keep consent records. Set to 0 to keep indefinitely."|t('cookie-consent-kit'),
+        id:           'logRetentionDays',
+        name:         'settings[logRetentionDays]',
+        value:        settings.logRetentionDays,
+        type:         'number',
+        min:           0,
+    }) }}
+
+    <hr>
+
+    {# ---- Geo-targeting --------------------------------------------------- #}
+    <h2>{{ "Geo-targeting"|t('cookie-consent-kit') }}</h2>
+
+    {{ forms.lightswitchField({
+        label:        "Enable Geo-targeting"|t('cookie-consent-kit'),
+        instructions: "Restrict banner display to specific countries."|t('cookie-consent-kit'),
+        id:           'geoEnabled',
+        name:         'settings[geoEnabled]',
+        on:           settings.geoEnabled,
+    }) }}
+
+    {# TODO: replace with a tag-input component once feature logic is implemented #}
+    {{ forms.textField({
+        label:        "Target Countries"|t('cookie-consent-kit'),
+        instructions: "Comma-separated ISO 3166-1 alpha-2 codes, e.g. GB,DE,FR. Leave blank to show everywhere."|t('cookie-consent-kit'),
+        id:           'geoTargetCountries',
+        name:         'settings[geoTargetCountries]',
+        value:        settings.geoTargetCountries|join(','),
+    }) }}
+
+</div>
+{% endblock %}
