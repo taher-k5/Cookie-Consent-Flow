@@ -11,6 +11,13 @@
 {% set layoutClass = 'cck-layout--' ~ settings.bannerLayout %}
 {% set cornerClass = (settings.bannerLayout == 'corner-popup') ? ' cck-corner--' ~ settings.cornerPosition : '' %}
 
+{% if settings.bannerLayout == 'center-popup' %}
+  <div
+    class="cck-banner-overlay"
+    id="cck-banner-overlay"
+    hidden
+  ></div>
+{% endif %}
 <div
   id="cck-banner"
   class="cck-banner {{ layoutClass }}{{ cornerClass }}"
