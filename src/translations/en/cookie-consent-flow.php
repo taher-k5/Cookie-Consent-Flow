@@ -1,8 +1,8 @@
 <?php
 /**
- * Cookie Consent Kit — English translations.
+ * Cookie Consent Flow — English translations.
  *
- * Add a translations/<locale>/cookie-consent-kit.php file for each additional
+ * Add a translations/<locale>/cookie-consent-flow.php file for each additional
  * language you want to support. Craft will automatically load the correct file
  * based on the current site locale.
  *
@@ -12,7 +12,7 @@
 return [
     // General
     'Cookie Consent'         => 'Cookie Consent',
-    'Cookie Consent Kit'     => 'Cookie Consent Kit',
+    'Cookie Consent Flow'    => 'Cookie Consent Flow',
     'Settings saved.'        => 'Settings saved.',
 
     // Dashboard
@@ -23,7 +23,7 @@ return [
     'No data yet. Consent logging will appear here once enabled.' => 'No data yet. Consent logging will appear here once enabled.',
 
     // Settings
-    'Cookie Consent Kit Settings' => 'Cookie Consent Kit Settings',
+    'Cookie Consent Flow Settings' => 'Cookie Consent Flow Settings',
     'Banner'                 => 'Banner',
     'Enable Cookie Banner'   => 'Enable Cookie Banner',
     'Show the consent banner to site visitors.' => 'Show the consent banner to site visitors.',

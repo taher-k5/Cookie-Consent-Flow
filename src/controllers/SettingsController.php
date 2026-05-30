@@ -1,10 +1,10 @@
 <?php
 
-namespace sfsinfotech\craftcookieconsentkit\controllers;
+namespace sfsinfotech\craftcookieconsentflow\controllers;
 
 use Craft;
 use craft\web\Controller;
-use sfsinfotech\craftcookieconsentkit\Plugin;
+use sfsinfotech\craftcookieconsentflow\Plugin;
 use yii\web\Response;
 
 /**
@@ -20,7 +20,7 @@ class SettingsController extends Controller
 
         $settings = Plugin::getInstance()->getSettings();
 
-        return $this->renderTemplate('cookie-consent-kit/settings/index', [
+        return $this->renderTemplate('cookie-consent-flow/settings/index', [
             'settings' => $settings,
             'plugin'   => Plugin::getInstance(),
         ]);
@@ -35,7 +35,7 @@ class SettingsController extends Controller
 
         $settings = Plugin::getInstance()->getSettings();
 
-        return $this->renderTemplate('cookie-consent-kit/settings/banner', [
+        return $this->renderTemplate('cookie-consent-flow/settings/banner', [
             'settings' => $settings,
             'plugin'   => Plugin::getInstance(),
         ]);
@@ -73,15 +73,15 @@ class SettingsController extends Controller
         $merged  = array_merge($current, $raw);
 
         if (!Craft::$app->getPlugins()->savePluginSettings($plugin, $merged)) {
-            Craft::$app->getSession()->setError(Craft::t('cookie-consent-kit', 'Couldn\'t save banner settings.'));
+            Craft::$app->getSession()->setError(Craft::t('cookie-consent-flow', 'Couldn\'t save banner settings.'));
 
-            return $this->renderTemplate('cookie-consent-kit/settings/banner', [
+            return $this->renderTemplate('cookie-consent-flow/settings/banner', [
                 'settings' => $plugin->getSettings(),
                 'plugin'   => $plugin,
             ]);
         }
 
-        Craft::$app->getSession()->setNotice(Craft::t('cookie-consent-kit', 'Banner settings saved.'));
+        Craft::$app->getSession()->setNotice(Craft::t('cookie-consent-flow', 'Banner settings saved.'));
 
         return $this->redirectToPostedUrl();
     }
@@ -127,12 +127,12 @@ class SettingsController extends Controller
         }
 
         if (!Craft::$app->getPlugins()->savePluginSettings($plugin, $raw)) {
-            Craft::$app->getSession()->setError(Craft::t('cookie-consent-kit', 'Couldn\'t save settings.'));
+            Craft::$app->getSession()->setError(Craft::t('cookie-consent-flow', 'Couldn\'t save settings.'));
 
             $redirect = $request->getBodyParam('redirect');
             $template = strpos((string)$redirect, '/banner') !== false
-                ? 'cookie-consent-kit/settings/banner'
-                : 'cookie-consent-kit/settings/index';
+                ? 'cookie-consent-flow/settings/banner'
+                : 'cookie-consent-flow/settings/index';
 
             return $this->renderTemplate($template, [
                 'settings' => $plugin->getSettings(),
@@ -140,7 +140,7 @@ class SettingsController extends Controller
             ]);
         }
 
-        Craft::$app->getSession()->setNotice(Craft::t('cookie-consent-kit', 'Settings saved.'));
+        Craft::$app->getSession()->setNotice(Craft::t('cookie-consent-flow', 'Settings saved.'));
 
         return $this->redirectToPostedUrl();
     }

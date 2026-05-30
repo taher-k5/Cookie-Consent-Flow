@@ -1,5 +1,5 @@
 {
-    "name": "sfs-infotech/craft-cookie-consent-kit",
+    "name": "sfs-infotech/craft-cookie-consent-flow",
     "description": "Cookie consent and compliance management for Craft CMS 5 — banners, categories, geo-targeting, consent logs, and multi-site support.",
     "type": "craft-plugin",
     "version": "1.0.0",
@@ -16,10 +16,10 @@
     ],
     "support": {
         "email": "hello@softwareforsolution.com",
-        "issues": "https://github.com/sfsinfotech/cookie-consent-kit/issues?state=open",
-        "source": "https://github.com/sfsinfotech/cookie-consent-kit",
-        "docs": "https://github.com/sfsinfotech/cookie-consent-kit",
-        "rss": "https://github.com/sfsinfotech/cookie-consent-kit/releases.atom"
+        "issues": "https://github.com/sfsinfotech/cookie-consent-flow/issues?state=open",
+        "source": "https://github.com/sfsinfotech/cookie-consent-flow",
+        "docs": "https://github.com/sfsinfotech/cookie-consent-flow",
+        "rss": "https://github.com/sfsinfotech/cookie-consent-flow/releases.atom"
     },
     "require": {
         "php": ">=8.2.0",
@@ -31,16 +31,16 @@
     },
     "autoload": {
         "psr-4": {
-            "sfsinfotech\\craftcookieconsentkit\\": "src/"
+            "sfsinfotech\\craftcookieconsentflow\\": "src/"
         }
     },
     "extra": {
-        "handle": "cookie-consent-kit",
-        "name": "Cookie Consent Kit",
+        "handle": "cookie-consent-flow",
+        "name": "Cookie Consent Flow",
         "developer": "SFS Infotech",
         "developerUrl": "https://softwareforsolution.com",
-        "documentationUrl": "https://github.com/sfsinfotech/cookie-consent-kit",
-        "changelogUrl": "https://raw.githubusercontent.com/sfsinfotech/cookie-consent-kit/main/CHANGELOG.md"
+        "documentationUrl": "https://github.com/sfsinfotech/cookie-consent-flow",
+        "changelogUrl": "https://raw.githubusercontent.com/sfsinfotech/cookie-consent-flow/main/CHANGELOG.md"
     },
     "scripts": {
         "check-cs": "ecs check --ansi",

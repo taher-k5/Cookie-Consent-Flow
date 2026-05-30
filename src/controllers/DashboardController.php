@@ -1,10 +1,10 @@
 <?php
 
-namespace sfsinfotech\craftcookieconsentkit\controllers;
+namespace sfsinfotech\craftcookieconsentflow\controllers;
 
 use Craft;
 use craft\web\Controller;
-use sfsinfotech\craftcookieconsentkit\Plugin;
+use sfsinfotech\craftcookieconsentflow\Plugin;
 use yii\web\Response;
 
 /**
@@ -20,7 +20,7 @@ class DashboardController extends Controller
 
         $plugin = Plugin::getInstance();
 
-        return $this->renderTemplate('cookie-consent-kit/dashboard/index', [
+        return $this->renderTemplate('cookie-consent-flow/dashboard/index', [
             'plugin'   => $plugin,
             'settings' => $plugin->getSettings(),
             'stats'    => $plugin->consent->getStats(),

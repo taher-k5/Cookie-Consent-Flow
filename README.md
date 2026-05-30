@@ -1,4 +1,4 @@
-# Cookie Consent Kit
+# Cookie Consent Flow
 
 Cookie consent and compliance management for Craft CMS 5. Provides a configurable cookie banner, consent categories, geo-targeting, privacy-safe consent logging, multi-site support, a Twig variable, and a CP dashboard widget.
 
@@ -13,14 +13,14 @@ Cookie consent and compliance management for Craft CMS 5. Provides a configurabl
 
 ```bash
 # From your Craft project root
-composer require sfs-infotech/craft-cookie-consent-kit:@dev
+composer require sfs-infotech/craft-cookie-consent-flow:@dev
 
-php craft plugin/install cookie-consent-kit
+php craft plugin/install cookie-consent-flow
 ```
 
 ### Via the Plugin Store
 
-Search for **Cookie Consent Kit** in the Craft Plugin Store (coming soon).
+Search for **Cookie Consent Flow** in the Craft Plugin Store (coming soon).
 
 ## Configuration
 
@@ -51,8 +51,8 @@ Two anonymous AJAX endpoints are registered under Craft's action URL:
 
 | Method | URL                                         | Description                     |
 |--------|---------------------------------------------|---------------------------------|
-| POST   | `/actions/cookie-consent-kit/consent/save`  | Record visitor consent choices  |
-| GET    | `/actions/cookie-consent-kit/consent/status`| Retrieve current consent state  |
+| POST   | `/actions/cookie-consent-flow/consent/save`  | Record visitor consent choices  |
+| GET    | `/actions/cookie-consent-flow/consent/status`| Retrieve current consent state  |
 
 ## Development Roadmap
 

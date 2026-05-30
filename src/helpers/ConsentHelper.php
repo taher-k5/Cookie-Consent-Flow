@@ -1,9 +1,9 @@
 <?php
 
-namespace sfsinfotech\craftcookieconsentkit\helpers;
+namespace sfsinfotech\craftcookieconsentflow\helpers;
 
 use Craft;
-use sfsinfotech\craftcookieconsentkit\Plugin;
+use sfsinfotech\craftcookieconsentflow\Plugin;
 
 /**
  * Consent Helper — static utility methods shared across services and templates.
@@ -28,7 +28,7 @@ class ConsentHelper
      */
     public static function categoryLabel(string $category): string
     {
-        return Craft::t('cookie-consent-kit', ucfirst($category));
+        return Craft::t('cookie-consent-flow', ucfirst($category));
     }
 
     /**

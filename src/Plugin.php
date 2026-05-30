@@ -1,6 +1,6 @@
 <?php
 
-namespace sfsinfotech\craftcookieconsentkit;
+namespace sfsinfotech\craftcookieconsentflow;
 
 use Craft;
 use craft\base\Plugin as BasePlugin;
@@ -12,17 +12,17 @@ use craft\services\Dashboard;
 use craft\web\twig\variables\CraftVariable;
 use craft\web\UrlManager;
 use craft\web\View;
-use sfsinfotech\craftcookieconsentkit\models\Settings;
-use sfsinfotech\craftcookieconsentkit\services\ConsentService;
-use sfsinfotech\craftcookieconsentkit\services\GeoService;
-use sfsinfotech\craftcookieconsentkit\variables\CookieConsentVariable;
-use sfsinfotech\craftcookieconsentkit\widgets\ConsentWidget;
-use sfsinfotech\craftcookieconsentkit\web\assets\cp\CpAsset;
-use sfsinfotech\craftcookieconsentkit\web\assets\banner\BannerAsset;
+use sfsinfotech\craftcookieconsentflow\models\Settings;
+use sfsinfotech\craftcookieconsentflow\services\ConsentService;
+use sfsinfotech\craftcookieconsentflow\services\GeoService;
+use sfsinfotech\craftcookieconsentflow\variables\CookieConsentVariable;
+use sfsinfotech\craftcookieconsentflow\widgets\ConsentWidget;
+use sfsinfotech\craftcookieconsentflow\web\assets\cp\CpAsset;
+use sfsinfotech\craftcookieconsentflow\web\assets\banner\BannerAsset;
 use yii\base\Event;
 
 /**
- * Cookie Consent Kit plugin for Craft CMS 5.
+ * Cookie Consent Flow plugin for Craft CMS 5.
  *
  * @property-read ConsentService $consent
  * @property-read GeoService     $geo
@@ -52,11 +52,11 @@ class Plugin extends BasePlugin
         parent::init();
         self::$plugin = $this;
 
-        Craft::setAlias('@sfsinfotech/craftcookieconsentkit', __DIR__);
+        Craft::setAlias('@sfsinfotech/craftcookieconsentflow', __DIR__);
 
         $this->controllerNamespace = Craft::$app->getRequest()->getIsConsoleRequest()
-            ? 'sfsinfotech\\craftcookieconsentkit\\console\\controllers'
-            : 'sfsinfotech\\craftcookieconsentkit\\controllers';
+            ? 'sfsinfotech\\craftcookieconsentflow\\console\\controllers'
+            : 'sfsinfotech\\craftcookieconsentflow\\controllers';
 
         $this->_registerServices();
         $this->_registerTemplateRoots();
@@ -86,7 +86,7 @@ class Plugin extends BasePlugin
     public function getSettingsResponse(): mixed
     {
         return Craft::$app->getResponse()->redirect(
-            \craft\helpers\UrlHelper::cpUrl('cookie-consent-kit/settings')
+            \craft\helpers\UrlHelper::cpUrl('cookie-consent-flow/settings')
         );
     }
 
@@ -95,21 +95,21 @@ class Plugin extends BasePlugin
     {
         $item = parent::getCpNavItem();
 
-        $item['label'] = Craft::t('cookie-consent-kit', 'Cookie Consent');
-        $item['icon']  = '@sfsinfotech/craftcookieconsentkit/icon-mask.svg';
+        $item['label'] = Craft::t('cookie-consent-flow', 'Cookie Consent');
+        $item['icon']  = '@sfsinfotech/craftcookieconsentflow/icon-mask.svg';
 
         $item['subnav'] = [
             'dashboard' => [
-                'label' => Craft::t('cookie-consent-kit', 'Dashboard'),
-                'url'   => 'cookie-consent-kit',
+                'label' => Craft::t('cookie-consent-flow', 'Dashboard'),
+                'url'   => 'cookie-consent-flow',
             ],
             'banner' => [
-                'label' => Craft::t('cookie-consent-kit', 'Banner'),
-                'url'   => 'cookie-consent-kit/banner',
+                'label' => Craft::t('cookie-consent-flow', 'Banner'),
+                'url'   => 'cookie-consent-flow/banner',
             ],
             'settings' => [
-                'label' => Craft::t('cookie-consent-kit', 'Settings'),
-                'url'   => 'cookie-consent-kit/settings',
+                'label' => Craft::t('cookie-consent-flow', 'Settings'),
+                'url'   => 'cookie-consent-flow/settings',
             ],
         ];
 
@@ -131,7 +131,7 @@ class Plugin extends BasePlugin
             View::class,
             View::EVENT_REGISTER_CP_TEMPLATE_ROOTS,
             function (RegisterTemplateRootsEvent $event): void {
-                $event->roots['cookie-consent-kit'] = __DIR__ . '/templates';
+                $event->roots['cookie-consent-flow'] = __DIR__ . '/templates';
             }
         );
 
@@ -139,7 +139,7 @@ class Plugin extends BasePlugin
             View::class,
             View::EVENT_REGISTER_SITE_TEMPLATE_ROOTS,
             function (RegisterTemplateRootsEvent $event): void {
-                $event->roots['cookie-consent-kit'] = __DIR__ . '/templates';
+                $event->roots['cookie-consent-flow'] = __DIR__ . '/templates';
             }
         );
     }
@@ -150,11 +150,11 @@ class Plugin extends BasePlugin
             UrlManager::class,
             UrlManager::EVENT_REGISTER_CP_URL_RULES,
             function (RegisterUrlRulesEvent $event): void {
-                $event->rules['cookie-consent-kit']                     = 'cookie-consent-kit/dashboard/index';
-                $event->rules['cookie-consent-kit/banner']                  = 'cookie-consent-kit/settings/banner';
-                $event->rules['POST cookie-consent-kit/banner/save']      = 'cookie-consent-kit/settings/save-banner';
-                $event->rules['cookie-consent-kit/settings']              = 'cookie-consent-kit/settings/index';
-                $event->rules['POST cookie-consent-kit/settings/save']    = 'cookie-consent-kit/settings/save';
+                $event->rules['cookie-consent-flow']                     = 'cookie-consent-flow/dashboard/index';
+                $event->rules['cookie-consent-flow/banner']                  = 'cookie-consent-flow/settings/banner';
+                $event->rules['POST cookie-consent-flow/banner/save']      = 'cookie-consent-flow/settings/save-banner';
+                $event->rules['cookie-consent-flow/settings']              = 'cookie-consent-flow/settings/index';
+                $event->rules['POST cookie-consent-flow/settings/save']    = 'cookie-consent-flow/settings/save';
             }
         );
     }
@@ -232,7 +232,7 @@ class Plugin extends BasePlugin
                 try {
                     $view->setTemplateMode(View::TEMPLATE_MODE_SITE);
                     $bannerHtml = $view->renderTemplate(
-                        'cookie-consent-kit/banner/_banner',
+                        'cookie-consent-flow/banner/_banner',
                         ['settings' => $settings]
                     );
                 } catch (\Throwable $e) {
@@ -243,12 +243,12 @@ class Plugin extends BasePlugin
                 }
 
                 // Publish banner asset directory and get the public base URL
-                $assetSrcPath = Craft::getAlias('@sfsinfotech/craftcookieconsentkit') . '/web/assets/banner';
+                $assetSrcPath = Craft::getAlias('@sfsinfotech/craftcookieconsentflow') . '/web/assets/banner';
                 [, $baseUrl]  = Craft::$app->getAssetManager()->publish($assetSrcPath);
 
                 // Build the JS config object
                 $configJson = \craft\helpers\Json::encode([
-                    'saveUrl'          => \craft\helpers\UrlHelper::actionUrl('cookie-consent-kit/consent/save'),
+                    'saveUrl'          => \craft\helpers\UrlHelper::actionUrl('cookie-consent-flow/consent/save'),
                     'csrfTokenName'    => Craft::$app->getConfig()->getGeneral()->csrfTokenName,
                     'csrfToken'        => Craft::$app->getRequest()->getCsrfToken(),
                     'allCategories'    => $settings->getCategoryKeys(),

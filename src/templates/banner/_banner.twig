@@ -1,5 +1,5 @@
 {#
-  Cookie Consent Kit — Banner + Preferences Modal
+  Cookie Consent Flow — Banner + Preferences Modal
   Rendered by CookieConsentVariable::renderBanner().
   The banner is hidden by default; JS reveals it when no consent is stored.
 #}
@@ -42,7 +42,7 @@
     </div>
 
     {# Action buttons #}
-    <div class="cck-banner__actions" role="group" aria-label="{{ 'Cookie consent options'|t('cookie-consent-kit') }}">
+    <div class="cck-banner__actions" role="group" aria-label="{{ 'Cookie consent options'|t('cookie-consent-flow') }}">
       <button
         type="button"
         class="cck-btn cck-btn--accept"
@@ -133,7 +133,7 @@
 
             <label
               class="cck-toggle{% if category.locked %} cck-toggle--disabled{% endif %}"
-              aria-label="{{ category.label }} — {{ category.locked ? 'always enabled'|t('cookie-consent-kit') : 'toggle'|t('cookie-consent-kit') }}"
+              aria-label="{{ category.label }} — {{ category.locked ? 'always enabled'|t('cookie-consent-flow') : 'toggle'|t('cookie-consent-flow') }}"
               title="{{ category.label }}"
             >
               <input

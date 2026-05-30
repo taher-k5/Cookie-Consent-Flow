@@ -1,6 +1,6 @@
 <?php
 
-namespace sfsinfotech\craftcookieconsentkit\events;
+namespace sfsinfotech\craftcookieconsentflow\events;
 
 use yii\base\Event;
 

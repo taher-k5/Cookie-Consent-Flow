@@ -1,5 +1,5 @@
 /**
- * Cookie Consent Kit — Control Panel JavaScript.
+ * Cookie Consent Flow — Control Panel JavaScript.
  *
  * Handles:
  *  - Settings tab navigation

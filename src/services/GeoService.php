@@ -1,10 +1,10 @@
 <?php
 
-namespace sfsinfotech\craftcookieconsentkit\services;
+namespace sfsinfotech\craftcookieconsentflow\services;
 
 use Craft;
 use craft\base\Component;
-use sfsinfotech\craftcookieconsentkit\Plugin;
+use sfsinfotech\craftcookieconsentflow\Plugin;
 
 /**
  * Geo Service — resolves visitor location for geo-targeted banner display.

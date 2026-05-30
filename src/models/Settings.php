@@ -1,11 +1,11 @@
 <?php
 
-namespace sfsinfotech\craftcookieconsentkit\models;
+namespace sfsinfotech\craftcookieconsentflow\models;
 
 use craft\base\Model;
 
 /**
- * Cookie Consent Kit – settings model.
+ * Cookie Consent Flow – settings model.
  *
  * Settings are persisted via Craft's built-in plugin-settings mechanism
  * (JSON blob in craft_plugins.settings). All colour/layout values are

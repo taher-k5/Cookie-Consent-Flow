@@ -1,7 +1,7 @@
 {% extends "_layouts/cp" %}
 {% import "_includes/forms" as forms %}
 
-{% set title = "Banner Settings"|t('cookie-consent-kit') %}
+{% set title = "Banner Settings"|t('cookie-consent-flow') %}
 {% set fullPageForm = true %}
 {% set selectedSubnavItem = 'banner' %}
 
@@ -12,69 +12,69 @@
 {% endblock %}
 
 {% block content %}
-<input type="hidden" name="action" value="cookie-consent-kit/settings/save-banner">
-{{ redirectInput('cookie-consent-kit/banner') }}
+<input type="hidden" name="action" value="cookie-consent-flow/settings/save-banner">
+{{ redirectInput('cookie-consent-flow/banner') }}
 {{ csrfInput() }}
 
 <div id="cck-banner-settings">
 
 {# ── 1. General ────────────────────────────────────────────────────────── #}
-<h2>{{ "General"|t('cookie-consent-kit') }}</h2>
+<h2>{{ "General"|t('cookie-consent-flow') }}</h2>
 
 {{ forms.lightswitchField({
-    label:        "Enable Cookie Banner"|t('cookie-consent-kit'),
-    instructions: "Display the consent banner to all site visitors."|t('cookie-consent-kit'),
+    label:        "Enable Cookie Banner"|t('cookie-consent-flow'),
+    instructions: "Display the consent banner to all site visitors."|t('cookie-consent-flow'),
     id:           'bannerEnabled',
     name:         'settings[bannerEnabled]',
     on:           settings.bannerEnabled,
 }) }}
 
 {{ forms.selectField({
-    label:        "Banner Layout"|t('cookie-consent-kit'),
-    instructions: "Choose how and where the banner appears on the page."|t('cookie-consent-kit'),
+    label:        "Banner Layout"|t('cookie-consent-flow'),
+    instructions: "Choose how and where the banner appears on the page."|t('cookie-consent-flow'),
     id:           'bannerLayout',
     name:         'settings[bannerLayout]',
     value:        settings.bannerLayout,
     options: [
-        { value: 'bottom-bar',   label: "Bottom Bar"|t('cookie-consent-kit') },
-        { value: 'top-bar',      label: "Top Bar"|t('cookie-consent-kit') },
-        { value: 'center-popup', label: "Center Popup"|t('cookie-consent-kit') },
-        { value: 'corner-popup', label: "Corner Popup"|t('cookie-consent-kit') },
+        { value: 'bottom-bar',   label: "Bottom Bar"|t('cookie-consent-flow') },
+        { value: 'top-bar',      label: "Top Bar"|t('cookie-consent-flow') },
+        { value: 'center-popup', label: "Center Popup"|t('cookie-consent-flow') },
+        { value: 'corner-popup', label: "Corner Popup"|t('cookie-consent-flow') },
     ],
 }) }}
 
 <div id="cck-corner-position-field"{% if settings.bannerLayout != 'corner-popup' %} class="hidden"{% endif %}>
     {{ forms.selectField({
-        label:   "Corner Position"|t('cookie-consent-kit'),
+        label:   "Corner Position"|t('cookie-consent-flow'),
         id:      'cornerPosition',
         name:    'settings[cornerPosition]',
         value:   settings.cornerPosition,
         options: [
-            { value: 'bottom-right', label: "Bottom Right"|t('cookie-consent-kit') },
-            { value: 'bottom-left',  label: "Bottom Left"|t('cookie-consent-kit') },
+            { value: 'bottom-right', label: "Bottom Right"|t('cookie-consent-flow') },
+            { value: 'bottom-left',  label: "Bottom Left"|t('cookie-consent-flow') },
         ],
     }) }}
 </div>
 
 {{ forms.lightswitchField({
-    label:        "Fixed / Sticky Position"|t('cookie-consent-kit'),
-    instructions: "Keep the banner fixed on screen while the user scrolls."|t('cookie-consent-kit'),
+    label:        "Fixed / Sticky Position"|t('cookie-consent-flow'),
+    instructions: "Keep the banner fixed on screen while the user scrolls."|t('cookie-consent-flow'),
     id:           'fixedPosition',
     name:         'settings[fixedPosition]',
     on:           settings.fixedPosition,
 }) }}
 
 {{ forms.lightswitchField({
-    label:        "Full Width"|t('cookie-consent-kit'),
-    instructions: "Stretch the banner to the full viewport width."|t('cookie-consent-kit'),
+    label:        "Full Width"|t('cookie-consent-flow'),
+    instructions: "Stretch the banner to the full viewport width."|t('cookie-consent-flow'),
     id:           'fullWidth',
     name:         'settings[fullWidth]',
     on:           settings.fullWidth,
 }) }}
 
 {{ forms.lightswitchField({
-    label:        "Shadow"|t('cookie-consent-kit'),
-    instructions: "Show a drop shadow around the banner."|t('cookie-consent-kit'),
+    label:        "Shadow"|t('cookie-consent-flow'),
+    instructions: "Show a drop shadow around the banner."|t('cookie-consent-flow'),
     id:           'shadow',
     name:         'settings[shadow]',
     on:           settings.shadow,
@@ -83,11 +83,11 @@
 <hr>
 
 {# ── 2. Content ────────────────────────────────────────────────────────── #}
-<h2>{{ "Content"|t('cookie-consent-kit') }}</h2>
+<h2>{{ "Content"|t('cookie-consent-flow') }}</h2>
 
 {{ forms.textField({
-    label:        "Heading"|t('cookie-consent-kit'),
-    instructions: "Main heading shown at the top of the banner."|t('cookie-consent-kit'),
+    label:        "Heading"|t('cookie-consent-flow'),
+    instructions: "Main heading shown at the top of the banner."|t('cookie-consent-flow'),
     id:           'bannerHeading',
     name:         'settings[bannerHeading]',
     value:        settings.bannerHeading,
@@ -95,8 +95,8 @@
 }) }}
 
 {{ forms.textareaField({
-    label:        "Description"|t('cookie-consent-kit'),
-    instructions: "Explain how your site uses cookies. Basic HTML (links, strong) is allowed."|t('cookie-consent-kit'),
+    label:        "Description"|t('cookie-consent-flow'),
+    instructions: "Explain how your site uses cookies. Basic HTML (links, strong) is allowed."|t('cookie-consent-flow'),
     id:           'bannerDescription',
     name:         'settings[bannerDescription]',
     value:        settings.bannerDescription,
@@ -104,7 +104,7 @@
 }) }}
 
 {{ forms.textField({
-    label:       "Privacy Policy URL"|t('cookie-consent-kit'),
+    label:       "Privacy Policy URL"|t('cookie-consent-flow'),
     id:          'privacyPolicyUrl',
     name:        'settings[privacyPolicyUrl]',
     value:       settings.privacyPolicyUrl,
@@ -113,7 +113,7 @@
 }) }}
 
 {{ forms.textField({
-    label: "Privacy Policy Link Label"|t('cookie-consent-kit'),
+    label: "Privacy Policy Link Label"|t('cookie-consent-flow'),
     id:    'privacyPolicyLinkText',
     name:  'settings[privacyPolicyLinkText]',
     value: settings.privacyPolicyLinkText,
@@ -123,51 +123,51 @@
 
 {# ── 3. Button Labels ──────────────────────────────────────────────────── #}
 
-<h2>{{ "Banner Colours"|t('cookie-consent-kit') }}</h2>
+<h2>{{ "Banner Colours"|t('cookie-consent-flow') }}</h2>
 
 <div class="flex flex-wrap gap-4 mb-4">
     {{ forms.colorField({
-        label: "Banner Background"|t('cookie-consent-kit'),
+        label: "Banner Background"|t('cookie-consent-flow'),
         id: 'bannerBgColor',
         name: 'settings[bannerBgColor]',
         value: settings.bannerBgColor
     }) }}
 
     {{ forms.colorField({
-        label: "Banner Border"|t('cookie-consent-kit'),
+        label: "Banner Border"|t('cookie-consent-flow'),
         id: 'bannerBorderColor',
         name: 'settings[bannerBorderColor]',
         value: settings.bannerBorderColor
     }) }}
 
     {{ forms.textField({
-        label: "Overlay (popups)"|t('cookie-consent-kit'),
+        label: "Overlay (popups)"|t('cookie-consent-flow'),
         id: 'overlayColor',
         name: 'settings[overlayColor]',
         value: settings.overlayColor
     }) }}
 </div>
 
-<h3>{{ "Text"|t('cookie-consent-kit') }}</h3>
+<h3>{{ "Text"|t('cookie-consent-flow') }}</h3>
 
 <div class="flex flex-wrap gap-4 mb-4">
 
     {{ forms.colorField({
-        label: "Heading"|t('cookie-consent-kit'),
+        label: "Heading"|t('cookie-consent-flow'),
         id: 'headingColor',
         name: 'settings[headingColor]',
         value: settings.headingColor
     }) }}
 
     {{ forms.colorField({
-        label: "Description"|t('cookie-consent-kit'),
+        label: "Description"|t('cookie-consent-flow'),
         id: 'descriptionColor',
         name: 'settings[descriptionColor]',
         value: settings.descriptionColor
     }) }}
 
     {{ forms.colorField({
-        label: "Links"|t('cookie-consent-kit'),
+        label: "Links"|t('cookie-consent-flow'),
         id: 'linkColor',
         name: 'settings[linkColor]',
         value: settings.linkColor
@@ -175,40 +175,40 @@
 
 </div>
 
-<h3>{{ "Accept Button"|t('cookie-consent-kit') }}</h3>
+<h3>{{ "Accept Button"|t('cookie-consent-flow') }}</h3>
 
 <div class="flex flex-wrap gap-4 mb-4">
 
     {{ forms.colorField({
-        label: "Background"|t('cookie-consent-kit'),
+        label: "Background"|t('cookie-consent-flow'),
         id: 'acceptBgColor',
         name: 'settings[acceptBgColor]',
         value: settings.acceptBgColor
     }) }}
 
     {{ forms.colorField({
-        label: "Text"|t('cookie-consent-kit'),
+        label: "Text"|t('cookie-consent-flow'),
         id: 'acceptTextColor',
         name: 'settings[acceptTextColor]',
         value: settings.acceptTextColor
     }) }}
 
     {{ forms.colorField({
-        label: "Border"|t('cookie-consent-kit'),
+        label: "Border"|t('cookie-consent-flow'),
         id: 'acceptBorderColor',
         name: 'settings[acceptBorderColor]',
         value: settings.acceptBorderColor
     }) }}
 
     {{ forms.colorField({
-        label: "Hover Background"|t('cookie-consent-kit'),
+        label: "Hover Background"|t('cookie-consent-flow'),
         id: 'acceptHoverBgColor',
         name: 'settings[acceptHoverBgColor]',
         value: settings.acceptHoverBgColor
     }) }}
 
     {{ forms.colorField({
-        label: "Hover Text"|t('cookie-consent-kit'),
+        label: "Hover Text"|t('cookie-consent-flow'),
         id: 'acceptHoverTextColor',
         name: 'settings[acceptHoverTextColor]',
         value: settings.acceptHoverTextColor
@@ -216,40 +216,40 @@
 
 </div>
 
-<h3>{{ "Reject Button"|t('cookie-consent-kit') }}</h3>
+<h3>{{ "Reject Button"|t('cookie-consent-flow') }}</h3>
 
 <div class="flex flex-wrap gap-4 mb-4">
 
     {{ forms.colorField({
-        label: "Background"|t('cookie-consent-kit'),
+        label: "Background"|t('cookie-consent-flow'),
         id: 'rejectBgColor',
         name: 'settings[rejectBgColor]',
         value: settings.rejectBgColor
     }) }}
 
     {{ forms.colorField({
-        label: "Text"|t('cookie-consent-kit'),
+        label: "Text"|t('cookie-consent-flow'),
         id: 'rejectTextColor',
         name: 'settings[rejectTextColor]',
         value: settings.rejectTextColor
     }) }}
 
     {{ forms.colorField({
-        label: "Border"|t('cookie-consent-kit'),
+        label: "Border"|t('cookie-consent-flow'),
         id: 'rejectBorderColor',
         name: 'settings[rejectBorderColor]',
         value: settings.rejectBorderColor
     }) }}
 
     {{ forms.colorField({
-        label: "Hover Background"|t('cookie-consent-kit'),
+        label: "Hover Background"|t('cookie-consent-flow'),
         id: 'rejectHoverBgColor',
         name: 'settings[rejectHoverBgColor]',
         value: settings.rejectHoverBgColor
     }) }}
 
     {{ forms.colorField({
-        label: "Hover Text"|t('cookie-consent-kit'),
+        label: "Hover Text"|t('cookie-consent-flow'),
         id: 'rejectHoverTextColor',
         name: 'settings[rejectHoverTextColor]',
         value: settings.rejectHoverTextColor
@@ -257,40 +257,40 @@
 
 </div>
 
-<h3>{{ "Customize Button"|t('cookie-consent-kit') }}</h3>
+<h3>{{ "Customize Button"|t('cookie-consent-flow') }}</h3>
 
 <div class="flex flex-wrap gap-4 mb-4">
 
     {{ forms.textField({
-        label: "Background"|t('cookie-consent-kit'),
+        label: "Background"|t('cookie-consent-flow'),
         id: 'customizeBgColor',
         name: 'settings[customizeBgColor]',
         value: settings.customizeBgColor
     }) }}
 
     {{ forms.colorField({
-        label: "Text"|t('cookie-consent-kit'),
+        label: "Text"|t('cookie-consent-flow'),
         id: 'customizeTextColor',
         name: 'settings[customizeTextColor]',
         value: settings.customizeTextColor
     }) }}
 
     {{ forms.colorField({
-        label: "Border"|t('cookie-consent-kit'),
+        label: "Border"|t('cookie-consent-flow'),
         id: 'customizeBorderColor',
         name: 'settings[customizeBorderColor]',
         value: settings.customizeBorderColor
     }) }}
 
     {{ forms.colorField({
-        label: "Hover Background"|t('cookie-consent-kit'),
+        label: "Hover Background"|t('cookie-consent-flow'),
         id: 'customizeHoverBgColor',
         name: 'settings[customizeHoverBgColor]',
         value: settings.customizeHoverBgColor
     }) }}
 
     {{ forms.colorField({
-        label: "Hover Text"|t('cookie-consent-kit'),
+        label: "Hover Text"|t('cookie-consent-flow'),
         id: 'customizeHoverTextColor',
         name: 'settings[customizeHoverTextColor]',
         value: settings.customizeHoverTextColor
@@ -298,19 +298,19 @@
 
 </div>
 
-<h3>{{ "Save Preferences Button"|t('cookie-consent-kit') }}</h3>
+<h3>{{ "Save Preferences Button"|t('cookie-consent-flow') }}</h3>
 
 <div class="flex flex-wrap gap-4 mb-4">
 
     {{ forms.colorField({
-        label: "Background"|t('cookie-consent-kit'),
+        label: "Background"|t('cookie-consent-flow'),
         id: 'saveBgColor',
         name: 'settings[saveBgColor]',
         value: settings.saveBgColor
     }) }}
 
     {{ forms.colorField({
-        label: "Text"|t('cookie-consent-kit'),
+        label: "Text"|t('cookie-consent-flow'),
         id: 'saveTextColor',
         name: 'settings[saveTextColor]',
         value: settings.saveTextColor
@@ -318,12 +318,12 @@
 
 </div>
 
-<h3>{{ "Close Icon"|t('cookie-consent-kit') }}</h3>
+<h3>{{ "Close Icon"|t('cookie-consent-flow') }}</h3>
 
 <div class="flex flex-wrap gap-4 mb-4">
 
     {{ forms.colorField({
-        label: "Close Icon Colour"|t('cookie-consent-kit'),
+        label: "Close Icon Colour"|t('cookie-consent-flow'),
         id: 'closeIconColor',
         name: 'settings[closeIconColor]',
         value: settings.closeIconColor
@@ -334,25 +334,25 @@
 <hr>
 
 {# ── 5. Layout Controls ────────────────────────────────────────────────── #}
-<h2>{{ "Layout Controls"|t('cookie-consent-kit') }}</h2>
+<h2>{{ "Layout Controls"|t('cookie-consent-flow') }}</h2>
 
 {{ forms.textField({
-    label:        "Border Radius"|t('cookie-consent-kit'),
-    instructions: "e.g. 8px or 0"|t('cookie-consent-kit'),
+    label:        "Border Radius"|t('cookie-consent-flow'),
+    instructions: "e.g. 8px or 0"|t('cookie-consent-flow'),
     id:    'borderRadius',
     name:  'settings[borderRadius]',
     value: settings.borderRadius,
 }) }}
 {{ forms.textField({
-    label:        "Padding"|t('cookie-consent-kit'),
-    instructions: "e.g. 24px or 16px 24px"|t('cookie-consent-kit'),
+    label:        "Padding"|t('cookie-consent-flow'),
+    instructions: "e.g. 24px or 16px 24px"|t('cookie-consent-flow'),
     id:    'padding',
     name:  'settings[padding]',
     value: settings.padding,
 }) }}
 {{ forms.textField({
-    label:        "Max Width"|t('cookie-consent-kit'),
-    instructions: "Ignored when Full Width is on. e.g. 600px"|t('cookie-consent-kit'),
+    label:        "Max Width"|t('cookie-consent-flow'),
+    instructions: "Ignored when Full Width is on. e.g. 600px"|t('cookie-consent-flow'),
     id:    'maxWidth',
     name:  'settings[maxWidth]',
     value: settings.maxWidth,
@@ -361,19 +361,19 @@
 <hr>
 
 {# ── 6. Geo-targeting ──────────────────────────────────────────────────── #}
-<h2>{{ "Geo-targeting"|t('cookie-consent-kit') }}</h2>
+<h2>{{ "Geo-targeting"|t('cookie-consent-flow') }}</h2>
 
 {{ forms.lightswitchField({
-    label:        "Enable Geo-targeting"|t('cookie-consent-kit'),
-    instructions: "Restrict banner display to specific countries only."|t('cookie-consent-kit'),
+    label:        "Enable Geo-targeting"|t('cookie-consent-flow'),
+    instructions: "Restrict banner display to specific countries only."|t('cookie-consent-flow'),
     id:   'geoEnabled',
     name: 'settings[geoEnabled]',
     on:   settings.geoEnabled,
 }) }}
 
 {{ forms.textField({
-    label:        "Target Countries"|t('cookie-consent-kit'),
-    instructions: "Comma-separated ISO 3166-1 alpha-2 codes, e.g. GB,DE,FR. Leave blank to show everywhere."|t('cookie-consent-kit'),
+    label:        "Target Countries"|t('cookie-consent-flow'),
+    instructions: "Comma-separated ISO 3166-1 alpha-2 codes, e.g. GB,DE,FR. Leave blank to show everywhere."|t('cookie-consent-flow'),
     id:    'geoTargetCountries',
     name:  'settings[geoTargetCountries]',
     value: settings.geoTargetCountries|join(', '),

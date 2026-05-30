@@ -1,12 +1,12 @@
 <?php
 
-namespace sfsinfotech\craftcookieconsentkit\variables;
+namespace sfsinfotech\craftcookieconsentflow\variables;
 
 use Craft;
 use craft\web\View;
-use sfsinfotech\craftcookieconsentkit\events\BeforeBannerRenderEvent;
-use sfsinfotech\craftcookieconsentkit\Plugin;
-use sfsinfotech\craftcookieconsentkit\web\assets\banner\BannerAsset;
+use sfsinfotech\craftcookieconsentflow\events\BeforeBannerRenderEvent;
+use sfsinfotech\craftcookieconsentflow\Plugin;
+use sfsinfotech\craftcookieconsentflow\web\assets\banner\BannerAsset;
 use Twig\Markup;
 use yii\base\Event;
 
@@ -56,7 +56,7 @@ class CookieConsentVariable
         $view->registerAssetBundle(BannerAsset::class);
 
         // Inline config for the JS module
-        $saveUrl = \craft\helpers\UrlHelper::actionUrl('cookie-consent-kit/consent/save');
+        $saveUrl = \craft\helpers\UrlHelper::actionUrl('cookie-consent-flow/consent/save');
         $csrfTokenName  = Craft::$app->getConfig()->getGeneral()->csrfTokenName;
         $csrfTokenValue = Craft::$app->getRequest()->getCsrfToken();
         $allCategories  = $settings->getCategoryKeys();
@@ -78,7 +78,7 @@ class CookieConsentVariable
         $view->setTemplateMode(View::TEMPLATE_MODE_SITE);
 
         $html = $view->renderTemplate(
-            'cookie-consent-kit/banner/_banner',
+                'cookie-consent-flow/banner/_banner',
             [
                 'settings' => $settings,
             ]
@@ -118,7 +118,7 @@ class CookieConsentVariable
         Craft::$app->getView()->registerAssetBundle(BannerAsset::class);
 
         $btnLabel = htmlspecialchars(
-            $label ?? Craft::t('cookie-consent-kit', 'Reset Cookie Preferences'),
+            $label ?? Craft::t('cookie-consent-flow', 'Reset Cookie Preferences'),
             ENT_QUOTES,
             'UTF-8'
         );
@@ -135,7 +135,7 @@ class CookieConsentVariable
      *
      * Usage: {{ craft.cookieConsent.settings.bannerEnabled }}
      */
-    public function settings(): \sfsinfotech\craftcookieconsentkit\models\Settings
+    public function settings(): \sfsinfotech\craftcookieconsentflow\models\Settings
     {
         return Plugin::getInstance()->getSettings();
     }

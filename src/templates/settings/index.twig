@@ -1,13 +1,13 @@
 {% extends "_layouts/cp" %}
 {% import "_includes/forms" as forms %}
 
-{% set title = "Cookie Consent Kit Settings"|t('cookie-consent-kit') %}
+{% set title = "Cookie Consent Flow Settings"|t('cookie-consent-flow') %}
 {% set fullPageForm = true %}
 {% set selectedSubnavItem = 'settings' %}
 {% set tabs = {
-    categories: { label: "Cookie Categories"|t('cookie-consent-kit'), url: '#tab-categories' },
-    logging:    { label: "Consent Logging"|t('cookie-consent-kit'),   url: '#tab-logging' },
-    advanced:   { label: "Advanced"|t('cookie-consent-kit'),          url: '#tab-advanced' },
+    categories: { label: "Cookie Categories"|t('cookie-consent-flow'), url: '#tab-categories' },
+    logging:    { label: "Consent Logging"|t('cookie-consent-flow'),   url: '#tab-logging' },
+    advanced:   { label: "Advanced"|t('cookie-consent-flow'),          url: '#tab-advanced' },
 } %}
 
 {% block actionButton %}
@@ -17,19 +17,19 @@
 {% endblock %}
 
 {% block content %}
-<input type="hidden" name="action" value="cookie-consent-kit/settings/save">
-{{ redirectInput('cookie-consent-kit/settings') }}
+<input type="hidden" name="action" value="cookie-consent-flow/settings/save">
+{{ redirectInput('cookie-consent-flow/settings') }}
 {{ csrfInput() }}
 
 <div id="cck-settings">
 
 {# ── Categories ────────────────────────────────────────────────────────── #}
 <div id="tab-categories">
-    <p class="light">{{ "Configure the cookie categories visitors can toggle in the preferences panel."|t('cookie-consent-kit') }}</p>
+    <p class="light">{{ "Configure the cookie categories visitors can toggle in the preferences panel."|t('cookie-consent-flow') }}</p>
 
     <div id="cck-categories-list">
         {% for i, category in settings.categories %}
-            {% include 'cookie-consent-kit/settings/_category-row' with {
+            {% include 'cookie-consent-flow/settings/_category-row' with {
                 category: category,
                 index:    i,
             } %}
@@ -37,11 +37,11 @@
     </div>
 
     <button type="button" id="cck-add-category" class="btn add icon">
-        {{ "Add Category"|t('cookie-consent-kit') }}
+        {{ "Add Category"|t('cookie-consent-flow') }}
     </button>
 
     <template id="cck-category-template">
-        {% include 'cookie-consent-kit/settings/_category-row' with {
+        {% include 'cookie-consent-flow/settings/_category-row' with {
             category: { key: '', label: '', description: '', default: false, locked: false },
             index:    '__INDEX__',
         } %}
@@ -52,16 +52,16 @@
 <div id="tab-logging" class="hidden">
 
     {{ forms.lightswitchField({
-        label:        "Log Consent Events"|t('cookie-consent-kit'),
-        instructions: "Store a privacy-safe record of each consent action in the database."|t('cookie-consent-kit'),
+        label:        "Log Consent Events"|t('cookie-consent-flow'),
+        instructions: "Store a privacy-safe record of each consent action in the database."|t('cookie-consent-flow'),
         id:   'logEnabled',
         name: 'settings[logEnabled]',
         on:   settings.logEnabled,
     }) }}
 
     {{ forms.textField({
-        label:        "Log Retention (days)"|t('cookie-consent-kit'),
-        instructions: "How long to keep consent records. Set to 0 to keep indefinitely."|t('cookie-consent-kit'),
+        label:        "Log Retention (days)"|t('cookie-consent-flow'),
+        instructions: "How long to keep consent records. Set to 0 to keep indefinitely."|t('cookie-consent-flow'),
         id:    'logRetentionDays',
         name:  'settings[logRetentionDays]',
         value: settings.logRetentionDays,
@@ -74,10 +74,10 @@
 {# ── Advanced ──────────────────────────────────────────────────────────── #}
 <div id="tab-advanced" class="hidden">
 
-    <p class="light">{{ "Additional plugin-level options."|t('cookie-consent-kit') }}</p>
+    <p class="light">{{ "Additional plugin-level options."|t('cookie-consent-flow') }}</p>
 
     {# Placeholder for future advanced options (cache TTL, custom CSS, etc.) #}
-    <p class="light">{{ "More advanced options will appear here in future releases."|t('cookie-consent-kit') }}</p>
+    <p class="light">{{ "More advanced options will appear here in future releases."|t('cookie-consent-flow') }}</p>
 
 </div>{# /tab-advanced #}
 

@@ -1,10 +1,10 @@
 <?php
 
-namespace sfsinfotech\craftcookieconsentkit\controllers;
+namespace sfsinfotech\craftcookieconsentflow\controllers;
 
 use Craft;
 use craft\web\Controller;
-use sfsinfotech\craftcookieconsentkit\Plugin;
+use sfsinfotech\craftcookieconsentflow\Plugin;
 use yii\web\BadRequestHttpException;
 use yii\web\Response;
 
@@ -16,7 +16,7 @@ class ConsentController extends Controller
     protected array|int|bool $allowAnonymous = ['save', 'status'];
 
     /**
-     * POST /actions/cookie-consent-kit/consent/save
+    * POST /actions/cookie-consent-flow/consent/save
      *
      * Expected JSON body:
      *   { "action": "accept_all|reject_all|custom", "categories": ["necessary", ...] }
@@ -69,7 +69,7 @@ class ConsentController extends Controller
     }
 
     /**
-     * GET /actions/cookie-consent-kit/consent/status
+    * GET /actions/cookie-consent-flow/consent/status
      *
      * Looks up the most recent consent record for the visitor UUID cookie.
      * Returns null if no record exists.

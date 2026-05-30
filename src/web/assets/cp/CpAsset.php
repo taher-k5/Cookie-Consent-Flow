@@ -1,6 +1,6 @@
 <?php
 
-namespace sfsinfotech\craftcookieconsentkit\web\assets\cp;
+namespace sfsinfotech\craftcookieconsentflow\web\assets\cp;
 
 use craft\web\AssetBundle;
 use craft\web\assets\cp\CpAsset as CraftCpAsset;

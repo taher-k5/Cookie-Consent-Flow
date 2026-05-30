@@ -5,8 +5,8 @@
     <div class="cck-category-row__fields">
 
         {{ forms.textField({
-            label:       "Key"|t('cookie-consent-kit'),
-            instructions:"Machine-readable identifier, e.g. analytics (lowercase, no spaces)."|t('cookie-consent-kit'),
+            label:       "Key"|t('cookie-consent-flow'),
+            instructions:"Machine-readable identifier, e.g. analytics (lowercase, no spaces)."|t('cookie-consent-flow'),
             name:        'settings[categories][' ~ index ~ '][key]',
             value:       category.key,
             required:    true,
@@ -14,13 +14,13 @@
         }) }}
 
         {{ forms.textField({
-            label: "Label"|t('cookie-consent-kit'),
+            label: "Label"|t('cookie-consent-flow'),
             name:  'settings[categories][' ~ index ~ '][label]',
             value: category.label,
         }) }}
 
         {{ forms.textareaField({
-            label: "Description"|t('cookie-consent-kit'),
+            label: "Description"|t('cookie-consent-flow'),
             name:  'settings[categories][' ~ index ~ '][description]',
             value: category.description,
             rows:   2,
@@ -28,15 +28,15 @@
 
         <div class="cck-category-row__toggles">
             {{ forms.lightswitchField({
-                label:        "Enabled by default"|t('cookie-consent-kit'),
-                instructions: "Pre-check this category in the preferences panel."|t('cookie-consent-kit'),
+                label:        "Enabled by default"|t('cookie-consent-flow'),
+                instructions: "Pre-check this category in the preferences panel."|t('cookie-consent-flow'),
                 name:         'settings[categories][' ~ index ~ '][default]',
                 on:           category.default,
             }) }}
 
             {{ forms.lightswitchField({
-                label:        "Always on (locked)"|t('cookie-consent-kit'),
-                instructions: "Visitor cannot disable this category."|t('cookie-consent-kit'),
+                label:        "Always on (locked)"|t('cookie-consent-flow'),
+                instructions: "Visitor cannot disable this category."|t('cookie-consent-flow'),
                 name:         'settings[categories][' ~ index ~ '][locked]',
                 on:           category.locked,
             }) }}
@@ -46,10 +46,10 @@
     <button
         type="button"
         class="btn small delete icon cck-remove-category"
-        title="{{ 'Remove category'|t('cookie-consent-kit') }}"
-        aria-label="{{ 'Remove category'|t('cookie-consent-kit') }}"
+        title="{{ 'Remove category'|t('cookie-consent-flow') }}"
+        aria-label="{{ 'Remove category'|t('cookie-consent-flow') }}"
         {% if category.locked %}disabled{% endif %}
-    >{{ "Remove"|t('cookie-consent-kit') }}</button>
+    >{{ "Remove"|t('cookie-consent-flow') }}</button>
 
     <hr>
 </div>

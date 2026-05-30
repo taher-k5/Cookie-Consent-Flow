@@ -1,8 +1,8 @@
 <?php
 
-namespace sfsinfotech\craftcookieconsentkit\events;
+namespace sfsinfotech\craftcookieconsentflow\events;
 
-use sfsinfotech\craftcookieconsentkit\models\Settings;
+use sfsinfotech\craftcookieconsentflow\models\Settings;
 use yii\base\Event;
 
 /**

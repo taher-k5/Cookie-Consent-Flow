@@ -1,6 +1,6 @@
 <?php
 
-namespace sfsinfotech\craftcookieconsentkit\records;
+namespace sfsinfotech\craftcookieconsentflow\records;
 
 use craft\db\ActiveRecord;
 

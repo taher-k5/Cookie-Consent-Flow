@@ -1,6 +1,6 @@
 <?php
 
-namespace sfsinfotech\craftcookieconsentkit\web\assets\banner;
+namespace sfsinfotech\craftcookieconsentflow\web\assets\banner;
 
 use craft\web\AssetBundle;
 

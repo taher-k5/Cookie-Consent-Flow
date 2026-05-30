@@ -1,11 +1,11 @@
 <?php
 
-namespace sfsinfotech\craftcookieconsentkit\migrations;
+namespace sfsinfotech\craftcookieconsentflow\migrations;
 
 use craft\db\Migration;
 
 /**
- * Install migration — creates all database tables required by Cookie Consent Kit.
+ * Install migration — creates all database tables required by Cookie Consent Flow.
  */
 class Install extends Migration
 {

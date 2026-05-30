@@ -1,14 +1,14 @@
 <?php
 
-namespace sfsinfotech\craftcookieconsentkit\services;
+namespace sfsinfotech\craftcookieconsentflow\services;
 
 use Craft;
 use craft\base\Component;
 use craft\helpers\Json;
-use sfsinfotech\craftcookieconsentkit\events\AfterConsentSaveEvent;
-use sfsinfotech\craftcookieconsentkit\helpers\ConsentHelper;
-use sfsinfotech\craftcookieconsentkit\Plugin;
-use sfsinfotech\craftcookieconsentkit\records\ConsentLogRecord;
+use sfsinfotech\craftcookieconsentflow\events\AfterConsentSaveEvent;
+use sfsinfotech\craftcookieconsentflow\helpers\ConsentHelper;
+use sfsinfotech\craftcookieconsentflow\Plugin;
+use sfsinfotech\craftcookieconsentflow\records\ConsentLogRecord;
 
 /**
  * Consent Service — handles recording, retrieving, and managing consent records.

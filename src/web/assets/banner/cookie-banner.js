@@ -1,5 +1,5 @@
 /**
- * Cookie Consent Kit — Frontend Banner JS
+ * Cookie Consent Flow — Frontend Banner JS
  *
  * Handles banner visibility, preference modal, consent storage,
  * server sync, accessibility (focus trap, keyboard nav, ARIA).

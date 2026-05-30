@@ -1,4 +1,4 @@
-# Cookie Consent Kit Changelog
+# Cookie Consent Flow Changelog
 
 All notable changes to this project will be documented in this file.
 
