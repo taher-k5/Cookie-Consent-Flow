@@ -89,7 +89,9 @@
   left: 50%;
   transform: translate(-50%, -50%);
   width: calc(100% - 32px);
-
+  /* Respect configured maximum height so small content can be controlled */
+  max-height: var(--cck-max-height, 90vh);
+  overflow-y: auto;
   background: var(--cck-banner-bg, #fff);
   border: 1px solid var(--cck-banner-border, #e5e7eb);
   box-shadow: var(--cck-shadow, 0 8px 40px rgba(0, 0, 0, 0.18));
@@ -101,7 +103,7 @@
 .cck-layout--center-popup .cck-banner__inner {
   display: flex;
   flex-direction: column;
-  gap: 20px;
+  gap: 12px;
 }
 
 .cck-banner-overlay {
@@ -123,6 +125,8 @@
   bottom: 24px;
   right: 24px;
   width: calc(100% - 48px);
+  max-height: var(--cck-max-height, 80vh);
+  overflow-y: auto;
 }
 
 .cck-layout--corner-popup.cck-corner--bottom-left {
@@ -133,7 +137,14 @@
 .cck-layout--corner-popup .cck-banner__inner {
   display: flex;
   flex-direction: column;
-  gap: 20px;
+  gap: 12px;
+}
+
+/* Popups shouldn't let the content flex-grow and create large empty spacing
+   between the description and actions. Override the global flex rule. */
+.cck-layout--center-popup .cck-banner__content,
+.cck-layout--corner-popup .cck-banner__content {
+  flex: 0 1 auto;
 }
 
 /* --------------------------------------------------------------------------

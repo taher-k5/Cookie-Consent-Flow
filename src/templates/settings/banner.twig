@@ -118,13 +118,31 @@
         value: settings.padding,
     }) }}
 
-    {{ forms.textField({
-        label:        "Max Width"|t('cookie-consent-flow'),
-        instructions: "Ignored when Full Width is on. e.g. 600px"|t('cookie-consent-flow'),
-        id:    'maxWidth',
-        name:  'settings[maxWidth]',
-        value: settings.maxWidth,
-    }) }}
+    <div class="mb-4">
+        <h3>{{ "Size Limits"|t('cookie-consent-flow') }}</h3>
+        <div style="display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; margin-top: 12px;">
+            <div>
+                {{ forms.textField({
+                    label: "Max Width"|t('cookie-consent-flow'),
+                    id:    'maxWidth',
+                    name:  'settings[maxWidth]',
+                    value: settings.maxWidth,
+                    placeholder: '600px',
+                }) }}
+            </div>
+
+            <div>
+                {{ forms.textField({
+                    label: "Max Height"|t('cookie-consent-flow'),
+                    id:    'maxHeight',
+                    name:  'settings[maxHeight]',
+                    value: settings.maxHeight,
+                    placeholder: '80vh or 600px',
+                }) }}
+            </div>
+        </div>
+         <p class="muted">{{ "Maximum width and height for popup layouts (center and corner). Ignored for bar layouts. Max Width is ignored when Full Width is enabled. Examples: 600px (width), 80vh or 600px (height). Leave blank for no limit."|t('cookie-consent-flow') }}</p>
+    </div>
 
 </div>{# /#ccf-general #}
 
@@ -200,14 +218,6 @@
         name:  'settings[savePreferencesText]',
         value: settings.savePreferencesText,
         placeholder: 'Save Preferences',
-    }) }}
-
-    {{ forms.textField({
-        label: "Close Button"|t('cookie-consent-flow'),
-        id:    'closeButtonText',
-        name:  'settings[closeButtonText]',
-        value: settings.closeButtonText,
-        placeholder: 'Close',
     }) }}
 
 </div>{# /#ccf-content #}

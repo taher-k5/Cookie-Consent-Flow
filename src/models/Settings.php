@@ -81,6 +81,8 @@ class Settings extends Model
     public string $borderRadius  = '8px';
     public string $padding       = '24px';
     public string $maxWidth      = '600px';
+    /** Max height for popup layouts (e.g. '80vh' or '600px'). Empty/blank means no limit. */
+    public string $maxHeight     = '90vh';
     public bool   $fullWidth     = false;
     public bool   $shadow        = true;
     public bool   $fixedPosition = true;
@@ -224,6 +226,7 @@ class Settings extends Model
             '--cck-radius'    => $this->borderRadius,
             '--cck-padding'   => $this->padding,
             '--cck-max-width' => $this->fullWidth ? '100%' : $this->maxWidth,
+            '--cck-max-height'=> $this->maxHeight ?: '90vh',
             '--cck-shadow'    => $shadow,
         ];
 
