@@ -225,200 +225,208 @@
 {# ── Tab 3: Banner Colours ─────────────────────────────────────────────── #}
 <div id="ccf-colours" class="hidden" role="tabpanel" aria-labelledby="tab-ccf-colours">
 
-    <h2>{{ "Banner"|t('cookie-consent-flow') }}</h2>
 
-    <div class="flex flex-wrap gap-4 mb-4">
-        {{ forms.colorField({
-            label: "Banner Background"|t('cookie-consent-flow'),
-            id:    'bannerBgColor',
-            name:  'settings[bannerBgColor]',
-            value: settings.bannerBgColor,
-        }) }}
+    <div class="cck-section">
+        <h3 class="cck-section__title">{{ "Banner"|t('cookie-consent-flow') }}</h3>
+        <div class="cck-color-grid">
+            {{ forms.colorField({
+                label: "Banner Background"|t('cookie-consent-flow'),
+                id:    'bannerBgColor',
+                name:  'settings[bannerBgColor]',
+                value: settings.bannerBgColor,
+            }) }}
 
-        {{ forms.colorField({
-            label: "Banner Border"|t('cookie-consent-flow'),
-            id:    'bannerBorderColor',
-            name:  'settings[bannerBorderColor]',
-            value: settings.bannerBorderColor,
-        }) }}
+            {{ forms.colorField({
+                label: "Banner Border"|t('cookie-consent-flow'),
+                id:    'bannerBorderColor',
+                name:  'settings[bannerBorderColor]',
+                value: settings.bannerBorderColor,
+            }) }}
 
-        {{ forms.textField({
-            label: "Overlay (popups)"|t('cookie-consent-flow'),
-            id:    'overlayColor',
-            name:  'settings[overlayColor]',
-            value: settings.overlayColor,
-        }) }}
+            {{ forms.textField({
+                label: "Overlay (popups)"|t('cookie-consent-flow'),
+                id:    'overlayColor',
+                name:  'settings[overlayColor]',
+                value: settings.overlayColor,
+            }) }}
+        </div>
     </div>
 
-    <h3>{{ "Text"|t('cookie-consent-flow') }}</h3>
+    <div class="cck-section">
+        <h3 class="cck-section__title">{{ "Text"|t('cookie-consent-flow') }}</h3>
+        <div class="cck-color-grid">
+            {{ forms.colorField({
+                label: "Heading"|t('cookie-consent-flow'),
+                id:    'headingColor',
+                name:  'settings[headingColor]',
+                value: settings.headingColor,
+            }) }}
 
-    <div class="flex flex-wrap gap-4 mb-4">
-        {{ forms.colorField({
-            label: "Heading"|t('cookie-consent-flow'),
-            id:    'headingColor',
-            name:  'settings[headingColor]',
-            value: settings.headingColor,
-        }) }}
+            {{ forms.colorField({
+                label: "Description"|t('cookie-consent-flow'),
+                id:    'descriptionColor',
+                name:  'settings[descriptionColor]',
+                value: settings.descriptionColor,
+            }) }}
 
-        {{ forms.colorField({
-            label: "Description"|t('cookie-consent-flow'),
-            id:    'descriptionColor',
-            name:  'settings[descriptionColor]',
-            value: settings.descriptionColor,
-        }) }}
-
-        {{ forms.colorField({
-            label: "Links"|t('cookie-consent-flow'),
-            id:    'linkColor',
-            name:  'settings[linkColor]',
-            value: settings.linkColor,
-        }) }}
+            {{ forms.colorField({
+                label: "Links"|t('cookie-consent-flow'),
+                id:    'linkColor',
+                name:  'settings[linkColor]',
+                value: settings.linkColor,
+            }) }}
+        </div>
     </div>
 
-    <h3>{{ "Accept Button"|t('cookie-consent-flow') }}</h3>
+    <div class="cck-section">
+        <h3 class="cck-section__title">{{ "Accept Button"|t('cookie-consent-flow') }}</h3>
+        <div class="cck-color-grid">
+            {{ forms.colorField({
+                label: "Background"|t('cookie-consent-flow'),
+                id:    'acceptBgColor',
+                name:  'settings[acceptBgColor]',
+                value: settings.acceptBgColor,
+            }) }}
 
-    <div class="flex flex-wrap gap-4 mb-4">
-        {{ forms.colorField({
-            label: "Background"|t('cookie-consent-flow'),
-            id:    'acceptBgColor',
-            name:  'settings[acceptBgColor]',
-            value: settings.acceptBgColor,
-        }) }}
+            {{ forms.colorField({
+                label: "Text"|t('cookie-consent-flow'),
+                id:    'acceptTextColor',
+                name:  'settings[acceptTextColor]',
+                value: settings.acceptTextColor,
+            }) }}
 
-        {{ forms.colorField({
-            label: "Text"|t('cookie-consent-flow'),
-            id:    'acceptTextColor',
-            name:  'settings[acceptTextColor]',
-            value: settings.acceptTextColor,
-        }) }}
+            {{ forms.colorField({
+                label: "Border"|t('cookie-consent-flow'),
+                id:    'acceptBorderColor',
+                name:  'settings[acceptBorderColor]',
+                value: settings.acceptBorderColor,
+            }) }}
 
-        {{ forms.colorField({
-            label: "Border"|t('cookie-consent-flow'),
-            id:    'acceptBorderColor',
-            name:  'settings[acceptBorderColor]',
-            value: settings.acceptBorderColor,
-        }) }}
+            {{ forms.colorField({
+                label: "Hover Background"|t('cookie-consent-flow'),
+                id:    'acceptHoverBgColor',
+                name:  'settings[acceptHoverBgColor]',
+                value: settings.acceptHoverBgColor,
+            }) }}
 
-        {{ forms.colorField({
-            label: "Hover Background"|t('cookie-consent-flow'),
-            id:    'acceptHoverBgColor',
-            name:  'settings[acceptHoverBgColor]',
-            value: settings.acceptHoverBgColor,
-        }) }}
-
-        {{ forms.colorField({
-            label: "Hover Text"|t('cookie-consent-flow'),
-            id:    'acceptHoverTextColor',
-            name:  'settings[acceptHoverTextColor]',
-            value: settings.acceptHoverTextColor,
-        }) }}
+            {{ forms.colorField({
+                label: "Hover Text"|t('cookie-consent-flow'),
+                id:    'acceptHoverTextColor',
+                name:  'settings[acceptHoverTextColor]',
+                value: settings.acceptHoverTextColor,
+            }) }}
+        </div>
     </div>
 
-    <h3>{{ "Reject Button"|t('cookie-consent-flow') }}</h3>
+    <div class="cck-section">
+        <h3 class="cck-section__title">{{ "Reject Button"|t('cookie-consent-flow') }}</h3>
+        <div class="cck-color-grid">
+            {{ forms.colorField({
+                label: "Background"|t('cookie-consent-flow'),
+                id:    'rejectBgColor',
+                name:  'settings[rejectBgColor]',
+                value: settings.rejectBgColor,
+            }) }}
 
-    <div class="flex flex-wrap gap-4 mb-4">
-        {{ forms.colorField({
-            label: "Background"|t('cookie-consent-flow'),
-            id:    'rejectBgColor',
-            name:  'settings[rejectBgColor]',
-            value: settings.rejectBgColor,
-        }) }}
+            {{ forms.colorField({
+                label: "Text"|t('cookie-consent-flow'),
+                id:    'rejectTextColor',
+                name:  'settings[rejectTextColor]',
+                value: settings.rejectTextColor,
+            }) }}
 
-        {{ forms.colorField({
-            label: "Text"|t('cookie-consent-flow'),
-            id:    'rejectTextColor',
-            name:  'settings[rejectTextColor]',
-            value: settings.rejectTextColor,
-        }) }}
+            {{ forms.colorField({
+                label: "Border"|t('cookie-consent-flow'),
+                id:    'rejectBorderColor',
+                name:  'settings[rejectBorderColor]',
+                value: settings.rejectBorderColor,
+            }) }}
 
-        {{ forms.colorField({
-            label: "Border"|t('cookie-consent-flow'),
-            id:    'rejectBorderColor',
-            name:  'settings[rejectBorderColor]',
-            value: settings.rejectBorderColor,
-        }) }}
+            {{ forms.colorField({
+                label: "Hover Background"|t('cookie-consent-flow'),
+                id:    'rejectHoverBgColor',
+                name:  'settings[rejectHoverBgColor]',
+                value: settings.rejectHoverBgColor,
+            }) }}
 
-        {{ forms.colorField({
-            label: "Hover Background"|t('cookie-consent-flow'),
-            id:    'rejectHoverBgColor',
-            name:  'settings[rejectHoverBgColor]',
-            value: settings.rejectHoverBgColor,
-        }) }}
-
-        {{ forms.colorField({
-            label: "Hover Text"|t('cookie-consent-flow'),
-            id:    'rejectHoverTextColor',
-            name:  'settings[rejectHoverTextColor]',
-            value: settings.rejectHoverTextColor,
-        }) }}
+            {{ forms.colorField({
+                label: "Hover Text"|t('cookie-consent-flow'),
+                id:    'rejectHoverTextColor',
+                name:  'settings[rejectHoverTextColor]',
+                value: settings.rejectHoverTextColor,
+            }) }}
+        </div>
     </div>
 
-    <h3>{{ "Customize Button"|t('cookie-consent-flow') }}</h3>
+    <div class="cck-section">
+        <h3 class="cck-section__title">{{ "Customize Button"|t('cookie-consent-flow') }}</h3>
+        <div class="cck-color-grid">
+            {{ forms.textField({
+                label: "Background"|t('cookie-consent-flow'),
+                id:    'customizeBgColor',
+                name:  'settings[customizeBgColor]',
+                value: settings.customizeBgColor,
+            }) }}
 
-    <div class="flex flex-wrap gap-4 mb-4">
-        {{ forms.textField({
-            label: "Background"|t('cookie-consent-flow'),
-            id:    'customizeBgColor',
-            name:  'settings[customizeBgColor]',
-            value: settings.customizeBgColor,
-        }) }}
+            {{ forms.colorField({
+                label: "Text"|t('cookie-consent-flow'),
+                id:    'customizeTextColor',
+                name:  'settings[customizeTextColor]',
+                value: settings.customizeTextColor,
+            }) }}
 
-        {{ forms.colorField({
-            label: "Text"|t('cookie-consent-flow'),
-            id:    'customizeTextColor',
-            name:  'settings[customizeTextColor]',
-            value: settings.customizeTextColor,
-        }) }}
+            {{ forms.colorField({
+                label: "Border"|t('cookie-consent-flow'),
+                id:    'customizeBorderColor',
+                name:  'settings[customizeBorderColor]',
+                value: settings.customizeBorderColor,
+            }) }}
 
-        {{ forms.colorField({
-            label: "Border"|t('cookie-consent-flow'),
-            id:    'customizeBorderColor',
-            name:  'settings[customizeBorderColor]',
-            value: settings.customizeBorderColor,
-        }) }}
+            {{ forms.colorField({
+                label: "Hover Background"|t('cookie-consent-flow'),
+                id:    'customizeHoverBgColor',
+                name:  'settings[customizeHoverBgColor]',
+                value: settings.customizeHoverBgColor,
+            }) }}
 
-        {{ forms.colorField({
-            label: "Hover Background"|t('cookie-consent-flow'),
-            id:    'customizeHoverBgColor',
-            name:  'settings[customizeHoverBgColor]',
-            value: settings.customizeHoverBgColor,
-        }) }}
-
-        {{ forms.colorField({
-            label: "Hover Text"|t('cookie-consent-flow'),
-            id:    'customizeHoverTextColor',
-            name:  'settings[customizeHoverTextColor]',
-            value: settings.customizeHoverTextColor,
-        }) }}
+            {{ forms.colorField({
+                label: "Hover Text"|t('cookie-consent-flow'),
+                id:    'customizeHoverTextColor',
+                name:  'settings[customizeHoverTextColor]',
+                value: settings.customizeHoverTextColor,
+            }) }}
+        </div>
     </div>
 
-    <h3>{{ "Save Preferences Button"|t('cookie-consent-flow') }}</h3>
+    <div class="cck-section">
+        <h3 class="cck-section__title">{{ "Save Preferences Button"|t('cookie-consent-flow') }}</h3>
+        <div class="cck-color-grid">
+            {{ forms.colorField({
+                label: "Background"|t('cookie-consent-flow'),
+                id:    'saveBgColor',
+                name:  'settings[saveBgColor]',
+                value: settings.saveBgColor,
+            }) }}
 
-    <div class="flex flex-wrap gap-4 mb-4">
-        {{ forms.colorField({
-            label: "Background"|t('cookie-consent-flow'),
-            id:    'saveBgColor',
-            name:  'settings[saveBgColor]',
-            value: settings.saveBgColor,
-        }) }}
-
-        {{ forms.colorField({
-            label: "Text"|t('cookie-consent-flow'),
-            id:    'saveTextColor',
-            name:  'settings[saveTextColor]',
-            value: settings.saveTextColor,
-        }) }}
+            {{ forms.colorField({
+                label: "Text"|t('cookie-consent-flow'),
+                id:    'saveTextColor',
+                name:  'settings[saveTextColor]',
+                value: settings.saveTextColor,
+            }) }}
+        </div>
     </div>
 
-    <h3>{{ "Close Icon"|t('cookie-consent-flow') }}</h3>
-
-    <div class="flex flex-wrap gap-4 mb-4">
-        {{ forms.colorField({
-            label: "Close Icon Colour"|t('cookie-consent-flow'),
-            id:    'closeIconColor',
-            name:  'settings[closeIconColor]',
-            value: settings.closeIconColor,
-        }) }}
+    <div class="cck-section">
+        <h3 class="cck-section__title">{{ "Close Icon"|t('cookie-consent-flow') }}</h3>
+        <div class="cck-color-grid">
+            {{ forms.colorField({
+                label: "Close Icon Colour"|t('cookie-consent-flow'),
+                id:    'closeIconColor',
+                name:  'settings[closeIconColor]',
+                value: settings.closeIconColor,
+            }) }}
+        </div>
     </div>
 
 </div>{# /#cck-colours #}
