@@ -5,11 +5,19 @@
 {% set fullPageForm = true %}
 {% set selectedSubnavItem = 'settings' %}
 {% set tabs = {
-    categories: { label: "Cookie Categories"|t('cookie-consent-flow'), url: '#tab-categories' },
-    logging:    { label: "Consent Logging"|t('cookie-consent-flow'),   url: '#tab-logging' },
-    advanced:   { label: "Advanced"|t('cookie-consent-flow'),          url: '#tab-advanced' },
+    'cck-categories': {
+        label: "Cookie Categories"|t('cookie-consent-flow'),
+        url: '#cck-categories',
+    },
+    'cck-logging': {
+        label: "Consent Logging"|t('cookie-consent-flow'),
+        url: '#cck-logging',
+    },
+    'cck-advanced': {
+        label: "Advanced"|t('cookie-consent-flow'),
+        url: '#cck-advanced',
+    },
 } %}
-
 {% block actionButton %}
     <div class="btngroup">
         <input type="submit" class="btn submit" value="{{ 'Save'|t('app') }}">
@@ -24,7 +32,7 @@
 <div id="cck-settings">
 
 {# ── Categories ────────────────────────────────────────────────────────── #}
-<div id="tab-categories">
+<div id="cck-categories" role="tabpanel" aria-labelledby="tab-cck-categories">
     <p class="light">{{ "Configure the cookie categories visitors can toggle in the preferences panel."|t('cookie-consent-flow') }}</p>
 
     <div id="cck-categories-list">
@@ -49,8 +57,7 @@
 </div>{# /tab-categories #}
 
 {# ── Consent Logging ───────────────────────────────────────────────────── #}
-<div id="tab-logging" class="hidden">
-
+<div id="cck-logging" class="hidden" role="tabpanel" aria-labelledby="tab-cck-logging">
     {{ forms.lightswitchField({
         label:        "Log Consent Events"|t('cookie-consent-flow'),
         instructions: "Store a privacy-safe record of each consent action in the database."|t('cookie-consent-flow'),
@@ -72,7 +79,7 @@
 </div>{# /tab-logging #}
 
 {# ── Advanced ──────────────────────────────────────────────────────────── #}
-<div id="tab-advanced" class="hidden">
+<div id="cck-advanced" class="hidden" role="tabpanel" aria-labelledby="tab-cck-advanced">
 
     <p class="light">{{ "Additional plugin-level options."|t('cookie-consent-flow') }}</p>
 
