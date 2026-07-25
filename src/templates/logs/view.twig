@@ -1,0 +1,81 @@
+{% extends "_layouts/cp" %}
+
+{% set title = "Consent Record"|t('cookie-consent-flow') %}
+{% set selectedSubnavItem = 'logs' %}
+
+{% block content %}
+
+{% set categories = record.categories|json_decode %}
+
+<div class="ccf-detail-card">
+
+    <h2>Additional Information</h2>
+
+    <table class="data fullwidth">
+
+        <tbody>
+
+        <tr>
+            <th>ID</th>
+            <td>{{ record.id }}</td>
+        </tr>
+
+        <tr>
+            <th>Visitor UUID</th>
+            <td>{{ record.visitorUuid }}</td>
+        </tr>
+
+        <tr>
+            <th>IP Hash</th>
+            <td>{{ record.ipHash }}</td>
+        </tr>
+
+        <tr>
+            <th>Country</th>
+            <td>{{ record.countryCode ?: '—' }}</td>
+        </tr>
+
+        <tr>
+            <th>Site ID</th>
+            <td>{{ record.siteId }}</td>
+        </tr>
+
+        <tr>
+            <th>User Agent</th>
+            <td>{{ record.userAgent }}</td>
+        </tr>
+
+        <tr>
+            <th>Created</th>
+            <td>{{ record.dateCreated|date('Y-m-d H:i:s') }}</td>
+        </tr>
+
+        </tbody>
+
+    </table>
+
+</div>
+
+<div class="ccf-detail-card">
+
+    <h2>Accepted Categories</h2>
+
+    <div class="ccf-category-list">
+
+        {% for category in categories %}
+            <span class="ccf-category-pill">
+                {{ category|capitalize }}
+            </span>
+        {% endfor %}
+
+    </div>
+
+</div>
+
+<div style="margin-top:20px;">
+    <a class="btn" href="{{ cpUrl('cookie-consent-flow/logs') }}">
+        Back to Logs
+    </a>
+</div>
+
+{% endblock %}

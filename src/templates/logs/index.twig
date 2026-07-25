@@ -1,0 +1,136 @@
+{% extends "_layouts/cp" %}
+
+{% set title = "Consent Logs"|t('cookie-consent-flow') %}
+{% set selectedSubnavItem = 'logs' %}
+
+{% import _self as self %}
+
+{% block content %}
+
+<div class="ccf-stats-grid">
+    {% for card in statsCards %}
+        <div class="ccf-stat-card">
+            <div class="ccf-stat-title">
+                {{ card.label }}
+            </div>
+
+            <div class="ccf-stat-main">
+                {{ card.count }}
+            </div>
+
+            {% if card.label != 'Total Records' %}
+                <div class="ccf-stat-meta">
+                    {{ card.percent }}% of total consents
+                </div>
+            {% else %}
+                <div class="ccf-stat-meta">
+                    Total consent submissions
+                </div>
+            {% endif %}
+        </div>
+    {% endfor %}
+</div>
+
+{# ── Empty state ─────────────────────────────────────────────────────── #}
+{% if records is empty %}
+    <div class="zilch">
+        <p>{{ "No consent records found."|t('cookie-consent-flow') }}</p>
+    </div>
+
+{% else %}
+
+{# ── Records table ───────────────────────────────────────────────────── #}
+<div class="tableview tablepane ccf-table-wrapper">
+    <table class="data ccf-log-table">
+        <thead>
+            <tr>
+                <th>{{ "Visitor UUID"|t('cookie-consent-flow') }}</th>
+                <th>{{ "Action"|t('cookie-consent-flow') }}</th>
+                <th>{{ "Categories"|t('cookie-consent-flow') }}</th>
+                <th>{{ "Country"|t('cookie-consent-flow') }}</th>
+                <th></th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for record in records %}
+
+                {% set cats = record.categories|json_decode %}
+                {% set catLabels = [] %}
+
+                {% for cat in cats %}
+                    {% set catLabels = catLabels|merge([cat|capitalize]) %}
+                {% endfor %}
+
+                {% if record.action == 'accept_all' %}
+                    {% set badgeClass = 'green' %}
+                    {% set actionLabel = 'Accept All' %}
+                {% elseif record.action == 'reject_all' %}
+                    {% set badgeClass = 'red' %}
+                    {% set actionLabel = 'Reject All' %}
+                {% else %}
+                    {% set badgeClass = 'blue' %}
+                    {% set actionLabel = 'Custom' %}
+                {% endif %}
+
+                <tr>
+                    <td>
+                        {{ record.visitorUuid }}
+                    </td>
+
+                    <td>
+                        <span class="ccf-action-badge ccf-{{ badgeClass }}">
+                            {{ actionLabel }}
+                        </span>
+                    </td>
+
+                    <td>
+                        <div class="ccf-category-pills">
+                            {% for label in catLabels %}
+                                <span class="ccf-category-pill-table">
+                                    {{ label }}
+                                </span>
+                            {% endfor %}
+                        </div>
+                    </td>
+
+                    <td>
+                        {{ record.countryCode ?: '—' }}
+                    </td>
+
+                    <td>
+                        <a href="{{ cpUrl('cookie-consent-flow/logs/view/' ~ record.id) }}" class="btn small">
+                            View
+                        </a>
+                    </td>
+                </tr>
+
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+
+{# ── Pagination ──────────────────────────────────────────────────────── #}
+{% if totalPages > 1 %}
+<nav class="flex center" style="margin-top:24px;gap:8px;">
+    {% if page > 1 %}
+        <a href="{{ url('admin/cookie-consent-flow/logs', { page: page - 1 }) }}"
+           class="btn">← {{ "Previous"|t('app') }}</a>
+    {% endif %}
+
+    <span class="light">
+        {{ "Page {current} of {total}"|t('cookie-consent-flow', {
+            current: page,
+            total:   totalPages
+        }) }}
+    </span>
+
+    {% if page < totalPages %}
+        <a href="{{ url('admin/cookie-consent-flow/logs', { page: page + 1 }) }}"
+           class="btn">{{ "Next"|t('app') }} →</a>
+    {% endif %}
+</nav>
+{% endif %}
+
+{% endif %}{# /empty check #}
+
+{% endblock %}

@@ -54,10 +54,14 @@ class SettingsController extends Controller
 
         $raw = $request->getBodyParam('settings', []);
 
-        // Normalise boolean lightswitch fields
+        // Normalise boolean lightswitch fields (only when they are present
+        // in the submitted form). This avoids overwriting existing saved
+        // values when the form doesn't contain those controls.
         $boolFields = ['bannerEnabled', 'geoEnabled', 'fullWidth', 'shadow', 'fixedPosition'];
         foreach ($boolFields as $field) {
-            $raw[$field] = !empty($raw[$field]);
+            if (array_key_exists($field, $raw)) {
+                $raw[$field] = !empty($raw[$field]);
+            }
         }
 
         // Normalise geoTargetCountries (comma-separated string → array)
@@ -113,10 +117,13 @@ class SettingsController extends Controller
             $raw['categories'] = $normalised;
         }
 
-        // Normalise boolean lightswitch fields (Craft sends '1' or '')
+        // Normalise boolean lightswitch fields (only when present in the
+        // posted data). Craft sends '1' or '' for on/off.
         $boolFields = ['bannerEnabled', 'geoEnabled', 'logEnabled', 'fullWidth', 'shadow', 'fixedPosition'];
         foreach ($boolFields as $field) {
-            $raw[$field] = !empty($raw[$field]);
+            if (array_key_exists($field, $raw)) {
+                $raw[$field] = !empty($raw[$field]);
+            }
         }
 
         // Normalise geoTargetCountries (comma-separated string → array)
@@ -126,7 +133,13 @@ class SettingsController extends Controller
             );
         }
 
-        if (!Craft::$app->getPlugins()->savePluginSettings($plugin, $raw)) {
+        // Merge posted values with current settings so fields not present
+        // in the submitted form (for example banner colours from the
+        // Banner tab) are preserved.
+        $current = $plugin->getSettings()->toArray();
+        $merged  = array_merge($current, $raw);
+
+        if (!Craft::$app->getPlugins()->savePluginSettings($plugin, $merged)) {
             Craft::$app->getSession()->setError(Craft::t('cookie-consent-flow', 'Couldn\'t save settings.'));
 
             $redirect = $request->getBodyParam('redirect');

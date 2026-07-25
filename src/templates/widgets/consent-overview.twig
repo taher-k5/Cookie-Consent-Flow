@@ -1,9 +1,32 @@
 {#
   Widget template — Consent Overview.
   Rendered by ConsentWidget::getBodyHtml().
-
-  TODO: Replace placeholder markup with real stats once ConsentService is implemented.
 #}
-<div class="cck-widget">
-    <p class="light">{{ "No data yet. Consent logging will appear here once enabled."|t('cookie-consent-flow') }}</p>
-</div>
+{% if stats.total is not defined or stats.total == 0 %}
+    <div class="cck-widget">
+        <p class="light">{{ "No data yet. Consent logging will appear here once enabled."|t('cookie-consent-flow') }}</p>
+    </div>
+{% else %}
+    <div class="cck-widget cck-widget-stats">
+        <div class="cck-widget-stat">
+            <div class="cck-widget-stat__number">{{ stats.total }}</div>
+            <div class="cck-widget-stat__label">{{ "Total"|t('cookie-consent-flow') }}</div>
+        </div>
+        <div class="cck-widget-stat">
+            <div class="cck-widget-stat__number cck-widget-stat__number--green">{{ stats.acceptAll }}</div>
+            <div class="cck-widget-stat__label">{{ "Accepted All"|t('cookie-consent-flow') }}</div>
+        </div>
+        <div class="cck-widget-stat">
+            <div class="cck-widget-stat__number cck-widget-stat__number--red">{{ stats.rejectAll }}</div>
+            <div class="cck-widget-stat__label">{{ "Rejected All"|t('cookie-consent-flow') }}</div>
+        </div>
+        <div class="cck-widget-stat">
+            <div class="cck-widget-stat__number cck-widget-stat__number--blue">{{ stats.custom }}</div>
+            <div class="cck-widget-stat__label">{{ "Custom"|t('cookie-consent-flow') }}</div>
+        </div>
+    </div>
+
+    <p class="cck-widget-link">
+        <a href="{{ logsUrl }}">{{ "View all consent logs"|t('cookie-consent-flow') }} &rarr;</a>
+    </p>
+{% endif %}

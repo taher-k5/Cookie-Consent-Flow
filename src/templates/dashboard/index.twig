@@ -6,39 +6,69 @@
 <div class="cck-dashboard">
     <div class="readable">
 
-        {# Stats #}
-        <div class="cck-stat-grid">
-            <div class="cck-stat">
-                <div class="cck-stat__number">{{ stats.total }}</div>
-                <div class="cck-stat__label">{{ "Total Consents"|t('cookie-consent-flow') }}</div>
+        <h2>{{ "Live Banner Preview"|t('cookie-consent-flow') }}</h2>
+        <p class="light">
+            {{ "This is how your cookie banner currently looks to visitors, using your saved Banner settings."|t('cookie-consent-flow') }}
+        </p>
+
+        {# ── Device size switcher (outside the preview frame) ── #}
+        <div class="cck-preview-devices" role="group" aria-label="{{ 'Preview device size'|t('cookie-consent-flow') }}">
+            <button type="button" class="cck-preview-device-btn sel" data-device="desktop">{{ "Desktop"|t('cookie-consent-flow') }}</button>
+            <button type="button" class="cck-preview-device-btn" data-device="tablet">{{ "Tablet"|t('cookie-consent-flow') }}</button>
+            <button type="button" class="cck-preview-device-btn" data-device="mobile">{{ "Mobile"|t('cookie-consent-flow') }}</button>
+        </div>
+
+        {# ── Site skeleton + real banner rendered on top, as a preview ── #}
+        <div class="cck-preview-frame">
+            <span class="cck-preview-badge">{{ "Live Preview"|t('cookie-consent-flow') }}</span>
+
+            <div class="cck-preview-chrome">
+                <span class="cck-preview-dot"></span>
+                <span class="cck-preview-dot"></span>
+                <span class="cck-preview-dot"></span>
+                <span class="cck-preview-url">yoursite.com</span>
             </div>
-            <div class="cck-stat">
-                <div class="cck-stat__number">{{ stats.acceptAll }}</div>
-                <div class="cck-stat__label">{{ "Accepted All"|t('cookie-consent-flow') }}</div>
-            </div>
-            <div class="cck-stat">
-                <div class="cck-stat__number">{{ stats.rejectAll }}</div>
-                <div class="cck-stat__label">{{ "Rejected All"|t('cookie-consent-flow') }}</div>
-            </div>
-            <div class="cck-stat">
-                <div class="cck-stat__number">{{ stats.custom }}</div>
-                <div class="cck-stat__label">{{ "Custom Choices"|t('cookie-consent-flow') }}</div>
+
+            <div class="cck-preview-body">
+                {# Fake nav #}
+                <div class="cck-skeleton-nav">
+                    <span class="cck-skeleton cck-skeleton--logo"></span>
+                    <span class="cck-skeleton cck-skeleton--pill cck-skeleton--pill-first"></span>
+                    <span class="cck-skeleton cck-skeleton--pill"></span>
+                    <span class="cck-skeleton cck-skeleton--pill"></span>
+                </div>
+
+                {# Fake hero #}
+                <div class="cck-skeleton-hero">
+                    <span class="cck-skeleton cck-skeleton--line cck-skeleton--w60"></span>
+                    <span class="cck-skeleton cck-skeleton--line cck-skeleton--w40"></span>
+                    <span class="cck-skeleton cck-skeleton--btn"></span>
+                </div>
+
+                {# Fake content cards #}
+                <div class="cck-skeleton-grid">
+                    <span class="cck-skeleton cck-skeleton--card"></span>
+                    <span class="cck-skeleton cck-skeleton--card"></span>
+                    <span class="cck-skeleton cck-skeleton--card"></span>
+                </div>
+
+                {# The real banner, rendered with the admin's actual saved settings #}
+                {% include 'cookie-consent-flow/banner/_banner' with { settings: settings } %}
             </div>
         </div>
 
         <p>
-            <a href="{{ cpUrl('cookie-consent-flow/banner') }}" class="btn">
+            <a href="{{ cpUrl('cookie-consent-flow/banner') }}" class="btn submit">
                 {{ "Edit Banner"|t('cookie-consent-flow') }}
             </a>
-        </p>
-
-        <p>
             <a href="{{ cpUrl('cookie-consent-flow/settings') }}" class="btn">
                 {{ "Edit Settings"|t('cookie-consent-flow') }}
+            </a>
+            <a href="{{ cpUrl('cookie-consent-flow/logs') }}" class="btn">
+                {{ "View Consent Logs"|t('cookie-consent-flow') }}
             </a>
         </p>
 
     </div>
 </div>
 {% endblock %}
-

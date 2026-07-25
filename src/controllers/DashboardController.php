@@ -18,12 +18,20 @@ class DashboardController extends Controller
     {
         $this->requireCpRequest();
 
-        $plugin = Plugin::getInstance();
+        $plugin   = Plugin::getInstance();
+        $settings = $plugin->getSettings();
+
+        // Publish only the banner's CSS (not its JS) so the live preview
+        // below renders with the admin's real styling, without wiring up
+        // the consent buttons — clicking Accept/Reject inside the CP must
+        // never submit a real consent record.
+        $assetSrcPath = Craft::getAlias('@sfsinfotech/craftcookieconsentflow') . '/web/assets/banner';
+        [, $baseUrl]  = Craft::$app->getAssetManager()->publish($assetSrcPath);
+        Craft::$app->getView()->registerCssFile($baseUrl . '/cookie-banner.css');
 
         return $this->renderTemplate('cookie-consent-flow/dashboard/index', [
             'plugin'   => $plugin,
-            'settings' => $plugin->getSettings(),
-            'stats'    => $plugin->consent->getStats(),
+            'settings' => $settings,
         ]);
     }
 }

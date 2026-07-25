@@ -107,6 +107,10 @@ class Plugin extends BasePlugin
                 'label' => Craft::t('cookie-consent-flow', 'Banner'),
                 'url'   => 'cookie-consent-flow/banner',
             ],
+            'logs' => [
+                'label' => Craft::t('cookie-consent-flow', 'Consent Logs'),
+                'url'   => 'cookie-consent-flow/logs',
+            ],
             'settings' => [
                 'label' => Craft::t('cookie-consent-flow', 'Settings'),
                 'url'   => 'cookie-consent-flow/settings',
@@ -150,13 +154,16 @@ class Plugin extends BasePlugin
             UrlManager::class,
             UrlManager::EVENT_REGISTER_CP_URL_RULES,
             function (RegisterUrlRulesEvent $event): void {
-                $event->rules['cookie-consent-flow']                     = 'cookie-consent-flow/dashboard/index';
-                $event->rules['cookie-consent-flow/banner']                  = 'cookie-consent-flow/settings/banner';
+                $event->rules['cookie-consent-flow']                       = 'cookie-consent-flow/dashboard/index';
+                $event->rules['cookie-consent-flow/banner']                = 'cookie-consent-flow/settings/banner';
                 $event->rules['POST cookie-consent-flow/banner/save']      = 'cookie-consent-flow/settings/save-banner';
+                $event->rules['cookie-consent-flow/logs']                  = 'cookie-consent-flow/logs/index';
+                $event->rules['cookie-consent-flow/logs/view/<id:\d+>']    = 'cookie-consent-flow/logs/view';
                 $event->rules['cookie-consent-flow/settings']              = 'cookie-consent-flow/settings/index';
                 $event->rules['POST cookie-consent-flow/settings/save']    = 'cookie-consent-flow/settings/save';
+
             }
-        );
+    );
     }
 
     private function _registerVariable(): void

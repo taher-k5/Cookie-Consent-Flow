@@ -180,3 +180,458 @@
     margin-top: 8px;
 }
 
+.ccf-stats-grid {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 16px;
+    margin-bottom: 30px;
+}
+
+.ccf-stat-card{
+    background:#F3F7FC;
+    border:1px solid #e5e7eb;
+    border-radius:10px;
+    padding:20px;
+    transition:.2s ease;
+}
+
+.ccf-stat-card:hover{
+    box-shadow:0 4px 12px rgba(0,0,0,.05);
+}
+
+.ccf-stat-title{
+    font-size:20px;
+    font-weight:600;
+    color:#6b7280;
+    margin-bottom:12px;
+    text-transform:uppercase;
+    letter-spacing:.04em;
+}
+
+.ccf-stat-main{
+    font-size:38px;
+    font-weight:700;
+    line-height:1;
+    color:#111827;
+}
+
+.ccf-stat-meta{
+    margin-top:8px;
+    font-size:15px;
+    color:#2563eb;
+    font-weight:600;
+}
+
+.ccf-stat-values {
+    display: flex;
+    align-items: baseline;
+    gap: 6px;
+}
+
+.ccf-stat-count {
+    font-size: 32px;
+    font-weight: 700;
+    color: #111827;
+}
+
+.ccf-stat-divider {
+    font-size: 22px;
+    color: #9ca3af;
+}
+
+.ccf-stat-percent {
+    font-size: 22px;
+    font-weight: 600;
+    color: #2563eb;
+}
+
+.ccf-detail-card {
+    background:#fff;
+    border:1px solid #e5e7eb;
+    border-radius:8px;
+    padding:24px;
+    margin-bottom:20px;
+}
+
+.ccf-detail-card h2 {
+    margin:0 0 16px;
+    font-size:18px;
+}
+
+.ccf-category-list {
+    display:flex;
+    flex-wrap:wrap;
+    gap:10px;
+}
+
+.ccf-category-pill {
+    background:#2563eb;
+    color:#fff;
+    padding:6px 12px;
+    border-radius:999px;
+    font-size:12px;
+    font-weight:600;
+}
+
+.ccf-category-pills{
+    display:flex;
+    flex-wrap:wrap;
+    gap:6px;
+}
+
+.ccf-category-pill-table{
+    background:#eef4ff;
+    color:#2563eb;
+    border-radius:999px;
+    padding:4px 10px;
+    font-size:11px;
+    font-weight:600;
+    white-space:nowrap;
+}
+
+.ccf-action-badge{
+    display:inline-flex;
+    align-items:center;
+    justify-content:center;
+    padding:4px 12px;
+    border-radius:999px;
+    font-size:11px;
+    font-weight:600;
+}
+
+.ccf-green{
+    background:#dcfce7;
+    color:#166534;
+}
+
+.ccf-red{
+    background:#fee2e2;
+    color:#991b1b;
+}
+
+.ccf-blue{
+    background:#dbeafe;
+    color:#1d4ed8;
+}
+
+.ccf-log-table{
+    width:100%;
+}
+
+.ccf-log-table td{
+    vertical-align:middle;
+}
+
+.ccf-log-table tbody tr:hover{
+    background:#f8fafc;
+}
+
+/* Horizontal scrolling table */
+.ccf-table-wrapper{
+    overflow-x:auto;
+    overflow-y:hidden;
+    width:100%;
+}
+
+/* Minimum width so columns never compress */
+.ccf-log-table{
+    min-width:1200px;
+    width:100%;
+}
+
+/* Prevent all columns from wrapping */
+.ccf-log-table th,
+.ccf-log-table td{
+    white-space:nowrap;
+    vertical-align:middle;
+}
+
+/* UUID */
+.ccf-uuid-col{
+    min-width:320px;
+}
+
+.ccf-uuid-link{
+    font-family:monospace;
+    text-decoration:none;
+}
+
+/* Action badge */
+.ccf-action-badge{
+    white-space:nowrap;
+    min-width:100px;
+}
+
+/* Categories */
+.ccf-category-pills{
+    display:flex;
+    flex-wrap:nowrap;
+    gap:6px;
+}
+
+.ccf-category-pill-table{
+    flex-shrink:0;
+    white-space:nowrap;
+}
+
+/* Country */
+.ccf-log-table td:nth-child(4){
+    min-width:80px;
+    text-align:center;
+}
+
+/* View button */
+.ccf-log-table td:last-child{
+    min-width:100px;
+    text-align:right;
+}
+
+/* Hover */
+.ccf-log-table tbody tr:hover{
+    background:#f8fafc;
+}
+
+/* --------------------------------------------------------------------------
+   Dashboard widget — Consent Overview
+   -------------------------------------------------------------------------- */
+.cck-widget-stats {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 10px;
+}
+
+.cck-widget-stat {
+    background: #F3F7FC;
+    border: 1px solid #e5e7eb;
+    border-radius: 8px;
+    padding: 10px 12px;
+}
+
+.cck-widget-stat__number {
+    font-size: 22px;
+    font-weight: 700;
+    line-height: 1;
+    color: #111827;
+}
+
+.cck-widget-stat__number--green { color: #16a34a; }
+.cck-widget-stat__number--red   { color: #dc2626; }
+.cck-widget-stat__number--blue  { color: #2563eb; }
+
+.cck-widget-stat__label {
+    margin-top: 4px;
+    font-size: 12px;
+    color: #6b7280;
+    text-transform: uppercase;
+}
+
+.cck-widget-link {
+    margin-top: 12px;
+    margin-bottom: 0;
+}
+
+/* --------------------------------------------------------------------------
+   Dashboard — live banner preview (site skeleton + real banner overlaid)
+   -------------------------------------------------------------------------- */
+.cck-preview-frame {
+    position: relative;
+    overflow: hidden;
+    border: 1px solid #e5e7eb;
+    border-radius: 10px;
+    background: #fff;
+    margin: 16px 0 24px;
+}
+
+.cck-preview-badge {
+    position: absolute;
+    top: 12px;
+    right: 12px;
+    z-index: 100000;
+    background: rgba(17, 24, 39, .85);
+    color: #fff;
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: .04em;
+    text-transform: uppercase;
+    padding: 4px 10px;
+    border-radius: 20px;
+    pointer-events: none;
+}
+
+.cck-preview-chrome {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 10px 14px;
+    background: #f3f4f6;
+    border-bottom: 1px solid #e5e7eb;
+}
+
+.cck-preview-dot {
+    width: 9px;
+    height: 9px;
+    border-radius: 50%;
+    background: #d1d5db;
+}
+
+.cck-preview-url {
+    margin-left: 8px;
+    font-size: 12px;
+    color: #9ca3af;
+    background: #fff;
+    border: 1px solid #e5e7eb;
+    border-radius: 4px;
+    padding: 2px 10px;
+}
+
+/* Device size switcher — sits above the preview frame */
+.cck-preview-devices {
+    display: flex;
+    justify-content: flex-end;
+    gap: 6px;
+    margin-bottom: 10px;
+}
+
+.cck-preview-device-btn {
+    font-size: 12px;
+    font-weight: 600;
+    color: #6b7280;
+    background: #fff;
+    border: 1px solid #e5e7eb;
+    border-radius: 6px;
+    padding: 4px 12px;
+    cursor: pointer;
+}
+
+.cck-preview-device-btn:hover {
+    background: #f3f4f6;
+}
+
+.cck-preview-device-btn.sel {
+    background: #2563eb;
+    color: #fff;
+    border-color: #2563eb;
+}
+
+.cck-preview-body {
+    position: relative;
+    min-height: 480px;
+    padding: 28px;
+    overflow: hidden;
+    transition: max-width .2s ease;
+}
+
+/* Tablet / mobile — shrink the frame itself and grow its height so the
+   simulated device reads as a taller, narrower viewport. */
+.cck-preview-frame.cck-preview--tablet {
+    max-width: 768px;
+    margin-left: auto;
+    margin-right: auto;
+}
+.cck-preview-frame.cck-preview--tablet .cck-preview-body {
+    min-height: 620px;
+}
+
+.cck-preview-frame.cck-preview--mobile {
+    max-width: 375px;
+    margin-left: auto;
+    margin-right: auto;
+}
+.cck-preview-frame.cck-preview--mobile .cck-preview-body {
+    min-height: 700px;
+    padding: 20px;
+}
+
+/* Mobile skeleton adjustments */
+.cck-preview-frame.cck-preview--mobile .cck-skeleton-grid {
+    grid-template-columns: 1fr;
+}
+
+.cck-preview-frame.cck-preview--mobile .cck-skeleton-nav .cck-skeleton--pill:not(.cck-skeleton--pill-first) {
+    display: none;
+}
+
+.cck-preview-frame.cck-preview--mobile .cck-skeleton-nav .cck-skeleton--pill-first {
+    width: 24px;
+    height: 24px;
+    border-radius: 4px;
+}
+
+/* Mobile banner adjustments — mirrors the real @media(max-width:600px)
+   rules in cookie-banner.css, keyed to the preview's own mobile mode
+   instead of the CP browser's actual viewport width (which stays desktop
+   width even while this frame is shrunk down). */
+.cck-preview-frame.cck-preview--mobile .cck-layout--bottom-bar .cck-banner__inner,
+.cck-preview-frame.cck-preview--mobile .cck-layout--top-bar .cck-banner__inner {
+    flex-direction: column;
+    align-items: stretch;
+}
+
+.cck-preview-frame.cck-preview--mobile .cck-banner__actions {
+    flex-direction: column;
+}
+
+.cck-preview-frame.cck-preview--mobile .cck-btn {
+    width: 100%;
+    justify-content: center;
+}
+
+.cck-preview-frame.cck-preview--mobile .cck-layout--corner-popup {
+    bottom: 0;
+    right: 0;
+    left: 0;
+    width: 100%;
+    border-radius: var(--cck-radius, 8px) var(--cck-radius, 8px) 0 0;
+}
+
+/* Skeleton placeholders — a generic "site" for the banner to sit on top of */
+.cck-skeleton {
+    display: block;
+    background: #e5e7eb;
+    border-radius: 4px;
+}
+
+.cck-skeleton-nav {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    margin-bottom: 32px;
+}
+
+.cck-skeleton--logo { width: 32px; height: 32px; border-radius: 6px; }
+.cck-skeleton--pill { width: 64px; height: 10px; border-radius: 10px; }
+.cck-skeleton--pill-first { margin-left: auto; }
+
+.cck-skeleton-hero { margin-bottom: 36px; }
+.cck-skeleton--line { height: 14px; margin-bottom: 10px; }
+.cck-skeleton--w60 { width: 60%; }
+.cck-skeleton--w40 { width: 40%; }
+.cck-skeleton--btn { width: 110px; height: 32px; border-radius: 6px; margin-top: 16px; background: #dbe5f5; }
+
+.cck-skeleton-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 16px;
+}
+
+.cck-skeleton--card { height: 90px; border-radius: 8px; }
+
+/* Force the real banner to render inside the preview frame (instead of
+   fixed to the browser viewport) and ignore its default [hidden] state,
+   without touching its production CSS. */
+.cck-preview-frame #cck-banner[hidden],
+.cck-preview-frame #cck-banner-overlay[hidden] {
+    display: block !important;
+}
+
+.cck-preview-frame .cck-banner,
+.cck-preview-frame .cck-banner-overlay {
+    position: absolute !important;
+}
+
+/* Read-only preview — the CP must never let an admin submit a real
+   consent choice by clicking Accept/Reject inside this mockup. */
+.cck-preview-frame #cck-banner,
+.cck-preview-frame #cck-banner-overlay {
+    pointer-events: none;
+}

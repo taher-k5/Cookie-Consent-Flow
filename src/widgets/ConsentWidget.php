@@ -4,11 +4,11 @@ namespace sfsinfotech\craftcookieconsentflow\widgets;
 
 use Craft;
 use craft\base\Widget;
+use craft\helpers\UrlHelper;
+use sfsinfotech\craftcookieconsentflow\Plugin;
 
 /**
  * Consent Widget — CP Dashboard widget showing a consent activity summary.
- *
- * TODO: Implement data fetching and widget body rendering.
  */
 class ConsentWidget extends Widget
 {
@@ -29,10 +29,14 @@ class ConsentWidget extends Widget
 
     public function getBodyHtml(): ?string
     {
-        // TODO: Query ConsentLogRecord for summary stats and render a template.
+        $stats = Plugin::getInstance()->consent->getStats();
+
         return Craft::$app->getView()->renderTemplate(
             'cookie-consent-flow/widgets/consent-overview',
-            ['stats' => []]
+            [
+                'stats'   => $stats,
+                'logsUrl' => UrlHelper::cpUrl('cookie-consent-flow/logs'),
+            ]
         );
     }
 }

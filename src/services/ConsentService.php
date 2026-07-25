@@ -113,6 +113,29 @@ class ConsentService extends Component
     }
 
     /**
+     * Returns a paginated list of consent log records for the CP log viewer.
+     *
+     * @param  string $actionFilter  '' (all), 'accept_all', 'reject_all', or 'custom'
+     * @param  int    $page          1-based page number
+     * @param  int    $perPage       Rows per page
+     * @return array{0: ConsentLogRecord[], 1: int}  [records, totalCount]
+     */
+    public function getLogs(string $actionFilter = '', int $page = 1, int $perPage = 50): array
+    {
+        $query = ConsentLogRecord::find()->orderBy(['dateCreated' => SORT_DESC]);
+
+        if ($actionFilter !== '') {
+            $query->andWhere(['action' => $actionFilter]);
+        }
+
+        $total   = (int) (clone $query)->count();
+        $offset  = ($page - 1) * $perPage;
+        $records = $query->limit($perPage)->offset($offset)->all();
+
+        return [$records, $total];
+    }
+
+    /**
      * Deletes consent log records older than the configured retention period.
      * Call from a queue job or console command on a schedule.
      */
@@ -127,6 +150,11 @@ class ConsentService extends Component
         $cutoff = (new \DateTime())->modify("-{$days} days")->format('Y-m-d H:i:s');
 
         return (int) ConsentLogRecord::deleteAll(['<', 'dateCreated', $cutoff]);
+    }
+
+    public function getLogById(int $id): ?ConsentLogRecord
+    {
+        return ConsentLogRecord::findOne($id);
     }
 }
 

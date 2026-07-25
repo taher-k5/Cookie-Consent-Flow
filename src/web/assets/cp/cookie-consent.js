@@ -142,6 +142,27 @@
       });
     }
 
+    /* ------------------------------------------------------------------
+       Dashboard live preview — Desktop / Tablet / Mobile switcher
+    ------------------------------------------------------------------ */
+    var previewFrame   = document.querySelector('.cck-preview-frame');
+    var deviceButtons  = document.querySelectorAll('.cck-preview-device-btn');
+
+    if (previewFrame && deviceButtons.length) {
+      deviceButtons.forEach(function (btn) {
+        btn.addEventListener('click', function () {
+          var device = btn.getAttribute('data-device');
+
+          previewFrame.classList.remove('cck-preview--tablet', 'cck-preview--mobile');
+          if (device === 'tablet' || device === 'mobile') {
+            previewFrame.classList.add('cck-preview--' + device);
+          }
+
+          deviceButtons.forEach(function (b) { b.classList.toggle('sel', b === btn); });
+        });
+      });
+    }
+
   });
 
 }());
