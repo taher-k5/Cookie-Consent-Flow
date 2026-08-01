@@ -14,6 +14,20 @@ class SettingsController extends Controller
 {
     protected array|int|bool $allowAnonymous = false;
 
+    public function beforeAction($action): bool
+    {
+        if (!parent::beforeAction($action)) {
+            return false;
+        }
+
+        // Editing these settings means editing HTML rendered on every
+        // front-end page for every visitor — restrict beyond "logged into
+        // the control panel" to a specific, grantable permission.
+        $this->requirePermission('cookieConsentFlow:manageSettings');
+
+        return true;
+    }
+
     public function actionIndex(): Response
     {
         $this->requireCpRequest();

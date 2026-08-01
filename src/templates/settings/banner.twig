@@ -48,31 +48,81 @@
         on:           settings.bannerEnabled,
     }) }}
 
-    {{ forms.selectField({
+    {% set bannerLayoutOptions = [
+        {
+            value: 'bottom-bar',
+            label: "Bottom Bar"|t('cookie-consent-flow'),
+            icon:  '<rect x="1" y="1" width="30" height="20" rx="2" stroke="currentColor" stroke-width="1.5"/><rect x="1" y="15" width="30" height="6" rx="1" fill="currentColor"/>',
+        },
+        {
+            value: 'top-bar',
+            label: "Top Bar"|t('cookie-consent-flow'),
+            icon:  '<rect x="1" y="1" width="30" height="20" rx="2" stroke="currentColor" stroke-width="1.5"/><rect x="1" y="1" width="30" height="6" rx="1" fill="currentColor"/>',
+        },
+        {
+            value: 'center-popup',
+            label: "Center Popup"|t('cookie-consent-flow'),
+            icon:  '<rect x="1" y="1" width="30" height="20" rx="2" stroke="currentColor" stroke-width="1.5"/><rect x="9" y="6" width="14" height="10" rx="1" fill="currentColor"/>',
+        },
+        {
+            value: 'corner-popup',
+            label: "Corner Popup"|t('cookie-consent-flow'),
+            icon:  '<rect x="1" y="1" width="30" height="20" rx="2" stroke="currentColor" stroke-width="1.5"/><rect x="18" y="11" width="12" height="9" rx="1" fill="currentColor"/>',
+        },
+    ] %}
+
+    {% set bannerLayoutInput %}
+        <input type="hidden" id="bannerLayout" name="settings[bannerLayout]" value="{{ settings.bannerLayout }}">
+        <div class="cck-btn-group" data-input="bannerLayout">
+            {% for option in bannerLayoutOptions %}
+                <button type="button"
+                        class="cck-btn-option{% if settings.bannerLayout == option.value %} sel{% endif %}"
+                        data-value="{{ option.value }}">
+                    <svg width="32" height="22" viewBox="0 0 32 22" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">{{ option.icon|raw }}</svg>
+                    <span>{{ option.label }}</span>
+                </button>
+            {% endfor %}
+        </div>
+    {% endset %}
+
+    {{ forms.field({
         label:        "Banner Layout"|t('cookie-consent-flow'),
         instructions: "Choose how and where the banner appears on the page."|t('cookie-consent-flow'),
         id:           'bannerLayout',
-        name:         'settings[bannerLayout]',
-        value:        settings.bannerLayout,
-        options: [
-            { value: 'bottom-bar',   label: "Bottom Bar"|t('cookie-consent-flow') },
-            { value: 'top-bar',      label: "Top Bar"|t('cookie-consent-flow') },
-            { value: 'center-popup', label: "Center Popup"|t('cookie-consent-flow') },
-            { value: 'corner-popup', label: "Corner Popup"|t('cookie-consent-flow') },
-        ],
-    }) }}
+    }, bannerLayoutInput) }}
+
+    {% set cornerPositionOptions = [
+        {
+            value: 'bottom-right',
+            label: "Bottom Right"|t('cookie-consent-flow'),
+            icon:  '<rect x="1" y="1" width="30" height="20" rx="2" stroke="currentColor" stroke-width="1.5"/><rect x="18" y="11" width="12" height="9" rx="1" fill="currentColor"/>',
+        },
+        {
+            value: 'bottom-left',
+            label: "Bottom Left"|t('cookie-consent-flow'),
+            icon:  '<rect x="1" y="1" width="30" height="20" rx="2" stroke="currentColor" stroke-width="1.5"/><rect x="2" y="11" width="12" height="9" rx="1" fill="currentColor"/>',
+        },
+    ] %}
+
+    {% set cornerPositionInput %}
+        <input type="hidden" id="cornerPosition" name="settings[cornerPosition]" value="{{ settings.cornerPosition }}">
+        <div class="cck-btn-group" data-input="cornerPosition">
+            {% for option in cornerPositionOptions %}
+                <button type="button"
+                        class="cck-btn-option{% if settings.cornerPosition == option.value %} sel{% endif %}"
+                        data-value="{{ option.value }}">
+                    <svg width="32" height="22" viewBox="0 0 32 22" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">{{ option.icon|raw }}</svg>
+                    <span>{{ option.label }}</span>
+                </button>
+            {% endfor %}
+        </div>
+    {% endset %}
 
     <div id="cck-corner-position-field"{% if settings.bannerLayout != 'corner-popup' %} class="hidden"{% endif %}>
-        {{ forms.selectField({
-            label:   "Corner Position"|t('cookie-consent-flow'),
-            id:      'cornerPosition',
-            name:    'settings[cornerPosition]',
-            value:   settings.cornerPosition,
-            options: [
-                { value: 'bottom-right', label: "Bottom Right"|t('cookie-consent-flow') },
-                { value: 'bottom-left',  label: "Bottom Left"|t('cookie-consent-flow') },
-            ],
-        }) }}
+        {{ forms.field({
+            label: "Corner Position"|t('cookie-consent-flow'),
+            id:    'cornerPosition',
+        }, cornerPositionInput) }}
     </div>
 
     {{ forms.lightswitchField({

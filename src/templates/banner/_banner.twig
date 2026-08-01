@@ -35,7 +35,7 @@
       {% endif %}
 
       {% if settings.bannerDescription %}
-        <p class="cck-banner__description">{{ settings.bannerDescription|raw }}</p>
+        <p class="cck-banner__description">{{ settings.safeDescription|raw }}</p>
       {% endif %}
 
       {% if settings.privacyPolicyUrl %}
@@ -120,7 +120,7 @@
 
     {# Description #}
     {% if settings.bannerDescription %}
-      <p class="cck-preferences__description">{{ settings.bannerDescription|raw }}</p>
+      <p class="cck-preferences__description">{{ settings.safeDescription|raw }}</p>
     {% endif %}
 
     {# Category toggles #}

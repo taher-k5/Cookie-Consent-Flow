@@ -45,6 +45,47 @@
     margin: 0;
 }
 
+/* --------------------------------------------------------------------------
+   Button-group fields (Banner Layout, Corner Position) — icon buttons used
+   instead of a native <select>. Markup: .cck-btn-group > .cck-btn-option
+   -------------------------------------------------------------------------- */
+.cck-btn-group {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+}
+
+.cck-btn-option {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 10px 16px;
+    background: var(--white, #fff);
+    border: 1px solid var(--hairline-color, #e5e7eb);
+    border-radius: 6px;
+    color: #6b7280;
+    font-size: 13px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: background-color .12s ease, border-color .12s ease, color .12s ease;
+}
+
+.cck-btn-option svg {
+    flex-shrink: 0;
+    color: currentColor;
+}
+
+.cck-btn-option:hover {
+    background: #f3f4f6;
+    border-color: #d1d5db;
+}
+
+.cck-btn-option.sel {
+    background: #eff4ff;
+    border-color: #2563eb;
+    color: #2563eb;
+}
+
 /* Section wrapper to visually group related colour controls */
 .cck-section {
     position: relative;
@@ -117,6 +158,11 @@
     grid-column: span 2;
     display: flex;
     gap: 32px;
+}
+
+.cck-category-row__toggles > .field {
+    flex: 1 1 0;
+    margin-top: 0;
 }
 
 .cck-remove-category {

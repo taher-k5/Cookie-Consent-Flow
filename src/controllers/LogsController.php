@@ -17,6 +17,20 @@ class LogsController extends Controller
 
     public const PAGE_SIZE = 50;
 
+    public function beforeAction($action): bool
+    {
+        if (!parent::beforeAction($action)) {
+            return false;
+        }
+
+        // Consent logs contain visitor identifiers, IP hashes, user agents,
+        // and country data — restrict beyond "logged into the control
+        // panel" to a specific, grantable permission.
+        $this->requirePermission('cookieConsentFlow:viewLogs');
+
+        return true;
+    }
+
     public function actionIndex(): Response
     {
         $this->requireCpRequest();

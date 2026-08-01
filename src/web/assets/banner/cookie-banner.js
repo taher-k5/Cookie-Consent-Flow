@@ -95,6 +95,78 @@
   }
 
   /* ------------------------------------------------------------------
+     Gated content — scripts and iframes withheld until their category
+     has been accepted.
+
+     Markup convention:
+
+       <script type="text/plain" data-cck-category="analytics"
+               data-cck-src="https://www.googletagmanager.com/gtag/js?id=XXX"></script>
+
+       <script type="text/plain" data-cck-category="analytics">
+         // inline tracking code
+       </script>
+
+       <iframe data-cck-category="marketing"
+               data-cck-src="https://www.youtube.com/embed/XXX"></iframe>
+
+     `data-cck-category` accepts a single key or a comma/space separated
+     list; the element activates if the visitor accepted ANY of them.
+     Browsers never execute type="text/plain" scripts, so the placeholder
+     is inert until this code clones it into a real <script> tag.
+
+     Note: this only prevents gated content from loading in the first
+     place. It cannot "unload" a script that already ran earlier in the
+     same page view (e.g. if a visitor switches from Accept to Reject
+     mid-session) — that is a limitation of the browser, not this code.
+  ------------------------------------------------------------------ */
+  function activateGatedScripts(categories) {
+    var nodes = document.querySelectorAll('script[type="text/plain"][data-cck-category]');
+
+    nodes.forEach(function (node) {
+      var required = node.getAttribute('data-cck-category').split(/[\s,]+/).filter(Boolean);
+      var allowed  = required.some(function (cat) { return categories.indexOf(cat) !== -1; });
+      if (!allowed) return;
+
+      var script = document.createElement('script');
+
+      Array.prototype.forEach.call(node.attributes, function (attr) {
+        if (attr.name === 'type' || attr.name === 'data-cck-category') return;
+        if (attr.name === 'data-cck-src') {
+          script.setAttribute('src', attr.value);
+          return;
+        }
+        script.setAttribute(attr.name, attr.value);
+      });
+
+      if (!script.src) {
+        script.text = node.textContent;
+      }
+
+      node.parentNode.replaceChild(script, node);
+    });
+  }
+
+  function activateGatedFrames(categories) {
+    var nodes = document.querySelectorAll('iframe[data-cck-category][data-cck-src]:not([data-cck-activated])');
+
+    nodes.forEach(function (node) {
+      var required = node.getAttribute('data-cck-category').split(/[\s,]+/).filter(Boolean);
+      var allowed  = required.some(function (cat) { return categories.indexOf(cat) !== -1; });
+      if (!allowed) return;
+
+      node.setAttribute('src', node.getAttribute('data-cck-src'));
+      node.setAttribute('data-cck-activated', 'true');
+    });
+  }
+
+  function activateGatedContent(categories) {
+    categories = categories || [];
+    activateGatedScripts(categories);
+    activateGatedFrames(categories);
+  }
+
+  /* ------------------------------------------------------------------
      CookieConsentKit module
   ------------------------------------------------------------------ */
   var CookieConsentKit = {
@@ -111,6 +183,7 @@
         // Restore categories so third-party scripts can read them
         var stored = Store.get(STORAGE_KEY);
         if (stored) {
+          activateGatedContent(stored.categories || []);
           this._dispatchEvent('cck:loaded', stored);
         }
         return;
@@ -129,6 +202,17 @@
 
     getConsent: function () {
       return Store.get(STORAGE_KEY);
+    },
+
+    // ----------------------------------------------------------------
+    // Re-scan the page for gated scripts/iframes against the visitor's
+    // current consent. Call this after injecting new markup at runtime
+    // (AJAX-loaded content, SPA-style navigation, etc.) — activation
+    // otherwise only runs once, on page load / on consent change.
+    // ----------------------------------------------------------------
+    refreshGatedContent: function () {
+      var stored = this.getConsent();
+      activateGatedContent(stored && stored.categories ? stored.categories : []);
     },
 
     // ----------------------------------------------------------------
@@ -236,6 +320,7 @@
       };
 
       Store.set(STORAGE_KEY, data);
+      activateGatedContent(categories);
       this._dispatchEvent('cck:consent', data);
       this._hideBanner();
       this.closePreferences();

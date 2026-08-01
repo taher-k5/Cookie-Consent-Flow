@@ -8,7 +8,9 @@ use craft\events\RegisterCpNavItemsEvent;
 use craft\events\RegisterTemplateRootsEvent;
 use craft\events\RegisterUrlRulesEvent;
 use craft\events\RegisterComponentTypesEvent;
+use craft\events\RegisterUserPermissionsEvent;
 use craft\services\Dashboard;
+use craft\services\UserPermissions;
 use craft\web\twig\variables\CraftVariable;
 use craft\web\UrlManager;
 use craft\web\View;
@@ -64,6 +66,7 @@ class Plugin extends BasePlugin
         $this->_registerVariable();
         $this->_registerWidget();
         $this->_registerCpNavItem();
+        $this->_registerPermissions();
 
         $request = Craft::$app->getRequest();
 
@@ -194,6 +197,32 @@ class Plugin extends BasePlugin
     {
         // Nav item is provided via getCpNavItem() above.
         // Kept as a hook point for future dynamic registration if needed.
+    }
+
+    /**
+     * Registers custom permissions so settings/logs access can be granted
+     * to specific non-admin users rather than everyone with control panel
+     * access. Admin accounts always pass permission checks regardless.
+     */
+    private function _registerPermissions(): void
+    {
+        Event::on(
+            UserPermissions::class,
+            UserPermissions::EVENT_REGISTER_PERMISSIONS,
+            function (RegisterUserPermissionsEvent $event): void {
+                $event->permissions[] = [
+                    'heading' => Craft::t('cookie-consent-flow', 'Cookie Consent Flow'),
+                    'permissions' => [
+                        'cookieConsentFlow:manageSettings' => [
+                            'label' => Craft::t('cookie-consent-flow', 'Manage banner & plugin settings'),
+                        ],
+                        'cookieConsentFlow:viewLogs' => [
+                            'label' => Craft::t('cookie-consent-flow', 'View consent logs'),
+                        ],
+                    ],
+                ];
+            }
+        );
     }
 
     private function _registerCpAsset(): void

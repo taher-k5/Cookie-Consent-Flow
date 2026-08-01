@@ -3,6 +3,7 @@
 namespace sfsinfotech\craftcookieconsentflow\models;
 
 use craft\base\Model;
+use craft\helpers\HtmlPurifier;
 
 /**
  * Cookie Consent Flow – settings model.
@@ -164,6 +165,23 @@ class Settings extends Model
             fn($c) => $c['key'],
             array_filter($this->categories, fn($c) => !empty($c['locked']))
         ));
+    }
+
+    /**
+     * Returns the banner description with only a small safe subset of HTML
+     * allowed (links, bold, italic, line breaks). The admin field for this
+     * value intentionally permits basic HTML, so it must be purified before
+     * being output on the front end — it is rendered on every page, for
+     * every visitor, and (without an assigned permission) any control panel
+     * user, not only admins, can edit it.
+     */
+    public function getSafeDescription(): string
+    {
+        return HtmlPurifier::process($this->bannerDescription, [
+            'HTML.Allowed' => 'a[href|title|target|rel],strong,b,em,i,br',
+            'URI.AllowedSchemes' => ['http' => true, 'https' => true, 'mailto' => true],
+            'AutoFormat.Linkify' => false,
+        ]);
     }
 
     /**

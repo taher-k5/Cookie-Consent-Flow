@@ -60,6 +60,32 @@
     }
 
     /* ------------------------------------------------------------------
+       Button-group fields — replace native <select> with a row of
+       clickable icon buttons. Each group has a hidden input holding the
+       actual submitted value, kept in sync via a "change" event so any
+       existing listeners on that input (e.g. corner-position toggling
+       above) keep working unchanged.
+    ------------------------------------------------------------------ */
+    document.querySelectorAll('.cck-btn-group').forEach(function (group) {
+      var hiddenInput = document.getElementById(group.getAttribute('data-input'));
+      if (!hiddenInput) return;
+
+      group.querySelectorAll('.cck-btn-option').forEach(function (btn) {
+        btn.addEventListener('click', function () {
+          if (btn.classList.contains('sel')) return;
+
+          group.querySelectorAll('.cck-btn-option').forEach(function (b) {
+            b.classList.remove('sel');
+          });
+          btn.classList.add('sel');
+
+          hiddenInput.value = btn.getAttribute('data-value');
+          hiddenInput.dispatchEvent(new Event('change'));
+        });
+      });
+    });
+
+    /* ------------------------------------------------------------------
        Colour swatches — adds a small coloured square inside each
        colour text-input so the admin can see the current value at a glance.
     ------------------------------------------------------------------ */
