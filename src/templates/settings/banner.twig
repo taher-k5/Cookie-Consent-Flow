@@ -494,12 +494,14 @@
         on:           settings.geoEnabled,
     }) }}
 
-    {{ forms.textField({
+    {{ forms.selectizeField({
         label:        "Target Countries"|t('cookie-consent-flow'),
-        instructions: "Comma-separated ISO 3166-1 alpha-2 codes, e.g. GB,DE,FR. Leave blank to show everywhere."|t('cookie-consent-flow'),
+        instructions: "Countries where the banner should be shown. Leave blank to show everywhere."|t('cookie-consent-flow'),
         id:           'geoTargetCountries',
         name:         'settings[geoTargetCountries]',
-        value:        settings.geoTargetCountries|join(', '),
+        options:      countryOptions ?? [],
+        values:       settings.geoTargetCountries,
+        multi:        true,
     }) }}
 
 </div>{# /#cck-geo #}

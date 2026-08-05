@@ -23,13 +23,17 @@
     {% set label           = fieldDef.label|t('cookie-consent-flow') %}
     {% set instructions    = fieldDef.instructions is defined ? fieldDef.instructions|t('cookie-consent-flow') : null %}
     {% set searchText      = (label ~ ' ' ~ fieldDef.type ~ ' ' ~ groupName)|lower %}
+    {# Multi-value fields (multiselect) can't go through a plain HTML
+       attribute as-is — flatten to CSV for data-global-value, and the
+       "Copy Global Settings" JS splits it back apart. #}
+    {% set globalValueAttr = fieldDef.type == 'multiselect' ? globalValue|join(',') : globalValue %}
 
     <div class="cck-override-row{% if isOverridden %} cck-override-row--overridden{% endif %}"
          data-search="{{ searchText }}"
          data-overridden="{{ isOverridden ? '1' : '0' }}"
          data-field-key="{{ fieldDef.key }}"
          data-field-type="{{ fieldDef.type }}"
-         data-global-value="{{ globalValue }}"
+         data-global-value="{{ globalValueAttr }}"
     >
         <input
             type="checkbox"
@@ -69,6 +73,17 @@
                 instructions: instructions,
                 options:      fieldDef.options,
                 value:        value,
+                disabled:     not isOverridden,
+            }) }}
+        {% elseif fieldDef.type == 'multiselect' %}
+            {{ forms.selectizeField({
+                id:           fid,
+                name:         name,
+                label:        label,
+                instructions: instructions,
+                options:      fieldDef.options,
+                values:       isOverridden ? value : [],
+                multi:        true,
                 disabled:     not isOverridden,
             }) }}
         {% elseif fieldDef.type == 'textarea' %}

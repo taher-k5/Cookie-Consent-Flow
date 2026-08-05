@@ -2,6 +2,7 @@
 
 namespace sfsinfotech\craftcookieconsentflow\models;
 
+use Craft;
 use craft\base\Model;
 use craft\helpers\HtmlPurifier;
 
@@ -178,6 +179,19 @@ class Settings extends Model
      *
      * @return array<string, array<int, array<string, mixed>>>
      */
+    /**
+     * ISO 3166-1 country code => localized name, for the geo-targeting
+     * multi-select (both the Banner Settings and Multi Site Override
+     * pages). Memoized per request since Craft's country repository does
+     * its own locale lookups on every call.
+     */
+    public static function getCountryOptions(): array
+    {
+        static $options = null;
+
+        return $options ??= Craft::$app->getAddresses()->getCountryList();
+    }
+
     public static function getOverrideFieldGroups(): array
     {
         return [
@@ -240,8 +254,9 @@ class Settings extends Model
             ],
             'Geo-targeting' => [
                 ['key' => 'geoEnabled', 'type' => 'lightswitch', 'label' => 'Enable Geo-targeting'],
-                ['key' => 'geoTargetCountries', 'type' => 'text', 'label' => 'Target Countries',
-                    'instructions' => 'Comma-separated ISO 3166-1 alpha-2 codes, e.g. GB,DE,FR.'],
+                ['key' => 'geoTargetCountries', 'type' => 'multiselect', 'label' => 'Target Countries',
+                    'instructions' => 'Countries where the banner should be shown. Leave blank to show everywhere.',
+                    'options' => self::getCountryOptions()],
             ],
         ];
     }
@@ -272,13 +287,14 @@ class Settings extends Model
     }
 
     /**
-     * Returns a field's current value for display in the override form:
-     * the CSV-joined form for geoTargetCountries, unchanged otherwise.
+     * Returns a field's current value for display in the override form.
+     * geoTargetCountries stays an array (the multiselect's `values`);
+     * every other field is returned unchanged.
      */
     public function getFieldDisplayValue(string $field): mixed
     {
         if ($field === 'geoTargetCountries') {
-            return implode(', ', $this->geoTargetCountries);
+            return $this->geoTargetCountries;
         }
 
         return $this->$field;

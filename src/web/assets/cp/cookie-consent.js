@@ -219,6 +219,19 @@
         ls.disabled = disable;
         ls.classList.toggle('cck-lightswitch--disabled', disable);
       });
+      target.querySelectorAll('select').forEach(function (sel) {
+        // Same story as the lightswitch above: selectize renders its own
+        // proxy UI over the real (hidden) <select>, so setting `.disabled`
+        // on that element above only affects an element nobody sees. Its
+        // own enable()/disable() API is what actually locks the visible
+        // widget. (Selectize's "selectize" class lands on the *wrapping*
+        // div, not the <select> itself — the only reliable way to find an
+        // enhanced select is to check for its attached instance data.)
+        var instance = window.jQuery && window.jQuery(sel).data('selectize');
+        if (instance) {
+          disable ? instance.disable() : instance.enable();
+        }
+      });
 
       var row = checkbox.closest('.cck-override-row');
       if (row) {
@@ -574,6 +587,21 @@
               lightswitchBtn.setAttribute('aria-checked', on ? 'true' : 'false');
             }
             if (hidden) hidden.value = on ? (hidden.getAttribute('value') || '1') : '';
+          } else if (type === 'multiselect') {
+            // Selectize wraps the real <select> and keeps its own copy of
+            // the selection — writing straight to the <select> wouldn't be
+            // reflected in the UI, so go through the selectize instance.
+            var select    = row.querySelector('select');
+            var selectize = select && window.jQuery && window.jQuery(select).data('selectize');
+            var codes     = globalValue ? globalValue.split(',').filter(Boolean) : [];
+            if (selectize) {
+              selectize.setValue(codes, false);
+            } else if (select) {
+              Array.prototype.forEach.call(select.options, function (opt) {
+                opt.selected = codes.indexOf(opt.value) !== -1;
+              });
+              select.dispatchEvent(new Event('change', {bubbles: true}));
+            }
           } else {
             var input = row.querySelector('input:not([type="hidden"]):not([type="checkbox"]), select, textarea');
             if (!input) return;

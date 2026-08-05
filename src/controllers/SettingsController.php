@@ -4,6 +4,7 @@ namespace sfsinfotech\craftcookieconsentflow\controllers;
 
 use Craft;
 use craft\web\Controller;
+use sfsinfotech\craftcookieconsentflow\models\Settings;
 use sfsinfotech\craftcookieconsentflow\Plugin;
 use yii\web\Response;
 
@@ -198,8 +199,9 @@ class SettingsController extends Controller
         $settings = Plugin::getInstance()->getSettings();
 
         return $this->renderTemplate('cookie-consent-flow/settings/banner', [
-            'settings' => $settings,
-            'plugin'   => Plugin::getInstance(),
+            'settings'       => $settings,
+            'plugin'         => Plugin::getInstance(),
+            'countryOptions' => Settings::getCountryOptions(),
         ]);
     }
 
@@ -220,8 +222,9 @@ class SettingsController extends Controller
             Craft::$app->getSession()->setError(Craft::t('cookie-consent-flow', 'Couldn\'t save banner settings.'));
 
             return $this->renderTemplate('cookie-consent-flow/settings/banner', [
-                'settings' => $plugin->getSettings(),
-                'plugin'   => $plugin,
+                'settings'       => $plugin->getSettings(),
+                'plugin'         => $plugin,
+                'countryOptions' => Settings::getCountryOptions(),
             ]);
         }
 
@@ -249,8 +252,9 @@ class SettingsController extends Controller
                 : 'cookie-consent-flow/settings/index';
 
             return $this->renderTemplate($template, [
-                'settings' => $plugin->getSettings(),
-                'plugin'   => $plugin,
+                'settings'       => $plugin->getSettings(),
+                'plugin'         => $plugin,
+                'countryOptions' => Settings::getCountryOptions(),
             ]);
         }
 
