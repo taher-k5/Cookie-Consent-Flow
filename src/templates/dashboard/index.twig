@@ -11,6 +11,22 @@
             {{ "This is how your cookie banner currently looks to visitors, using your saved Banner settings."|t('cookie-consent-flow') }}
         </p>
 
+        {% if allSites|length > 1 %}
+            <div class="field cck-preview-site-switcher">
+                <label for="cck-preview-site">{{ "Previewing site"|t('cookie-consent-flow') }}</label>
+                <div class="select">
+                    <select id="cck-preview-site" onchange="location.href=this.value">
+                        {% for site in allSites %}
+                            <option
+                                value="{{ cpUrl('cookie-consent-flow', { site: site.handle }) }}"
+                                {% if site.id == currentSite.id %}selected{% endif %}
+                            >{{ site.name }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+            </div>
+        {% endif %}
+
         {# ── Device size switcher (outside the preview frame) ── #}
         <div class="cck-preview-devices" role="group" aria-label="{{ 'Preview device size'|t('cookie-consent-flow') }}">
             <button type="button" class="cck-preview-device-btn sel" data-device="desktop">{{ "Desktop"|t('cookie-consent-flow') }}</button>

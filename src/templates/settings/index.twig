@@ -35,25 +35,27 @@
 <div id="cck-categories" role="tabpanel" aria-labelledby="tab-cck-categories">
     <p class="light">{{ "Configure the cookie categories visitors can toggle in the preferences panel."|t('cookie-consent-flow') }}</p>
 
-    <div id="cck-categories-list">
-        {% for i, category in settings.categories %}
+    <div class="cck-categories-group">
+        <div id="cck-categories-list" class="cck-categories-list">
+            {% for i, category in settings.categories %}
+                {% include 'cookie-consent-flow/settings/_category-row' with {
+                    category: category,
+                    index:    i,
+                } %}
+            {% endfor %}
+        </div>
+
+        <button type="button" id="cck-add-category" class="btn add icon cck-add-category">
+            {{ "Add Category"|t('cookie-consent-flow') }}
+        </button>
+
+        <template id="cck-category-template" class="cck-category-template">
             {% include 'cookie-consent-flow/settings/_category-row' with {
-                category: category,
-                index:    i,
+                category: { key: '', label: '', description: '', default: false, locked: false },
+                index:    '__INDEX__',
             } %}
-        {% endfor %}
+        </template>
     </div>
-
-    <button type="button" id="cck-add-category" class="btn add icon">
-        {{ "Add Category"|t('cookie-consent-flow') }}
-    </button>
-
-    <template id="cck-category-template">
-        {% include 'cookie-consent-flow/settings/_category-row' with {
-            category: { key: '', label: '', description: '', default: false, locked: false },
-            index:    '__INDEX__',
-        } %}
-    </template>
 </div>{# /tab-categories #}
 
 {# ── Consent Logging ───────────────────────────────────────────────────── #}
@@ -89,4 +91,13 @@
 </div>{# /tab-advanced #}
 
 </div>{# /#cck-settings #}
+
+{% if craft.app.sites.allSites|length > 1 %}
+    <hr>
+    <p>
+        <a href="{{ cpUrl('cookie-consent-flow/settings/multi-site-override') }}">
+            {{ "Manage Multi Site Override →"|t('cookie-consent-flow') }}
+        </a>
+    </p>
+{% endif %}
 {% endblock %}

@@ -10,9 +10,49 @@ keep it in sync whenever a change affects architecture, compliance posture, or c
   permissions, CP asset registration, and the response-injection hook that auto-appends the
   banner to every front-end HTML response.
 - `src/models/Settings.php` — all plugin settings (banner text/layout/colours, categories,
-  geo, logging). Persisted via Craft's built-in plugin-settings JSON blob, **not** a database
-  table (see "Dead code" below). Also home to `getCssVars()` (banner theming) and
-  `getSafeDescription()` (sanitized banner description — see Security).
+  geo, logging). Persisted in the plugin's own `cookieconsent_settings` table via
+  `SettingsRecord` — **not** Craft's built-in plugin-settings mechanism
+  (`craft_plugins.settings`). The table is relational, one real column per setting: one row
+  per Craft site plus a global row (`siteId = 0, isGlobal = 1`). On a site's row, a `NULL`
+  column means "inherit from global" — that's what preserves the existing per-field override
+  semantics (the Multi Site Override page's per-field "use global" toggle) while giving every
+  setting its own queryable column instead of a JSON blob. `geoTargetCountries` is still a
+  JSON-encoded text column (whole-array in/out, never queried per-element). `categories` is
+  **not** a column — cookie categories live in their own `cookieconsent_category` table, one
+  row per category, foreign-keyed to `cookieconsent_settings.id` (`ON DELETE CASCADE`) via
+  `CookieCategoryRecord`, created/upgraded in `Install.php` itself (this plugin isn't
+  published yet, so there's no installed-base constraint requiring an incremental migration —
+  `Install.php` handles fresh installs, the legacy single-JSON-blob upgrade, and a leftover
+  `categories` column from an earlier dev install, all in one place). A settings row with
+  zero category rows means "inherit from global"
+  — same meaning as a NULL column, just expressed as absence of child rows instead.
+  `SettingsService` owns this: a settings row's categories are read/written via
+  `_loadCategoriesForSettingsRow()` / `_saveCategoriesForSettingsRow()` /
+  `_deleteCategoriesForSettingsRow()` / `_hasCategoryOverride()`, called from
+  `loadSettings()`, `saveGlobalSettings()`, `saveSiteOverrides()`, and `copySiteOverrides()`
+  alongside the normal column-based fields. `Settings::$categories`'s in-memory shape (array
+  of `key/label/description/default/locked`) is unchanged, so nothing outside
+  `SettingsService` (controllers, the Twig variable, templates, JS) needed to change.
+  `SettingsService::loadSettings()` reconstructs the in-memory `Settings` object (global
+  properties + a sparse `$siteOverrides` map built from every site row's non-NULL columns) so
+  every existing consumer — `resolveForSite()`, `isFieldOverridden()`, the CP templates —
+  keeps working unchanged. `Plugin::getSettings()` / `setSettings()` are overridden
+  accordingly: `getSettings()` delegates to `SettingsService::loadSettings()`, and
+  `setSettings()` is a deliberate no-op so the legacy Craft-supplied blob (always empty now)
+  can never clobber the freshly loaded model. Also home to `getCssVars()` (banner theming) and
+  `getSafeDescription()` (sanitized banner description — see Security). `$siteOverrides`
+  (keyed by site ID, only differing fields stored) plus `resolveForSite(siteId)` — clones the
+  model with that site's overrides applied on top of global values — power multi-site support;
+  see `SettingsService` below for the actual resolution entry point.
+- `src/services/SettingsService.php` (`cookieSettings` component) — the single place that
+  resolves "effective" (global + site-override merged) settings via
+  `getEffectiveSettings(?siteId)`, request-cached per site ID. Also owns
+  `saveGlobalSettings()`/`saveSiteOverrides()`, the shared field-normalization logic used by
+  both the Global Settings and Multi Site Override CP pages. Every render path (`renderBanner()`,
+  `renderPreferencesButton()`, the frontend auto-inject hook in `Plugin.php`, etc.) goes through
+  this service instead of calling `Plugin::getSettings()` directly, so they're automatically
+  site-aware. Consent logging (`logEnabled`/`logRetentionDays`) is intentionally **not**
+  overridable per site — it's operational/compliance config for the whole install.
 - `src/services/ConsentService.php` — save/get/stats/paginated-logs/purge for consent records.
 - `src/services/GeoService.php` — header-based country resolution (Cloudflare `CF-IPCountry`,
   `X-Country-Code`); fails open (shows banner) if unresolvable.
@@ -92,7 +132,6 @@ legal compliance**, which no software can make (and this plugin's docs should ne
   check in `hasConsent()`.
 - **GeoIP integration**: only trusts Cloudflare/proxy headers; no fallback lookup for hosts
   without them (fails open — legally safe, just not optimized).
-- Multi-site settings overrides (`Settings::$siteOverrides` exists, nothing reads/writes it).
 - Consent log export (CSV/JSON) — pure convenience, not compliance-critical.
 
 **Considered and deliberately left as-is:**
@@ -106,10 +145,6 @@ legal compliance**, which no software can make (and this plugin's docs should ne
 
 ## Dead code / cleanup candidates
 
-- `src/records/SettingsRecord.php` and its documented `cookieconsent_settings` table are
-  **unused** — settings actually persist via Craft's plugin-settings JSON blob. `Install.php`
-  only creates `cookieconsent_log`. Leftover from an earlier design; delete or wire up, don't
-  leave as-is indefinitely.
 - `CHANGELOG.md` only documents the original scaffold — several real feature commits since
   aren't reflected. Update when doing a real release pass.
 

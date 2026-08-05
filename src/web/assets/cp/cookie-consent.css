@@ -170,6 +170,408 @@
 }
 
 /* --------------------------------------------------------------------------
+   Multi Site Override page
+   -------------------------------------------------------------------------- */
+.cck-site-panel {
+    background: var(--white, #fff);
+    border: 1px solid var(--hairline-color, #e5e7eb);
+    border-radius: 8px;
+    margin-bottom: 16px;
+    overflow: hidden;
+}
+
+.cck-site-panel__summary {
+    cursor: pointer;
+    padding: 14px 20px;
+    font-weight: 600;
+    font-size: 0.95rem;
+    color: var(--dark-text-color, #111827);
+    background: #f9fafb;
+    list-style: none;
+}
+
+.cck-site-panel__summary::-webkit-details-marker {
+    display: none;
+}
+
+.cck-site-panel__summary::before {
+    content: '▸';
+    display: inline-block;
+    margin-right: 8px;
+    transition: transform .12s ease;
+}
+
+.cck-site-panel[open] > .cck-site-panel__summary::before {
+    transform: rotate(90deg);
+}
+
+.cck-site-panel__body {
+    padding: 20px;
+    border-top: 1px solid var(--hairline-color, #e5e7eb);
+}
+
+.cck-override-row {
+    border: 1px solid var(--hairline-color, #e9eef5);
+    border-left: 3px solid var(--hairline-color, #e9eef5);
+    border-radius: 6px;
+    padding: 12px 16px;
+    margin-bottom: 12px;
+    transition: border-color .12s ease, background-color .12s ease;
+}
+
+.cck-override-row--overridden {
+    border-left-color: var(--link-color, #2563eb);
+    background: #f8faff;
+}
+
+.cck-override-row__meta {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    margin-bottom: 8px;
+}
+
+.cck-override-toggle {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 0.8125rem;
+    font-weight: 600;
+    color: var(--medium-dark-text-color, #6b7280);
+    cursor: pointer;
+}
+
+.cck-override-field--inherited {
+    opacity: 0.55;
+}
+
+.cck-lightswitch--disabled {
+    opacity: 0.5;
+    pointer-events: none;
+}
+
+/* Badges */
+.cck-badge {
+    display: inline-flex;
+    align-items: center;
+    padding: 2px 10px;
+    border-radius: 999px;
+    font-size: 0.6875rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+    white-space: nowrap;
+}
+
+.cck-badge--inherited {
+    background: #f3f4f6;
+    color: #6b7280;
+}
+
+.cck-badge--overridden {
+    background: #dbeafe;
+    color: #1d4ed8;
+}
+
+/* Only possible from data saved before group-level toggling existed (the
+   current UI always flips every field in a group together) — flags a group
+   that's neither fully inherited nor fully overridden so it doesn't read as
+   a normal, unambiguous state. */
+.cck-badge--partial {
+    background: #fef3c7;
+    color: #92400e;
+    cursor: help;
+}
+
+/* Visually hide an input while keeping it in the DOM/tab order out of the
+   way — used for the per-field "use global" checkboxes now driven entirely
+   by their group's single toggle (see .cck-group-toggle below). */
+.cck-visually-hidden {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+    border: 0;
+}
+
+/* Field/section grouping cards */
+.cck-override-card {
+    background: var(--white, #fff);
+    border: 1px solid var(--hairline-color, #e9eef5);
+    border-radius: 8px;
+    padding: 0;
+    margin-bottom: 16px;
+    overflow: hidden;
+    transition: opacity .12s ease;
+}
+
+.cck-override-card__header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 10px 16px;
+    padding: 16px 20px;
+    background: #f9fafb;
+    border-bottom: 1px solid var(--hairline-color, #e9eef5);
+    cursor: pointer;
+}
+
+.cck-override-card__header:hover {
+    background: #f3f4f6;
+}
+
+/* The toggle/badge/label area opts back out of the header's own
+   click-to-collapse — it has its own independent click behaviour (the
+   switch), and hovering it shouldn't look collapsible. */
+.cck-override-card__toggle {
+    cursor: default;
+}
+
+.cck-override-card__title {
+    margin: 0;
+    font-size: 0.95rem;
+}
+
+/* Disclosure button — collapses/expands the card body independently of the
+   "Use Global Settings" switch, so an admin can shut a section's fields out
+   of view without touching its inheritance state (and vice versa: toggling
+   inheritance auto-collapses/expands it, see cookie-consent.js). */
+.cck-override-card__disclosure {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    background: none;
+    border: none;
+    padding: 0;
+    margin: 0;
+    font: inherit;
+    color: inherit;
+    cursor: pointer;
+    text-align: left;
+}
+
+.cck-override-card__chevron {
+    display: inline-block;
+    flex-shrink: 0;
+    width: 0;
+    height: 0;
+    border-top: 4px solid transparent;
+    border-bottom: 4px solid transparent;
+    border-left: 5px solid var(--medium-dark-text-color, #6b7280);
+    transition: transform .12s ease;
+}
+
+.cck-override-card__disclosure[aria-expanded="true"] .cck-override-card__chevron {
+    transform: rotate(90deg);
+}
+
+.cck-override-card[data-collapsed="1"] .cck-override-card__body {
+    display: none;
+}
+
+.cck-override-card__toggle {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.cck-group-toggle-label {
+    font-size: 0.8125rem;
+    font-weight: 600;
+    color: var(--medium-dark-text-color, #6b7280);
+    cursor: pointer;
+}
+
+/* Minimal, self-contained toggle switch — deliberately NOT Craft's
+   Craft.LightSwitch widget (see cookie-consent.js): a native checkbox
+   styled to look like a switch avoids that widget's one-time listener-
+   binding trap entirely, since a plain checkbox's `checked`/`change`
+   behavior is just standard DOM. */
+.cck-group-toggle-switch {
+    position: relative;
+    display: inline-block;
+    width: 34px;
+    height: 20px;
+    flex-shrink: 0;
+}
+
+.cck-group-toggle-switch .cck-group-toggle {
+    position: absolute;
+    inset: 0;
+    margin: 0;
+    opacity: 0;
+    cursor: pointer;
+    z-index: 1;
+}
+
+.cck-group-toggle-slider {
+    position: absolute;
+    inset: 0;
+    background: #d1d5db;
+    border-radius: 999px;
+    transition: background-color .15s ease;
+    pointer-events: none;
+}
+
+.cck-group-toggle-slider::before {
+    content: '';
+    position: absolute;
+    top: 2px;
+    left: 2px;
+    width: 16px;
+    height: 16px;
+    background: #fff;
+    border-radius: 50%;
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.2);
+    transition: transform .15s ease;
+}
+
+.cck-group-toggle:checked + .cck-group-toggle-slider {
+    background: #2563eb;
+}
+
+.cck-group-toggle:checked + .cck-group-toggle-slider::before {
+    transform: translateX(14px);
+}
+
+.cck-group-toggle:focus-visible + .cck-group-toggle-slider {
+    box-shadow: 0 0 0 2px #fff, 0 0 0 4px #2563eb;
+}
+
+.cck-override-card__body {
+    padding: 20px;
+    transition: opacity .12s ease;
+}
+
+/* Inherited state — whole card body fades to signal "read only, editing
+   the fields above won't do anything until the toggle is switched off". */
+.cck-override-card--inherited .cck-override-card__body {
+    opacity: 0.55;
+}
+
+/* Sticky search / filter toolbar */
+.cck-override-toolbar {
+    position: sticky;
+    top: 35px;
+    z-index: 2;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    background: var(--white, #fff);
+    border: 1px solid var(--hairline-color, #e5e7eb);
+    border-radius: 8px;
+    padding: 12px 16px;
+    margin-bottom: 20px;
+}
+
+.cck-override-toolbar__search {
+    flex: 1 1 auto;
+    max-width: 360px;
+}
+
+.cck-override-toolbar__search input {
+    width: 100%;
+    height: 34px;
+    padding: 0 12px;
+    border: 1px solid var(--hairline-color, #d1d5db);
+    border-radius: 6px;
+    font-size: 0.8125rem;
+    box-shadow: none;
+    box-sizing: border-box;
+}
+
+.cck-override-toolbar__search input:focus {
+    outline: none;
+    border-color: var(--dark-blue-200, #7ba7f9);
+    box-shadow: 0 0 0 2px var(--dark-blue-100, #cfe0fd);
+}
+
+/* Per-site summary card, shown collapsed above each site's <details> panel */
+.cck-site-summary-card {
+    background: var(--white, #fff);
+    border: 1px solid var(--hairline-color, #e5e7eb);
+    border-radius: 8px 8px 0 0;
+    padding: 16px 20px;
+    margin-bottom: 0;
+}
+
+.cck-site-summary-card + .cck-site-panel {
+    border-top-left-radius: 0;
+    border-top-right-radius: 0;
+    margin-top: -1px;
+    margin-bottom: 24px;
+}
+
+.cck-site-summary-card__header {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 12px;
+}
+
+.cck-site-summary-card__name {
+    font-weight: 600;
+    font-size: 1rem;
+    color: var(--dark-text-color, #111827);
+}
+
+.cck-site-summary-card__stats {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+    gap: 12px 20px;
+}
+
+.cck-site-summary-card__stat {
+    font-size: 0.875rem;
+    color: var(--dark-text-color, #111827);
+}
+
+/* Per-site action row (Copy Global / Copy From / Reset) */
+.cck-site-panel__actions {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 16px;
+}
+
+.cck-copy-from {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 0.8125rem;
+    color: var(--medium-dark-text-color, #6b7280);
+}
+
+.cck-empty-state {
+    color: var(--medium-dark-text-color, #6b7280);
+    font-style: italic;
+    padding: 12px 0;
+}
+
+@media (max-width: 700px) {
+    .cck-override-toolbar {
+        flex-direction: column;
+        align-items: stretch;
+    }
+
+    .cck-override-toolbar__search {
+        max-width: none;
+    }
+
+    .cck-override-row__meta {
+        flex-wrap: wrap;
+    }
+}
+
+/* --------------------------------------------------------------------------
    Dashboard stats
    -------------------------------------------------------------------------- */
 .cck-stat-grid {

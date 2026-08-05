@@ -29,14 +29,14 @@ class CookieConsentVariable
     public function renderBanner(): Markup
     {
         $plugin   = Plugin::getInstance();
-        $settings = $plugin->getSettings();
+        $settings = $plugin->cookieSettings->getEffectiveSettings();
 
         if (!$settings->bannerEnabled) {
             return new Markup('', 'utf-8');
         }
 
         // Geo check
-        if (!$plugin->geo->shouldShowBanner()) {
+        if (!$plugin->geo->shouldShowBanner($settings)) {
             return new Markup('', 'utf-8');
         }
 
@@ -68,6 +68,7 @@ class CookieConsentVariable
             'csrfToken'       => $csrfTokenValue,
             'allCategories'   => $allCategories,
             'lockedCategories' => $lockedKeys,
+            'siteId'          => Craft::$app->getSites()->getCurrentSite()->id,
         ]);
 
         $view->registerJs("window.cckConfig = {$configJson};", View::POS_HEAD);
@@ -96,7 +97,7 @@ class CookieConsentVariable
      */
     public function renderPreferencesButton(?string $label = null): Markup
     {
-        $settings = Plugin::getInstance()->getSettings();
+        $settings = Plugin::getInstance()->cookieSettings->getEffectiveSettings();
         Craft::$app->getView()->registerAssetBundle(BannerAsset::class);
 
         $btnLabel = htmlspecialchars($label ?? $settings->customizeButtonText, ENT_QUOTES, 'UTF-8');
@@ -137,7 +138,7 @@ class CookieConsentVariable
      */
     public function settings(): \sfsinfotech\craftcookieconsentflow\models\Settings
     {
-        return Plugin::getInstance()->getSettings();
+        return Plugin::getInstance()->cookieSettings->getEffectiveSettings();
     }
 
     /**
@@ -149,7 +150,7 @@ class CookieConsentVariable
      */
     public function categories(): array
     {
-        return Plugin::getInstance()->getSettings()->categories;
+        return Plugin::getInstance()->cookieSettings->getEffectiveSettings()->categories;
     }
 
     /**
@@ -159,8 +160,10 @@ class CookieConsentVariable
      */
     public function isBannerEnabled(): bool
     {
-        $plugin = Plugin::getInstance();
-        return $plugin->getSettings()->bannerEnabled && $plugin->geo->shouldShowBanner();
+        $plugin   = Plugin::getInstance();
+        $settings = $plugin->cookieSettings->getEffectiveSettings();
+
+        return $settings->bannerEnabled && $plugin->geo->shouldShowBanner($settings);
     }
 }
 

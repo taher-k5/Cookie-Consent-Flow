@@ -4,6 +4,7 @@ namespace sfsinfotech\craftcookieconsentflow\controllers;
 
 use Craft;
 use craft\web\Controller;
+use sfsinfotech\craftcookieconsentflow\helpers\ConsentHelper;
 use sfsinfotech\craftcookieconsentflow\Plugin;
 use yii\web\BadRequestHttpException;
 use yii\web\Response;
@@ -54,10 +55,12 @@ class ConsentController extends Controller
 
         $result = Plugin::getInstance()->consent->saveConsent($action, $categories);
 
-        // Set first-party visitor UUID cookie (1 year)
+        // Set first-party visitor UUID cookie (1 year), namespaced by site
+        // so the same origin's other Craft sites (shared-domain multi-site
+        // installs) never inherit this visitor identity or its consent.
         $response = $this->asJson(['success' => true, 'visitorUuid' => $result['visitorUuid']]);
         $response->getCookies()->add(new \yii\web\Cookie([
-            'name'     => 'cck_visitor',
+            'name'     => ConsentHelper::visitorCookieName($result['siteId']),
             'value'    => $result['visitorUuid'],
             'expire'   => time() + 365 * 24 * 3600,
             'httpOnly' => true,
@@ -78,14 +81,17 @@ class ConsentController extends Controller
     {
         $this->requireAcceptsJson();
 
-        $request     = Craft::$app->getRequest();
-        $visitorUuid = $request->getCookies()->getValue('cck_visitor');
+        $request = Craft::$app->getRequest();
+        $siteId  = Craft::$app->getSites()->getCurrentSite()->id;
+
+        $visitorUuid = $request->getCookies()->getValue(ConsentHelper::visitorCookieName($siteId))
+            ?? $request->getCookies()->getValue(ConsentHelper::LEGACY_VISITOR_COOKIE);
 
         if (!$visitorUuid) {
             return $this->asJson(['consent' => null]);
         }
 
-        $consent = Plugin::getInstance()->consent->getConsent($visitorUuid);
+        $consent = Plugin::getInstance()->consent->getConsent($visitorUuid, $siteId);
 
         return $this->asJson(['consent' => $consent]);
     }

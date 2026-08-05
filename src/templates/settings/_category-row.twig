@@ -1,5 +1,6 @@
 {# Partial: a single category row in the Settings > Categories tab #}
 {% import "_includes/forms" as forms %}
+{% set namePrefix = namePrefix ?? 'settings' %}
 
 <div class="cck-category-row" data-index="{{ index }}">
     <div class="cck-category-row__fields">
@@ -7,7 +8,7 @@
         {{ forms.textField({
             label:       "Key"|t('cookie-consent-flow'),
             instructions:"Machine-readable identifier, e.g. analytics (lowercase, no spaces)."|t('cookie-consent-flow'),
-            name:        'settings[categories][' ~ index ~ '][key]',
+            name:        namePrefix ~ '[categories][' ~ index ~ '][key]',
             value:       category.key,
             required:    true,
             class:       'code',
@@ -15,13 +16,13 @@
 
         {{ forms.textField({
             label: "Label"|t('cookie-consent-flow'),
-            name:  'settings[categories][' ~ index ~ '][label]',
+            name:  namePrefix ~ '[categories][' ~ index ~ '][label]',
             value: category.label,
         }) }}
 
         {{ forms.textareaField({
             label: "Description"|t('cookie-consent-flow'),
-            name:  'settings[categories][' ~ index ~ '][description]',
+            name:  namePrefix ~ '[categories][' ~ index ~ '][description]',
             value: category.description,
             rows:   2,
         }) }}
@@ -30,14 +31,14 @@
             {{ forms.lightswitchField({
                 label:        "Enabled by default"|t('cookie-consent-flow'),
                 instructions: "Pre-check this category in the preferences panel."|t('cookie-consent-flow'),
-                name:         'settings[categories][' ~ index ~ '][default]',
+                name:         namePrefix ~ '[categories][' ~ index ~ '][default]',
                 on:           category.default,
             }) }}
 
             {{ forms.lightswitchField({
                 label:        "Always on (locked)"|t('cookie-consent-flow'),
                 instructions: "Visitor cannot disable this category."|t('cookie-consent-flow'),
-                name:         'settings[categories][' ~ index ~ '][locked]',
+                name:         namePrefix ~ '[categories][' ~ index ~ '][locked]',
                 on:           category.locked,
             }) }}
         </div>

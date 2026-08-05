@@ -4,7 +4,7 @@ namespace sfsinfotech\craftcookieconsentflow\services;
 
 use Craft;
 use craft\base\Component;
-use sfsinfotech\craftcookieconsentflow\Plugin;
+use sfsinfotech\craftcookieconsentflow\models\Settings;
 
 /**
  * Geo Service — resolves visitor location for geo-targeted banner display.
@@ -43,15 +43,18 @@ class GeoService extends Component
      * Returns true if the banner should be shown based on the visitor's
      * country and the plugin's geo-targeting settings.
      *
+     * Takes the already-resolved (global + site-override merged) settings
+     * for the site being rendered, rather than resolving them itself, so
+     * that per-site geo-targeting overrides are actually enforced —
+     * callers always have effective settings in scope already.
+     *
      * - Geo disabled → always show.
      * - Geo enabled + empty target list → always show.
      * - Geo enabled + target list + country not resolvable → always show (fail open).
      * - Geo enabled + country resolved → show only if country is in target list.
      */
-    public function shouldShowBanner(): bool
+    public function shouldShowBanner(Settings $settings): bool
     {
-        $settings = Plugin::getInstance()->getSettings();
-
         if (!$settings->geoEnabled || empty($settings->geoTargetCountries)) {
             return true;
         }

@@ -2,15 +2,18 @@
 
 namespace sfsinfotech\craftcookieconsentflow\models;
 
+use Craft;
 use craft\base\Model;
 use craft\helpers\HtmlPurifier;
 
 /**
  * Cookie Consent Flow – settings model.
  *
- * Settings are persisted via Craft's built-in plugin-settings mechanism
- * (JSON blob in craft_plugins.settings). All colour/layout values are
- * used as CSS custom-property values in the frontend banner.
+ * Settings are persisted relationally in the plugin's own `cookieconsent_settings`
+ * table — one row per Craft site plus a global row, one column per setting
+ * (see SettingsRecord / SettingsService) — not Craft's built-in plugin-settings
+ * mechanism. All colour/layout values are used as CSS custom-property values
+ * in the frontend banner.
  */
 class Settings extends Model
 {
@@ -142,6 +145,262 @@ class Settings extends Model
     // Multi-site overrides
     /** @var array<int, array<string, mixed>> Keyed by Craft site ID. */
     public array $siteOverrides = [];
+
+    /**
+     * Fields a site is allowed to override. Consent logging is intentionally
+     * excluded — it's an operational/compliance setting for the whole
+     * install, not per-site branding.
+     */
+    public const OVERRIDABLE_FIELDS = [
+        'bannerEnabled', 'bannerLayout', 'cornerPosition',
+        'bannerHeading', 'bannerDescription',
+        'privacyPolicyUrl', 'privacyPolicyLinkText',
+        'acceptButtonText', 'rejectButtonText', 'customizeButtonText',
+        'savePreferencesText', 'closeButtonText',
+        'bannerBgColor', 'bannerBorderColor', 'overlayColor',
+        'headingColor', 'descriptionColor', 'linkColor',
+        'acceptBgColor', 'acceptTextColor', 'acceptBorderColor',
+        'acceptHoverBgColor', 'acceptHoverTextColor',
+        'rejectBgColor', 'rejectTextColor', 'rejectBorderColor',
+        'rejectHoverBgColor', 'rejectHoverTextColor',
+        'customizeBgColor', 'customizeTextColor', 'customizeBorderColor',
+        'customizeHoverBgColor', 'customizeHoverTextColor',
+        'saveBgColor', 'saveTextColor', 'closeIconColor',
+        'borderRadius', 'padding', 'maxWidth', 'maxHeight',
+        'fullWidth', 'shadow', 'fixedPosition',
+        'categories',
+        'geoEnabled', 'geoTargetCountries',
+    ];
+
+    /**
+     * Field metadata for the Multi Site Override UI, grouped for display.
+     * Drives a single reusable override-field partial instead of
+     * hand-writing a field per site per property.
+     *
+     * @return array<string, array<int, array<string, mixed>>>
+     */
+    /**
+     * ISO 3166-1 country code => localized name, for the geo-targeting
+     * multi-select (both the Banner Settings and Multi Site Override
+     * pages). Memoized per request since Craft's country repository does
+     * its own locale lookups on every call.
+     */
+    public static function getCountryOptions(): array
+    {
+        static $options = null;
+
+        return $options ??= Craft::$app->getAddresses()->getCountryList();
+    }
+
+    public static function getOverrideFieldGroups(): array
+    {
+        return [
+            'General' => [
+                ['key' => 'bannerEnabled', 'type' => 'lightswitch', 'label' => 'Enable Cookie Banner'],
+                ['key' => 'bannerLayout', 'type' => 'select', 'label' => 'Banner Layout', 'options' => [
+                    ['value' => 'bottom-bar', 'label' => 'Bottom Bar'],
+                    ['value' => 'top-bar', 'label' => 'Top Bar'],
+                    ['value' => 'center-popup', 'label' => 'Center Popup'],
+                    ['value' => 'corner-popup', 'label' => 'Corner Popup'],
+                ]],
+                ['key' => 'cornerPosition', 'type' => 'select', 'label' => 'Corner Position', 'options' => [
+                    ['value' => 'bottom-right', 'label' => 'Bottom Right'],
+                    ['value' => 'bottom-left', 'label' => 'Bottom Left'],
+                ]],
+                ['key' => 'fixedPosition', 'type' => 'lightswitch', 'label' => 'Fixed / Sticky Position'],
+                ['key' => 'fullWidth', 'type' => 'lightswitch', 'label' => 'Full Width'],
+                ['key' => 'shadow', 'type' => 'lightswitch', 'label' => 'Shadow'],
+                ['key' => 'borderRadius', 'type' => 'text', 'label' => 'Border Radius'],
+                ['key' => 'padding', 'type' => 'text', 'label' => 'Padding'],
+                ['key' => 'maxWidth', 'type' => 'text', 'label' => 'Max Width'],
+                ['key' => 'maxHeight', 'type' => 'text', 'label' => 'Max Height'],
+            ],
+            'Content' => [
+                ['key' => 'bannerHeading', 'type' => 'text', 'label' => 'Heading'],
+                ['key' => 'bannerDescription', 'type' => 'textarea', 'label' => 'Description'],
+                ['key' => 'privacyPolicyUrl', 'type' => 'text', 'label' => 'Privacy Policy URL'],
+                ['key' => 'privacyPolicyLinkText', 'type' => 'text', 'label' => 'Privacy Policy Link Label'],
+                ['key' => 'acceptButtonText', 'type' => 'text', 'label' => 'Accept All Button'],
+                ['key' => 'rejectButtonText', 'type' => 'text', 'label' => 'Reject All Button'],
+                ['key' => 'customizeButtonText', 'type' => 'text', 'label' => 'Customize Button'],
+                ['key' => 'savePreferencesText', 'type' => 'text', 'label' => 'Save Preferences Button'],
+                ['key' => 'closeButtonText', 'type' => 'text', 'label' => 'Close Button'],
+            ],
+            'Colors' => [
+                ['key' => 'bannerBgColor', 'type' => 'color', 'label' => 'Banner Background'],
+                ['key' => 'bannerBorderColor', 'type' => 'color', 'label' => 'Banner Border'],
+                ['key' => 'overlayColor', 'type' => 'text', 'label' => 'Overlay (popups)'],
+                ['key' => 'headingColor', 'type' => 'color', 'label' => 'Heading Text'],
+                ['key' => 'descriptionColor', 'type' => 'color', 'label' => 'Description Text'],
+                ['key' => 'linkColor', 'type' => 'color', 'label' => 'Link'],
+                ['key' => 'acceptBgColor', 'type' => 'color', 'label' => 'Accept Background'],
+                ['key' => 'acceptTextColor', 'type' => 'color', 'label' => 'Accept Text'],
+                ['key' => 'acceptBorderColor', 'type' => 'color', 'label' => 'Accept Border'],
+                ['key' => 'acceptHoverBgColor', 'type' => 'color', 'label' => 'Accept Hover Background'],
+                ['key' => 'acceptHoverTextColor', 'type' => 'color', 'label' => 'Accept Hover Text'],
+                ['key' => 'rejectBgColor', 'type' => 'color', 'label' => 'Reject Background'],
+                ['key' => 'rejectTextColor', 'type' => 'color', 'label' => 'Reject Text'],
+                ['key' => 'rejectBorderColor', 'type' => 'color', 'label' => 'Reject Border'],
+                ['key' => 'rejectHoverBgColor', 'type' => 'color', 'label' => 'Reject Hover Background'],
+                ['key' => 'rejectHoverTextColor', 'type' => 'color', 'label' => 'Reject Hover Text'],
+                ['key' => 'customizeBgColor', 'type' => 'text', 'label' => 'Customize Background'],
+                ['key' => 'customizeTextColor', 'type' => 'color', 'label' => 'Customize Text'],
+                ['key' => 'customizeBorderColor', 'type' => 'color', 'label' => 'Customize Border'],
+                ['key' => 'customizeHoverBgColor', 'type' => 'color', 'label' => 'Customize Hover Background'],
+                ['key' => 'customizeHoverTextColor', 'type' => 'color', 'label' => 'Customize Hover Text'],
+                ['key' => 'saveBgColor', 'type' => 'color', 'label' => 'Save Preferences Background'],
+                ['key' => 'saveTextColor', 'type' => 'color', 'label' => 'Save Preferences Text'],
+                ['key' => 'closeIconColor', 'type' => 'color', 'label' => 'Close Icon'],
+            ],
+            'Geo-targeting' => [
+                ['key' => 'geoEnabled', 'type' => 'lightswitch', 'label' => 'Enable Geo-targeting'],
+                ['key' => 'geoTargetCountries', 'type' => 'multiselect', 'label' => 'Target Countries',
+                    'instructions' => 'Countries where the banner should be shown. Leave blank to show everywhere.',
+                    'options' => self::getCountryOptions()],
+            ],
+        ];
+    }
+
+    /**
+     * Looks up the human-readable label for a select-type override field's
+     * current value (e.g. 'bottom-bar' → 'Bottom Bar'), for display in the
+     * Multi Site Override summary cards. Returns null if the field isn't a
+     * select field or the value has no matching option.
+     */
+    public static function getOverrideFieldOptionLabel(string $field, mixed $value): ?string
+    {
+        foreach (self::getOverrideFieldGroups() as $fields) {
+            foreach ($fields as $fieldDef) {
+                if ($fieldDef['key'] !== $field || !isset($fieldDef['options'])) {
+                    continue;
+                }
+
+                foreach ($fieldDef['options'] as $option) {
+                    if ($option['value'] === $value) {
+                        return $option['label'];
+                    }
+                }
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * Returns a field's current value for display in the override form.
+     * geoTargetCountries stays an array (the multiselect's `values`);
+     * every other field is returned unchanged.
+     */
+    public function getFieldDisplayValue(string $field): mixed
+    {
+        if ($field === 'geoTargetCountries') {
+            return $this->geoTargetCountries;
+        }
+
+        return $this->$field;
+    }
+
+    // Multi-site helpers
+    /**
+     * Returns the raw stored overrides for a site (only the fields that
+     * differ from global — never the full settings set).
+     *
+     * @return array<string, mixed>
+     */
+    public function getSiteOverrideValues(int $siteId): array
+    {
+        return $this->siteOverrides[$siteId] ?? [];
+    }
+
+    /**
+     * Whether a given field currently has a site-specific value stored,
+     * as opposed to inheriting the global value.
+     */
+    public function isFieldOverridden(int $siteId, string $field): bool
+    {
+        return array_key_exists($field, $this->getSiteOverrideValues($siteId));
+    }
+
+    /**
+     * Whether ANY field in a settings group currently has a site-specific
+     * value stored. Drives the single group-level "Use Global Settings"
+     * toggle on the Multi Site Override page — the toggle's own on/off
+     * state doesn't correspond to a single stored field, so it's derived
+     * from the fields it controls instead.
+     *
+     * @param string[] $fieldKeys
+     */
+    public function isGroupOverridden(int $siteId, array $fieldKeys): bool
+    {
+        foreach ($fieldKeys as $field) {
+            if ($this->isFieldOverridden($siteId, $field)) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /**
+     * Counts how many of a group's fields currently have a site-specific
+     * value stored. Used to distinguish a fully-inherited group (0), a
+     * fully-overridden one (count === total fields), and a partially
+     * overridden one (anything in between — only possible from data saved
+     * before group-level toggling existed, since the current UI always
+     * flips every field in a group together).
+     *
+     * @param string[] $fieldKeys
+     */
+    public function getGroupOverrideCount(int $siteId, array $fieldKeys): int
+    {
+        return count(array_intersect_key(
+            $this->getSiteOverrideValues($siteId),
+            array_flip($fieldKeys)
+        ));
+    }
+
+    /**
+     * Counts the fields actually overridden for a site (excludes the
+     * internal `_updatedAt` bookkeeping entry — only real settings count).
+     */
+    public function getSiteOverrideCount(int $siteId): int
+    {
+        return count(array_intersect_key(
+            $this->getSiteOverrideValues($siteId),
+            array_flip(self::OVERRIDABLE_FIELDS)
+        ));
+    }
+
+    /**
+     * Returns the unix timestamp the site's overrides were last saved, or
+     * null if the site has never had overrides saved.
+     */
+    public function getSiteOverrideUpdatedAt(int $siteId): ?int
+    {
+        $updatedAt = $this->getSiteOverrideValues($siteId)['_updatedAt'] ?? null;
+
+        return $updatedAt !== null ? (int) $updatedAt : null;
+    }
+
+    /**
+     * Returns a clone of this model with the given site's overrides applied
+     * on top of the global values. Because the result is still a `Settings`
+     * instance, every existing accessor (getCssVars(), getSafeDescription(),
+     * getCategoryKeys(), etc.) works unchanged — callers never need to know
+     * whether a value came from global settings or a site override.
+     */
+    public function resolveForSite(int $siteId): self
+    {
+        $resolved = clone $this;
+
+        foreach ($this->getSiteOverrideValues($siteId) as $field => $value) {
+            if (in_array($field, self::OVERRIDABLE_FIELDS, true)) {
+                $resolved->$field = $value;
+            }
+        }
+
+        return $resolved;
+    }
 
     // Helpers
     /**

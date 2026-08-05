@@ -29,7 +29,11 @@ class ConsentWidget extends Widget
 
     public function getBodyHtml(): ?string
     {
-        $stats = Plugin::getInstance()->consent->getStats();
+        // getStats(null) now means "All Sites" (see ConsentService) — the
+        // widget wants the current CP site's own numbers, so pass it
+        // explicitly rather than relying on a default.
+        $siteId = Craft::$app->getSites()->getCurrentSite()->id;
+        $stats  = Plugin::getInstance()->consent->getStats($siteId);
 
         return Craft::$app->getView()->renderTemplate(
             'cookie-consent-flow/widgets/consent-overview',
