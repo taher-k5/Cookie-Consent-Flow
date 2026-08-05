@@ -6,6 +6,7 @@
 {% block content %}
 
 {% set categories = record.categories|json_decode %}
+{% set recordSite = craft.app.sites.getSiteById(record.siteId) %}
 
 <div class="ccf-detail-card">
 
@@ -36,8 +37,8 @@
         </tr>
 
         <tr>
-            <th>Site ID</th>
-            <td>{{ record.siteId }}</td>
+            <th>Site</th>
+            <td>{{ recordSite ? recordSite.name : "Deleted Site (ID: {id})"|t('cookie-consent-flow', { id: record.siteId }) }}</td>
         </tr>
 
         <tr>

@@ -503,4 +503,13 @@
     }) }}
 
 </div>{# /#cck-geo #}
+
+{% if craft.app.sites.allSites|length > 1 %}
+    <hr>
+    <p>
+        <a href="{{ cpUrl('cookie-consent-flow/settings/multi-site-override') }}">
+            {{ "Manage Multi Site Override →"|t('cookie-consent-flow') }}
+        </a>
+    </p>
+{% endif %}
 {% endblock %}

@@ -4,6 +4,7 @@ namespace sfsinfotech\craftcookieconsentflow\controllers;
 
 use Craft;
 use craft\web\Controller;
+use sfsinfotech\craftcookieconsentflow\helpers\ConsentHelper;
 use sfsinfotech\craftcookieconsentflow\Plugin;
 use yii\web\Response;
 use yii\web\NotFoundHttpException;
@@ -16,6 +17,8 @@ class LogsController extends Controller
     protected array|int|bool $allowAnonymous = false;
 
     public const PAGE_SIZE = 50;
+
+    public const VALID_ACTIONS = ['accept_all', 'reject_all', 'custom'];
 
     public function beforeAction($action): bool
     {
@@ -38,7 +41,32 @@ class LogsController extends Controller
         $request = Craft::$app->getRequest();
         $plugin  = Plugin::getInstance();
 
-        $stats = $plugin->consent->getStats();
+        // Site filter: absent, empty, or the explicit "all" sentinel all
+        // mean "All Sites" (siteId = null) — the page's default, matching
+        // how a multi-site admin most often wants to land here (everything,
+        // then narrow down). The "All Sites" option in the dropdown below
+        // links to `?site=all` explicitly rather than relying on the param
+        // simply being missing, so the choice is unambiguous and always
+        // produces a real navigation/selected-state change. A non-empty,
+        // non-"all" param is resolved to a real site, falling back to the
+        // primary site if it no longer exists (deleted site, stale link).
+        $siteParam = $request->getParam('site');
+        $site      = ($siteParam !== null && $siteParam !== '' && $siteParam !== 'all')
+            ? ConsentHelper::resolveSiteFromParam($siteParam)
+            : null;
+
+        // Action filter. Note: the query param is deliberately named
+        // `filter`, NOT `action` — Craft treats any request carrying a
+        // non-empty `action` GET/POST param as an action-route request
+        // (its `?action=some/controller/action` trigger mechanism) and
+        // will try to resolve that value as a route, producing an
+        // `InvalidRouteException` / 404 instead of rendering this page.
+        $filter = $request->getParam('filter', '');
+        if (!in_array($filter, self::VALID_ACTIONS, true)) {
+            $filter = '';
+        }
+
+        $stats = $plugin->consent->getStats($site?->id);
 
         $totalRecords = max(1, $stats['total']);
 
@@ -73,6 +101,8 @@ class LogsController extends Controller
         $page = max(1, (int) $request->getParam('page', 1));
 
         [$records, $total] = $plugin->consent->getLogs(
+            siteId: $site?->id,
+            actionFilter: $filter,
             page: $page,
             perPage: self::PAGE_SIZE
         );
@@ -80,15 +110,19 @@ class LogsController extends Controller
         $totalPages = max(1, (int) ceil($total / self::PAGE_SIZE));
 
         return $this->renderTemplate('cookie-consent-flow/logs/index', [
-            'plugin'       => $plugin,
-            'records'      => $records,
-            'total'        => $total,
-            'page'         => $page,
-            'totalPages'   => $totalPages,
-            'perPage'      => self::PAGE_SIZE,
-            'statsCards'   => $statsCards,
+            'plugin'      => $plugin,
+            'records'     => $records,
+            'total'       => $total,
+            'page'        => $page,
+            'totalPages'  => $totalPages,
+            'perPage'     => self::PAGE_SIZE,
+            'statsCards'  => $statsCards,
+            'currentSite' => $site,
+            'allSites'    => Craft::$app->getSites()->getAllSites(),
+            'filter'      => $filter,
         ]);
     }
+
     public function actionView(int $id): Response
     {
         $this->requireCpRequest();

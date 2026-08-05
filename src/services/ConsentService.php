@@ -20,15 +20,21 @@ class ConsentService extends Component
      *
      * @param  string   $action     'accept_all' | 'reject_all' | 'custom'
      * @param  string[] $categories Category keys the visitor accepted.
-     * @return array{visitorUuid: string, action: string, categories: string[]}
+     * @return array{visitorUuid: string, action: string, categories: string[], siteId: int}
      */
     public function saveConsent(string $action, array $categories): array
     {
         $settings = Plugin::getInstance()->getSettings();
         $request  = Craft::$app->getRequest();
+        $siteId   = Craft::$app->getSites()->getCurrentSite()->id;
 
-        // Resolve visitor UUID
-        $visitorUuid = $request->getCookies()->getValue('cck_visitor') ?? ConsentHelper::generateVisitorUuid();
+        // Resolve visitor UUID: prefer this site's own namespaced cookie,
+        // falling back once to the legacy unnamespaced cookie (pre-dates
+        // multi-site visitor namespacing) so existing visitors aren't
+        // treated as brand new after upgrading.
+        $visitorUuid = $request->getCookies()->getValue(ConsentHelper::visitorCookieName($siteId))
+            ?? $request->getCookies()->getValue(ConsentHelper::LEGACY_VISITOR_COOKIE)
+            ?? ConsentHelper::generateVisitorUuid();
 
         // Fire event (allow third-party code to react / cancel logging)
         $event = new AfterConsentSaveEvent([
@@ -45,7 +51,7 @@ class ConsentService extends Component
             $record              = new ConsentLogRecord();
             $record->visitorUuid = $visitorUuid;
             $record->ipHash      = ConsentHelper::hashIp($request->getRemoteIP() ?? '0.0.0.0');
-            $record->siteId      = Craft::$app->getSites()->getCurrentSite()->id;
+            $record->siteId      = $siteId;
             $record->categories  = Json::encode($categories);
             $record->action      = $action;
             $record->countryCode = Plugin::getInstance()->geo->getCountryCode();
@@ -67,18 +73,24 @@ class ConsentService extends Component
             'visitorUuid' => $visitorUuid,
             'action'      => $action,
             'categories'  => $categories,
+            'siteId'      => $siteId,
         ];
     }
 
     /**
-     * Returns the most recent consent record for a visitor UUID, or null.
+     * Returns the most recent consent record for a visitor UUID on a given
+     * site, or null. Site-scoped so a visitor's consent on one site is
+     * never reported as consent on another (defense-in-depth alongside the
+     * per-site visitor cookie namespacing in ConsentController).
      *
      * @return array{action: string, categories: string[], dateCreated: string}|null
      */
-    public function getConsent(string $visitorUuid): ?array
+    public function getConsent(string $visitorUuid, ?int $siteId = null): ?array
     {
+        $siteId ??= Craft::$app->getSites()->getCurrentSite()->id;
+
         $record = ConsentLogRecord::find()
-            ->where(['visitorUuid' => $visitorUuid])
+            ->where(['visitorUuid' => $visitorUuid, 'siteId' => $siteId])
             ->orderBy(['dateCreated' => SORT_DESC])
             ->one();
 
@@ -94,15 +106,20 @@ class ConsentService extends Component
     }
 
     /**
-     * Returns aggregated dashboard statistics for the current Craft site.
+     * Returns aggregated consent statistics for a site, or across every
+     * site when `$siteId` is null — mirrors `getLogs()`'s convention so a
+     * "null site" consistently means "All Sites" throughout the CP, rather
+     * than silently defaulting to the current site.
      *
      * @return array{total: int, acceptAll: int, rejectAll: int, custom: int}
      */
-    public function getStats(): array
+    public function getStats(?int $siteId = null): array
     {
-        $siteId = Craft::$app->getSites()->getCurrentSite()->id;
+        $query = ConsentLogRecord::find();
 
-        $query = ConsentLogRecord::find()->where(['siteId' => $siteId]);
+        if ($siteId !== null) {
+            $query->where(['siteId' => $siteId]);
+        }
 
         return [
             'total'     => (int) (clone $query)->count(),
@@ -113,16 +130,25 @@ class ConsentService extends Component
     }
 
     /**
-     * Returns a paginated list of consent log records for the CP log viewer.
+     * Returns a paginated list of consent log records for the CP log viewer,
+     * scoped to a single site so a multi-site admin viewing "site A" never
+     * sees rows from every site merged together. Pass `$siteId = null`
+     * explicitly (rather than omitting it) to intentionally list across
+     * all sites.
      *
-     * @param  string $actionFilter  '' (all), 'accept_all', 'reject_all', or 'custom'
-     * @param  int    $page          1-based page number
-     * @param  int    $perPage       Rows per page
+     * @param  int|null $siteId       Site to filter by, or null for all sites.
+     * @param  string   $actionFilter '' (all), 'accept_all', 'reject_all', or 'custom'
+     * @param  int      $page         1-based page number
+     * @param  int      $perPage      Rows per page
      * @return array{0: ConsentLogRecord[], 1: int}  [records, totalCount]
      */
-    public function getLogs(string $actionFilter = '', int $page = 1, int $perPage = 50): array
+    public function getLogs(?int $siteId, string $actionFilter = '', int $page = 1, int $perPage = 50): array
     {
         $query = ConsentLogRecord::find()->orderBy(['dateCreated' => SORT_DESC]);
+
+        if ($siteId !== null) {
+            $query->andWhere(['siteId' => $siteId]);
+        }
 
         if ($actionFilter !== '') {
             $query->andWhere(['action' => $actionFilter]);

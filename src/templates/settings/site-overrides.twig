@@ -1,0 +1,255 @@
+{% extends "_layouts/cp" %}
+{% import "_includes/forms" as forms %}
+{% import "cookie-consent-flow/settings/_override-field" as overrideField %}
+
+{% set title = "Multi Site Override"|t('cookie-consent-flow') %}
+{% set fullPageForm = true %}
+{% set selectedSubnavItem = 'multi-site-override' %}
+{% set mainFormAttributes = {'data-confirm-unload': true, 'data-saveshortcut': true} %}
+
+{% block actionButton %}
+    <div class="btngroup">
+        <input type="submit" class="btn submit" value="{{ 'Save'|t('app') }}">
+    </div>
+{% endblock %}
+
+{% block content %}
+<input type="hidden" name="action" value="cookie-consent-flow/settings/save-multi-site-override">
+{{ redirectInput('cookie-consent-flow/settings/multi-site-override') }}
+{{ csrfInput() }}
+
+<p class="light">
+    {{ "These settings override Global Settings for an individual site. Each section below has its own \"Use Global Settings\" toggle — leave it on to inherit every value in that section from Global Settings, or turn it off to edit and save site-specific values just for that section."|t('cookie-consent-flow') }}
+</p>
+
+{# ── Sticky toolbar: search ─────────────────────────────────────────────── #}
+<div class="cck-override-toolbar">
+    <div class="cck-override-toolbar__search">
+        <input
+            type="search"
+            id="cck-override-search"
+            placeholder="{{ 'Search settings…'|t('cookie-consent-flow') }}"
+            aria-label="{{ 'Search settings'|t('cookie-consent-flow') }}"
+        >
+    </div>
+</div>
+
+{% set fieldGroups = settings.getOverrideFieldGroups() %}
+
+{% for site in sites %}
+    {% set resolved = settings.resolveForSite(site.id) %}
+    {% set isCategoriesOverridden = settings.isFieldOverridden(site.id, 'categories') %}
+    {% set overrideCount = settings.getSiteOverrideCount(site.id) %}
+    {% set updatedAt = settings.getSiteOverrideUpdatedAt(site.id) %}
+    {% set bannerLayoutLabel = settings.getOverrideFieldOptionLabel('bannerLayout', resolved.bannerLayout) %}
+
+    <div class="cck-site-summary-card">
+        <div class="cck-site-summary-card__header">
+            <span class="cck-site-summary-card__icon" aria-hidden="true">🌐</span>
+            <span class="cck-site-summary-card__name">{{ site.name }}</span>
+            <span class="cck-badge {{ overrideCount ? 'cck-badge--overridden' : 'cck-badge--inherited' }}">
+                {{ overrideCount ? "{count, plural, =1{1 Override} other{# Overrides}}"|t('cookie-consent-flow', {count: overrideCount}) : "No overrides"|t('cookie-consent-flow') }}
+            </span>
+        </div>
+        <div class="cck-site-summary-card__stats">
+            <div class="cck-site-summary-card__stat">
+                <span class="cck-field-label">{{ "Banner"|t('cookie-consent-flow') }}</span>
+                {{ bannerLayoutLabel ?? resolved.bannerLayout }}
+            </div>
+            <div class="cck-site-summary-card__stat">
+                <span class="cck-field-label">{{ "Geo"|t('cookie-consent-flow') }}</span>
+                {{ resolved.geoEnabled ? "Enabled"|t('cookie-consent-flow') : "Disabled"|t('cookie-consent-flow') }}
+            </div>
+            <div class="cck-site-summary-card__stat">
+                <span class="cck-field-label">{{ "Categories"|t('cookie-consent-flow') }}</span>
+                {{ resolved.categories|length }}
+            </div>
+            <div class="cck-site-summary-card__stat">
+                <span class="cck-field-label">{{ "Last Updated"|t('cookie-consent-flow') }}</span>
+                {{ updatedAt ? updatedAt|date('short') : '—' }}
+            </div>
+        </div>
+    </div>
+
+    <details class="cck-site-panel" data-site-id="{{ site.id }}"{% if loop.first %} open{% endif %}>
+        <summary class="cck-site-panel__summary">{{ site.name }}</summary>
+
+        <div class="cck-site-panel__body">
+            <div class="cck-site-panel__actions">
+                <button type="button" class="btn cck-copy-global" data-copy-global="{{ site.id }}">
+                    {{ "Copy Global Settings"|t('cookie-consent-flow') }}
+                </button>
+
+                {% if sites|length > 1 %}
+                    <span class="cck-copy-from">
+                        {{ "Copy From"|t('cookie-consent-flow') }}
+                        <select class="cck-copy-from-select" data-site="{{ site.id }}">
+                            {% for otherSite in sites %}
+                                {% if otherSite.id != site.id %}
+                                    <option value="{{ otherSite.id }}">{{ otherSite.name }}</option>
+                                {% endif %}
+                            {% endfor %}
+                        </select>
+                        <button type="button" class="btn cck-copy-into" data-copy-into="{{ site.id }}">
+                            {{ "Copy"|t('cookie-consent-flow') }}
+                        </button>
+                    </span>
+                {% endif %}
+
+                <button type="button" class="btn cck-reset-site" data-reset-site="{{ site.id }}">
+                    {{ "Reset Multi Site Override"|t('cookie-consent-flow') }}
+                </button>
+
+                <button type="button" class="btn cck-expand-all" data-expand-all="{{ site.id }}">
+                    {{ "Expand All Sections"|t('cookie-consent-flow') }}
+                </button>
+            </div>
+
+            {% if overrideCount == 0 %}
+                <p class="cck-empty-state" data-default-empty-state>
+                    {{ "This site currently inherits all Global Settings."|t('cookie-consent-flow') }}
+                </p>
+            {% endif %}
+
+            <p class="cck-empty-state cck-empty-state--filtered hidden">
+                {{ "No settings match your filters."|t('cookie-consent-flow') }}
+            </p>
+
+            {% for groupName, fields in fieldGroups %}
+                {% set groupSlug = groupName|lower|replace({' ': '-'}) %}
+                {% set groupFieldKeys = fields|map(f => f.key) %}
+                {% set groupTotal = groupFieldKeys|length %}
+                {% set groupOverrideCount = settings.getGroupOverrideCount(site.id, groupFieldKeys) %}
+                {% set groupInherited = groupOverrideCount == 0 %}
+                {% set groupPartial = groupOverrideCount > 0 and groupOverrideCount < groupTotal %}
+                {% set groupToggleId = 'site' ~ site.id ~ '-group-' ~ groupSlug ~ '-toggle' %}
+                {% set groupBodyId = 'site' ~ site.id ~ '-group-' ~ groupSlug ~ '-body' %}
+
+                <div class="cck-override-card{% if groupInherited %} cck-override-card--inherited{% endif %}"
+                     data-group-card
+                     data-card-key="{{ groupSlug }}"
+                     data-collapsed="{{ groupInherited ? '1' : '0' }}"
+                >
+                    <div class="cck-override-card__header">
+                        <button type="button" class="cck-override-card__disclosure" data-toggle-collapse aria-expanded="{{ groupInherited ? 'false' : 'true' }}" aria-controls="{{ groupBodyId }}">
+                            <span class="cck-override-card__chevron" aria-hidden="true"></span>
+                            <h3 class="cck-override-card__title">{{ groupName|t('cookie-consent-flow') }}</h3>
+                        </button>
+
+                        <div class="cck-override-card__toggle">
+                            {% if groupPartial %}
+                                <span class="cck-badge cck-badge--partial" data-group-badge title="{{ 'Saved before section-level toggles existed — switch \"Use Global Settings\" off then on again to normalise it.'|t('cookie-consent-flow') }}">
+                                    {{ "{count}/{total} Overridden"|t('cookie-consent-flow', {count: groupOverrideCount, total: groupTotal}) }}
+                                </span>
+                            {% else %}
+                                <span class="cck-badge {{ groupInherited ? 'cck-badge--inherited' : 'cck-badge--overridden' }}" data-group-badge>
+                                    {{ groupInherited ? "Inherited"|t('cookie-consent-flow') : "Site Override"|t('cookie-consent-flow') }}
+                                </span>
+                            {% endif %}
+                            <label class="cck-group-toggle-label" for="{{ groupToggleId }}">
+                                {{ "Use Global Settings"|t('cookie-consent-flow') }}
+                            </label>
+                            <span class="cck-group-toggle-switch">
+                                <input
+                                    type="checkbox"
+                                    id="{{ groupToggleId }}"
+                                    class="cck-group-toggle"
+                                    data-group-target="{{ groupBodyId }}"
+                                    {% if groupInherited %}checked{% endif %}
+                                >
+                                <span class="cck-group-toggle-slider" aria-hidden="true"></span>
+                            </span>
+                        </div>
+                    </div>
+
+                    <div class="cck-override-card__body" id="{{ groupBodyId }}">
+                        {% for fieldDef in fields %}
+                            {{ overrideField.field(
+                                fieldDef,
+                                site.id,
+                                resolved,
+                                settings.isFieldOverridden(site.id, fieldDef.key),
+                                groupName,
+                                settings
+                            ) }}
+                        {% endfor %}
+                    </div>
+                </div>
+            {% endfor %}
+
+            <div class="cck-override-card cck-override-row{% if not isCategoriesOverridden %} cck-override-card--inherited{% endif %}"
+                 data-group-card
+                 data-card-key="cookie-categories"
+                 data-collapsed="{{ isCategoriesOverridden ? '0' : '1' }}"
+                 data-search="{{ 'categories cookie categories'|lower }}"
+                 data-overridden="{{ isCategoriesOverridden ? '1' : '0' }}"
+            >
+                <div class="cck-override-card__header">
+                    <button type="button" class="cck-override-card__disclosure" data-toggle-collapse aria-expanded="{{ isCategoriesOverridden ? 'true' : 'false' }}" aria-controls="site{{ site.id }}-categories-block">
+                        <span class="cck-override-card__chevron" aria-hidden="true"></span>
+                        <h3 class="cck-override-card__title">{{ "Cookie Categories"|t('cookie-consent-flow') }}</h3>
+                    </button>
+
+                    <div class="cck-override-card__toggle">
+                        <span class="cck-badge {{ isCategoriesOverridden ? 'cck-badge--overridden' : 'cck-badge--inherited' }}" data-group-badge>
+                            {{ isCategoriesOverridden ? "Site Override"|t('cookie-consent-flow') : "Inherited"|t('cookie-consent-flow') }}
+                        </span>
+                        <label class="cck-group-toggle-label" for="site{{ site.id }}-categories-toggle">
+                            {{ "Use Global Settings"|t('cookie-consent-flow') }}
+                        </label>
+                        <span class="cck-group-toggle-switch">
+                            <input
+                                type="checkbox"
+                                id="site{{ site.id }}-categories-toggle"
+                                class="cck-group-toggle cck-use-global-checkbox"
+                                name="sites[{{ site.id }}][__useGlobal][categories]"
+                                value="1"
+                                data-group-target="site{{ site.id }}-categories-block"
+                                data-target="site{{ site.id }}-categories-block"
+                                {% if not isCategoriesOverridden %}checked{% endif %}
+                            >
+                            <span class="cck-group-toggle-slider" aria-hidden="true"></span>
+                        </span>
+                    </div>
+                </div>
+
+                <div class="cck-override-card__body">
+                    <div id="site{{ site.id }}-categories-block" class="cck-categories-group{% if not isCategoriesOverridden %} cck-override-field--inherited{% endif %}">
+                        <div class="cck-categories-list">
+                            {% for i, category in resolved.categories %}
+                                {% include 'cookie-consent-flow/settings/_category-row' with {
+                                    category:   category,
+                                    index:      i,
+                                    namePrefix: 'sites[' ~ site.id ~ ']',
+                                } %}
+                            {% endfor %}
+                        </div>
+
+                        <button type="button" class="btn add icon cck-add-category">
+                            {{ "Add Category"|t('cookie-consent-flow') }}
+                        </button>
+
+                        <template class="cck-category-template">
+                            {% include 'cookie-consent-flow/settings/_category-row' with {
+                                category:   { key: '', label: '', description: '', default: false, locked: false },
+                                index:      '__INDEX__',
+                                namePrefix: 'sites[' ~ site.id ~ ']',
+                            } %}
+                        </template>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </details>
+{% endfor %}
+{% endblock %}
+
+{% js %}
+    window.cckStrings = {{ {
+        'Inherited':           'Inherited'|t('cookie-consent-flow'),
+        'Overridden':          'Overridden'|t('cookie-consent-flow'),
+        'Site Override':       'Site Override'|t('cookie-consent-flow'),
+        'Expand All Sections': 'Expand All Sections'|t('cookie-consent-flow'),
+        'Collapse All Sections': 'Collapse All Sections'|t('cookie-consent-flow'),
+    }|json_encode|raw }};
+{% endjs %}

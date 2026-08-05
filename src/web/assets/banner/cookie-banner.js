@@ -9,8 +9,11 @@
 (function (window, document) {
   'use strict';
 
-  var STORAGE_KEY = 'cck_consent';
-  var VISITOR_KEY = 'cck_visitor';
+  // Legacy, unnamespaced keys from before multi-site support. Kept as a
+  // one-time migration source (see _resolveStorageKeys below) so upgrading
+  // an existing single-site install doesn't lose stored consent.
+  var LEGACY_STORAGE_KEY = 'cck_consent';
+  var LEGACY_VISITOR_KEY = 'cck_visitor';
 
   /* ------------------------------------------------------------------
      Utility: localStorage with cookie fallback
@@ -172,16 +175,19 @@
   var CookieConsentKit = {
     _config: null,
     _previousFocus: null,
+    _storageKey: LEGACY_STORAGE_KEY,
+    _visitorKey: LEGACY_VISITOR_KEY,
 
     // ----------------------------------------------------------------
     // Initialise
     // ----------------------------------------------------------------
     init: function () {
       this._config = window.cckConfig || {};
+      this._resolveStorageKeys();
 
       if (this.hasConsent()) {
         // Restore categories so third-party scripts can read them
-        var stored = Store.get(STORAGE_KEY);
+        var stored = Store.get(this._storageKey);
         if (stored) {
           activateGatedContent(stored.categories || []);
           this._dispatchEvent('cck:loaded', stored);
@@ -194,14 +200,46 @@
     },
 
     // ----------------------------------------------------------------
+    // Namespace consent/visitor storage by Craft site so a decision made
+    // on one site is never silently read as consent for another on a
+    // shared-origin multi-site install (e.g. example.com/en vs
+    // example.com/de as separate Craft sites). On the first run for a
+    // given site, if a legacy unnamespaced value exists, adopt it into the
+    // namespaced key and delete the legacy key — this preserves existing
+    // consent for the common single-site case (no visible change; it's
+    // just renamed under the hood) while every *other* site on a shared
+    // origin correctly starts fresh, since only one site can "win" the
+    // legacy key on first visit after upgrade.
+    // ----------------------------------------------------------------
+    _resolveStorageKeys: function () {
+      var siteId = this._config && this._config.siteId;
+      if (siteId === undefined || siteId === null) {
+        // No site context (shouldn't normally happen) — keep legacy keys
+        // rather than namespacing under a meaningless placeholder.
+        return;
+      }
+
+      this._storageKey = LEGACY_STORAGE_KEY + '_' + siteId;
+      this._visitorKey = LEGACY_VISITOR_KEY + '_' + siteId;
+
+      if (Store.get(this._storageKey) === null) {
+        var legacyConsent = Store.get(LEGACY_STORAGE_KEY);
+        if (legacyConsent !== null) {
+          Store.set(this._storageKey, legacyConsent);
+          Store.remove(LEGACY_STORAGE_KEY);
+        }
+      }
+    },
+
+    // ----------------------------------------------------------------
     // Consent state
     // ----------------------------------------------------------------
     hasConsent: function () {
-      return !!Store.get(STORAGE_KEY);
+      return !!Store.get(this._storageKey);
     },
 
     getConsent: function () {
-      return Store.get(STORAGE_KEY);
+      return Store.get(this._storageKey);
     },
 
     // ----------------------------------------------------------------
@@ -248,7 +286,7 @@
       trapFocus(modal);
 
       // Restore checked state from storage
-      var stored = Store.get(STORAGE_KEY);
+      var stored = Store.get(this._storageKey);
       if (stored && stored.categories) {
         var checkboxes = modal.querySelectorAll('input[type="checkbox"][data-category]');
         checkboxes.forEach(function (cb) {
@@ -302,8 +340,8 @@
     },
 
     resetConsent: function () {
-    Store.remove(STORAGE_KEY);
-    Store.remove(VISITOR_KEY);
+    Store.remove(this._storageKey);
+    Store.remove(this._visitorKey);
 
     this._dispatchEvent('cck:reset', {});
     this._showBanner();
@@ -319,7 +357,7 @@
         timestamp:  Date.now()
       };
 
-      Store.set(STORAGE_KEY, data);
+      Store.set(this._storageKey, data);
       activateGatedContent(categories);
       this._dispatchEvent('cck:consent', data);
       this._hideBanner();
@@ -332,6 +370,7 @@
     // ----------------------------------------------------------------
     _sync: function (action, categories) {
       var cfg = this._config;
+      var visitorKey = this._visitorKey;
       if (!cfg || !cfg.saveUrl) return;
 
       var body = {};
@@ -356,7 +395,7 @@
         return res.json();
       }).then(function (json) {
         if (json && json.visitorUuid) {
-          Store.set(VISITOR_KEY, json.visitorUuid);
+          Store.set(visitorKey, json.visitorUuid);
         }
       }).catch(function () {
         // Consent is saved locally; server sync failure is non-fatal.

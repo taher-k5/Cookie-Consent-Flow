@@ -1,0 +1,110 @@
+{# Macro: a single overridable field for the Multi Site Override page.
+   Inheritance is controlled at the GROUP level (one toggle per settings
+   card, see site-overrides.twig) rather than per field. Each field still
+   carries its own hidden "Use Global Setting" checkbox purely so
+   SettingsService::saveSiteOverrides() keeps working exactly as before
+   (it reads one flag per field) — cookie-consent.js drives every hidden
+   checkbox in a group from that group's single visible toggle, so no
+   individual checkbox is ever shown or clicked directly by an admin.
+
+   data-search / data-overridden / data-global-value power the page's
+   client-side search, "show only overridden" filter, and "Copy Global
+   Settings" action — see cookie-consent.js. #}
+{% import "_includes/forms" as forms %}
+
+{% macro field(fieldDef, siteId, resolved, isOverridden, groupName, globalSettings) %}
+    {% import "_includes/forms" as forms %}
+
+    {% set fid           = 'site' ~ siteId ~ '-' ~ fieldDef.key %}
+    {% set name           = 'sites[' ~ siteId ~ '][' ~ fieldDef.key ~ ']' %}
+    {% set useGlobalName  = 'sites[' ~ siteId ~ '][__useGlobal][' ~ fieldDef.key ~ ']' %}
+    {% set value          = resolved.getFieldDisplayValue(fieldDef.key) %}
+    {% set globalValue     = globalSettings.getFieldDisplayValue(fieldDef.key) %}
+    {% set label           = fieldDef.label|t('cookie-consent-flow') %}
+    {% set instructions    = fieldDef.instructions is defined ? fieldDef.instructions|t('cookie-consent-flow') : null %}
+    {% set searchText      = (label ~ ' ' ~ fieldDef.type ~ ' ' ~ groupName)|lower %}
+
+    <div class="cck-override-row{% if isOverridden %} cck-override-row--overridden{% endif %}"
+         data-search="{{ searchText }}"
+         data-overridden="{{ isOverridden ? '1' : '0' }}"
+         data-field-key="{{ fieldDef.key }}"
+         data-field-type="{{ fieldDef.type }}"
+         data-global-value="{{ globalValue }}"
+    >
+        <input
+            type="checkbox"
+            class="cck-use-global-checkbox cck-visually-hidden"
+            name="{{ useGlobalName }}"
+            value="1"
+            data-target="{{ fid }}-field"
+            aria-hidden="true"
+            tabindex="-1"
+            {% if not isOverridden %}checked{% endif %}
+        >
+
+        {% if fieldDef.type == 'lightswitch' %}
+            {# Deliberately never server-rendered as disabled: Craft's
+               Craft.LightSwitch widget only binds its click/keyboard
+               listeners once, at construction, if it *isn't* disabled at
+               that moment — toggling the `disabled` attribute afterward via
+               JS does nothing for a switch that started out disabled, since
+               it never got listeners in the first place. Locking/unlocking
+               while "Use Global Setting" is toggled is instead handled
+               entirely client-side in cookie-consent.js (which dynamically
+               sets/clears `disabled` — safe here since native browser
+               disabled semantics apply live in both directions; only
+               Garnish's one-time init check is the trap). #}
+            {{ forms.lightswitchField({
+                id:           fid,
+                name:         name,
+                label:        label,
+                instructions: instructions,
+                on:           value,
+            }) }}
+        {% elseif fieldDef.type == 'select' %}
+            {{ forms.selectField({
+                id:           fid,
+                name:         name,
+                label:        label,
+                instructions: instructions,
+                options:      fieldDef.options,
+                value:        value,
+                disabled:     not isOverridden,
+            }) }}
+        {% elseif fieldDef.type == 'textarea' %}
+            {{ forms.textareaField({
+                id:           fid,
+                name:         name,
+                label:        label,
+                instructions: instructions,
+                value:        isOverridden ? value : '',
+                placeholder:  globalValue,
+                rows:         4,
+                disabled:     not isOverridden,
+            }) }}
+        {% elseif fieldDef.type == 'color' %}
+            {# Craft's colorField has no placeholder concept — its swatch
+               preview needs a real value to show, so it keeps displaying the
+               resolved (global-or-override) value rather than sitting empty
+               when inherited. #}
+            {{ forms.colorField({
+                id:           fid,
+                name:         name,
+                label:        label,
+                instructions: instructions,
+                value:        value,
+                disabled:     not isOverridden,
+            }) }}
+        {% else %}
+            {{ forms.textField({
+                id:           fid,
+                name:         name,
+                label:        label,
+                instructions: instructions,
+                value:        isOverridden ? value : '',
+                placeholder:  globalValue,
+                disabled:     not isOverridden,
+            }) }}
+        {% endif %}
+    </div>
+{% endmacro %}
