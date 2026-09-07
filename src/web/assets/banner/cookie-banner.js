@@ -185,9 +185,21 @@
       this._config = window.cckConfig || {};
       this._resolveStorageKeys();
 
+      // Always bind action-button delegation, even if consent already
+      // exists — a persistent "manage preferences" / "reset consent" link
+      // (renderPreferencesButton() / resetConsent()) must keep working
+      // after the initial decision, not just while the banner is showing.
+      this._bindGlobalEvents();
+
+      // Runs regardless of consent state (deliberately before the
+      // hasConsent() branch below) — the whole point is to surface cookies
+      // nobody has documented yet, including necessary/technical ones that
+      // exist before any consent decision at all.
+      this._reportDetectedCookies();
+
       if (this.hasConsent()) {
         // Restore categories so third-party scripts can read them
-        var stored = Store.get(this._storageKey);
+        var stored = this.getConsent();
         if (stored) {
           activateGatedContent(stored.categories || []);
           this._dispatchEvent('cck:loaded', stored);
@@ -195,7 +207,6 @@
         return;
       }
 
-      this._bindGlobalEvents();
       this._showBanner();
     },
 
@@ -233,13 +244,39 @@
 
     // ----------------------------------------------------------------
     // Consent state
+    //
+    // A stored decision is only valid if it is both fresh (within
+    // consentExpiryDays — ICO/CNIL guidance recommends re-asking within
+    // ~6-12 months; 0 disables expiry) and against the current
+    // policyVersion (bumped whenever the cookie policy/category list
+    // changes materially). Either check failing means the visitor must
+    // re-consent, so hasConsent()/getConsent() treat it as if nothing were
+    // stored at all — this is what makes the banner reappear and stops
+    // refreshGatedContent()/init() from activating gated content on stale
+    // consent.
     // ----------------------------------------------------------------
     hasConsent: function () {
-      return !!Store.get(this._storageKey);
+      var stored = Store.get(this._storageKey);
+      if (!stored) return false;
+
+      var cfg = this._config || {};
+
+      if (cfg.policyVersion && stored.policyVersion !== cfg.policyVersion) {
+        return false;
+      }
+
+      var expiryDays = cfg.consentExpiryDays;
+      if (expiryDays && stored.timestamp) {
+        if (Date.now() - stored.timestamp > expiryDays * 86400000) {
+          return false;
+        }
+      }
+
+      return true;
     },
 
     getConsent: function () {
-      return Store.get(this._storageKey);
+      return this.hasConsent() ? Store.get(this._storageKey) : null;
     },
 
     // ----------------------------------------------------------------
@@ -352,9 +389,10 @@
     // ----------------------------------------------------------------
     _commit: function (action, categories) {
       var data = {
-        action:    action,
-        categories: categories,
-        timestamp:  Date.now()
+        action:        action,
+        categories:    categories,
+        timestamp:     Date.now(),
+        policyVersion: (this._config && this._config.policyVersion) || ''
       };
 
       Store.set(this._storageKey, data);
@@ -399,6 +437,68 @@
         }
       }).catch(function () {
         // Consent is saved locally; server sync failure is non-fatal.
+      });
+    },
+
+    // ----------------------------------------------------------------
+    // Cookie detection — reports cookie NAMES only (never values) so the
+    // Cookies CP page can flag anything a developer hasn't documented yet,
+    // without requiring them to already know it exists. Throttled via
+    // localStorage so a given browser doesn't re-POST every name on every
+    // single page load — but the throttle expires after REPORT_TTL_MS
+    // rather than lasting forever. A "report once ever" throttle would
+    // permanently blind a browser to a name the moment the server-side
+    // record of it is gone for any reason (DB restore, a plugin reinstall
+    // during dev, an admin clearing the table to re-test) — the client has
+    // no way to know the server "forgot", so it would just never re-report
+    // that name again. A day-long TTL means detection self-heals within a
+    // day of any such reset instead of silently staying blind forever.
+    // ----------------------------------------------------------------
+    _reportDetectedCookies: function () {
+      var cfg = this._config;
+      if (!cfg || !cfg.reportCookiesUrl || !document.cookie) return;
+
+      var REPORT_TTL_MS = 24 * 60 * 60 * 1000;
+
+      var names = document.cookie.split(';').map(function (part) {
+        var eq = part.indexOf('=');
+        return (eq === -1 ? part : part.slice(0, eq)).trim();
+      }).filter(Boolean);
+
+      if (!names.length) return;
+
+      var reportedKey = 'cck_reported_' + (cfg.siteId !== undefined ? cfg.siteId : '0');
+      var reported     = Store.get(reportedKey) || {};
+      var now          = Date.now();
+      var newNames     = names.filter(function (n) {
+        return !reported[n] || (now - reported[n]) > REPORT_TTL_MS;
+      });
+
+      if (!newNames.length) return;
+
+      var body = {};
+      body[cfg.csrfTokenName || 'CRAFT_CSRF_TOKEN'] = cfg.csrfToken || '';
+      body.names = newNames;
+
+      var headers = {
+        'Content-Type': 'application/json',
+        'Accept': 'application/json'
+      };
+      if (cfg.csrfToken) {
+        headers['X-CSRF-Token'] = cfg.csrfToken;
+      }
+
+      fetch(cfg.reportCookiesUrl, {
+        method:      'POST',
+        credentials: 'same-origin',
+        headers:     headers,
+        body:        JSON.stringify(body)
+      }).then(function () {
+        newNames.forEach(function (n) { reported[n] = now; });
+        Store.set(reportedKey, reported);
+      }).catch(function () {
+        // Best-effort telemetry only; a failed report just means it's
+        // retried on a future page load instead of this one.
       });
     },
 

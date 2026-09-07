@@ -97,6 +97,22 @@
                 rows:         4,
                 disabled:     not isOverridden,
             }) }}
+        {% elseif fieldDef.type == 'asset' %}
+            {% set asset = value ? craft.assets.id(value).one() : null %}
+            {{ forms.elementSelectField({
+                id:           fid,
+                name:         name,
+                label:        label,
+                instructions: instructions,
+                elements:     asset ? [asset] : [],
+                elementType:  'craft\\elements\\Asset',
+                criteria:     { kind: ['image'] },
+                limit:        1,
+                single:       true,
+                viewMode:     'large',
+                sources:      '*',
+                disabled:     not isOverridden,
+            }) }}
         {% elseif fieldDef.type == 'color' %}
             {# Craft's colorField has no placeholder concept — its swatch
                preview needs a real value to show, so it keeps displaying the

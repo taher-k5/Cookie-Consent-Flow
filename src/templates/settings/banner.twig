@@ -87,7 +87,7 @@
 
     {{ forms.field({
         label:        "Banner Layout"|t('cookie-consent-flow'),
-        instructions: "Choose how and where the banner appears on the page."|t('cookie-consent-flow'),
+        instructions: "Choose how and where the banner appears on the page. On mobile screens, the banner always appears as a bottom bar regardless of this setting, for a more reliable small-screen layout."|t('cookie-consent-flow'),
         id:           'bannerLayout',
     }, bannerLayoutInput) }}
 
@@ -200,6 +200,20 @@
 <div id="ccf-content" class="hidden" role="tabpanel" aria-labelledby="tab-ccf-content">
 
     <h2>{{ "Banner Text"|t('cookie-consent-flow') }}</h2>
+
+    {{ forms.elementSelectField({
+        label:        "Logo"|t('cookie-consent-flow'),
+        instructions: "Optional logo shown in the banner and preferences panel."|t('cookie-consent-flow'),
+        id:           'logoAssetId',
+        name:         'settings[logoAssetId]',
+        elements:     settings.logoAsset ? [settings.logoAsset] : [],
+        elementType:  'craft\\elements\\Asset',
+        criteria:     { kind: ['image'] },
+        limit:        1,
+        single:       true,
+        viewMode:     'large',
+        sources:      '*',
+    }) }}
 
     {{ forms.textField({
         label:        "Heading"|t('cookie-consent-flow'),
@@ -510,7 +524,7 @@
     <hr>
     <p>
         <a href="{{ cpUrl('cookie-consent-flow/settings/multi-site-override') }}">
-            {{ "Manage Multi Site Override →"|t('cookie-consent-flow') }}
+            {{ "Manage Multisite →"|t('cookie-consent-flow') }}
         </a>
     </p>
 {% endif %}

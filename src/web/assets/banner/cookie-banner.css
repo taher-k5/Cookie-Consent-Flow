@@ -7,9 +7,11 @@
 /* --------------------------------------------------------------------------
    Base reset & accessibility
    -------------------------------------------------------------------------- */
+#cck-banner,
 #cck-banner *,
 #cck-banner *::before,
 #cck-banner *::after,
+#cck-preferences,
 #cck-preferences *,
 #cck-preferences *::before,
 #cck-preferences *::after {
@@ -152,6 +154,13 @@
    -------------------------------------------------------------------------- */
 .cck-banner__content {
   flex: 1 1 300px;
+}
+
+.cck-banner__logo {
+  display: block;
+  max-height: 32px;
+  max-width: 160px;
+  margin: 0 0 8px;
 }
 
 .cck-banner__heading {
@@ -309,8 +318,20 @@
   margin-bottom: 16px;
 }
 
+.cck-preferences__logo {
+  display: block;
+  max-height: 28px;
+  max-width: 140px;
+  flex-shrink: 0;
+}
+
 .cck-preferences__title {
   margin: 0;
+  /* Grows to fill the space between the logo and the close button, so
+     justify-content: space-between on the header (see above) doesn't
+     spread all three items apart evenly — the logo and title stay
+     visually grouped on the left instead. */
+  flex: 1;
   font-size: 1.125rem;
   font-weight: 600;
   color: var(--cck-heading-color, #111827);
@@ -389,6 +410,70 @@
 .cck-category--locked .cck-category__name::after {
   content: ' 🔒';
   font-size: 0.75em;
+}
+
+/* --------------------------------------------------------------------------
+   Per-cookie disclosure (documented on the Cookies CP page)
+   -------------------------------------------------------------------------- */
+.cck-category__cookies {
+  margin-top: 12px;
+}
+
+.cck-category__cookies-summary {
+  cursor: pointer;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  color: var(--cck-link-color, #2563eb);
+  list-style: none;
+}
+
+.cck-category__cookies-summary::-webkit-details-marker {
+  display: none;
+}
+
+.cck-category__cookies-summary::before {
+  content: '▸';
+  display: inline-block;
+  margin-right: 4px;
+  transition: transform 0.15s ease;
+}
+
+.cck-category__cookies[open] > .cck-category__cookies-summary::before {
+  transform: rotate(90deg);
+}
+
+.cck-cookie-list {
+  list-style: none;
+  margin: 8px 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.cck-cookie-list__item {
+  padding-left: 12px;
+  border-left: 2px solid var(--cck-banner-border, #e5e7eb);
+}
+
+.cck-cookie-list__name {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  color: var(--cck-heading-color, #111827);
+}
+
+.cck-cookie-list__meta {
+  margin-left: 8px;
+  font-size: 0.75rem;
+  color: var(--cck-desc-color, #6b7280);
+}
+
+.cck-cookie-list__purpose {
+  margin: 2px 0 0;
+  font-size: 0.75rem;
+  color: var(--cck-desc-color, #6b7280);
+  line-height: 1.5;
 }
 
 /* --------------------------------------------------------------------------
@@ -481,6 +566,21 @@
     align-items: stretch;
   }
 
+  /* .cck-banner__content's default `flex: 1 1 300px` (declared further up)
+     is meant for the row-direction desktop bars, where flex-grow fills
+     available *horizontal* width — harmless there. Once flex-direction
+     switches to column above, that same flex-grow applies along the
+     vertical main axis instead, stretching this block (and the empty
+     space inside it, since the text itself doesn't grow) to fill the
+     bar's height and pushing the buttons down with a large gap in
+     between. Center/corner-popup already override this back to
+     `0 1 auto` for their own (always-column) desktop layout; bottom-bar
+     and top-bar need the same override, but only once they become
+     column on mobile. */
+  .cck-banner__content {
+    flex: 0 1 auto;
+  }
+
   .cck-banner__actions {
     flex-direction: column;
   }
@@ -490,16 +590,58 @@
     justify-content: center;
   }
 
+  /* All four layouts collapse to the same bottom-anchored bar on mobile,
+     regardless of which one is configured — center-popup and corner-popup
+     rely on `top: 50%` / `vh` units and centering transforms to size and
+     position themselves, and mobile browsers resize their viewport height
+     as the address bar/toolbar show or hide, which those units and
+     transforms don't handle gracefully: the popup can end up positioned
+     and sized against a taller "layout viewport" than what's actually
+     visible, leaving a large empty gap between the description and the
+     action buttons. Forcing every layout into simple, content-hugging
+     bottom-bar positioning sidesteps that entirely, and is also just a
+     better small-screen pattern than a floating popup in general. */
+  .cck-layout--top-bar,
+  .cck-layout--center-popup,
   .cck-layout--corner-popup {
+    position: fixed;
+    top: auto;
     bottom: 0;
-    right: 0;
     left: 0;
+    right: 0;
+    transform: none;
     width: 100%;
+    max-width: 100%;
+    max-height: 80vh;
     border-radius: var(--cck-radius, 8px) var(--cck-radius, 8px) 0 0;
   }
 
+  /* `.cck-layout--corner-popup.cck-corner--bottom-left` (two classes) is
+     more specific than the single-class rule above, so its `left: 24px;
+     right: auto;` would otherwise survive on top of this media query's
+     `width: 100%` — starting 24px from the left and extending 100% of the
+     viewport width from there overflows 24px past the right edge. Match
+     its specificity here to actually override it on mobile. */
   .cck-layout--corner-popup.cck-corner--bottom-left {
     left: 0;
+    right: 0;
+  }
+
+  .cck-layout--center-popup .cck-banner__inner,
+  .cck-layout--corner-popup .cck-banner__inner {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .cck-layout--center-popup .cck-banner__content,
+  .cck-layout--corner-popup .cck-banner__content {
+    flex: 0 1 auto;
+  }
+
+  /* center-popup's dimmed backdrop doesn't fit the bottom-bar treatment
+     it's collapsed into above. */
+  .cck-banner-overlay {
+    display: none;
   }
 }
 
@@ -527,6 +669,24 @@
 .cck-banner.cck-visible.cck-layout--top-bar    { animation: cck-slide-down 0.3s ease forwards; }
 .cck-banner.cck-visible.cck-layout--center-popup { animation: cck-fade-in 0.25s ease forwards; }
 .cck-banner.cck-visible.cck-layout--corner-popup { animation: cck-pop-in 0.25s ease forwards; }
+
+/* On mobile, top-bar/center-popup/corner-popup are all forced into the
+   same bottom-anchored bar as bottom-bar (see the responsive section
+   above) — their desktop entrance animations translate/scale from a
+   centered or top-anchored position, which (left in place with
+   animation-fill-mode: forwards) would fight with the bottom-bar
+   `transform: none` positioning applied on mobile. This must come after
+   the unconditional rules above: a media query doesn't add specificity,
+   so with equal-specificity selectors the later rule in the stylesheet
+   wins regardless of nesting — placing this first and relying on the
+   media condition alone would silently lose to the rules above. */
+@media (max-width: 600px) {
+  .cck-banner.cck-visible.cck-layout--top-bar,
+  .cck-banner.cck-visible.cck-layout--center-popup,
+  .cck-banner.cck-visible.cck-layout--corner-popup {
+    animation: cck-slide-up 0.3s ease forwards;
+  }
+}
 
 .cck-preferences:not([hidden]) .cck-preferences__panel { animation: cck-pop-in 0.2s ease forwards; }
 

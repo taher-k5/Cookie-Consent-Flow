@@ -1,0 +1,91 @@
+{% extends "_layouts/cp" %}
+{% import "_includes/forms" as forms %}
+
+{% set title = "Cookies"|t('cookie-consent-flow') %}
+{% set fullPageForm = true %}
+{% set selectedSubnavItem = 'cookies' %}
+
+{% block actionButton %}
+    <div class="btngroup">
+        <input type="submit" class="btn submit" value="{{ 'Save'|t('app') }}">
+    </div>
+{% endblock %}
+
+{% block content %}
+<input type="hidden" name="action" value="cookie-consent-flow/cookies/save">
+{{ redirectInput('cookie-consent-flow/cookies') }}
+{{ csrfInput() }}
+
+<p class="light">
+    {{ "Document each cookie your site actually sets, grouped by category. GDPR/ePrivacy expect visitors to be told WHAT cookies are used and why, not just a category-level description — this list is shown to visitors in the preferences panel alongside each category. It's disclosure content only: it doesn't block anything itself — blocking is still controlled by tagging scripts/iframes with data-cck-category (see the plugin README). Site-specific cookies (where a site's list differs from Global) are managed on the Multisite page."|t('cookie-consent-flow') }}
+</p>
+
+{% if undocumented|length %}
+<details class="cck-detected-panel">
+    <summary class="cck-detected-panel__summary">
+        {{ "Detected, not yet documented ({count})"|t('cookie-consent-flow', { count: undocumented|length }) }}
+    </summary>
+    <div class="cck-detected-panel__body">
+        <p class="light">
+            {{ "These cookie names were actually seen in a visitor's browser (names only — never values) but aren't documented below yet. \"Document\" adds a row pre-filled with the name; \"Dismiss\" hides it here if it doesn't need visitor-facing disclosure (e.g. a first-party technical cookie)."|t('cookie-consent-flow') }}
+        </p>
+        <ul class="cck-detected-list" id="cck-detected-list">
+            {% for name in undocumented %}
+                <li class="cck-detected-list__item" data-name="{{ name|e('html_attr') }}">
+                    <code class="cck-detected-list__name">{{ name }}</code>
+                    <div class="cck-detected-list__actions">
+                        <button type="button" class="btn small cck-document-detected" data-name="{{ name|e('html_attr') }}">
+                            {{ "Document"|t('cookie-consent-flow') }}
+                        </button>
+                        <button type="button" class="btn small cck-dismiss-detected" data-name="{{ name|e('html_attr') }}">
+                            {{ "Dismiss"|t('cookie-consent-flow') }}
+                        </button>
+                    </div>
+                </li>
+            {% endfor %}
+        </ul>
+    </div>
+</details>
+{% endif %}
+
+<div class="cck-library-picker">
+    <select id="cck-library-select">
+        {% for entry in library %}
+            <option value="{{ entry.id }}">{{ entry.provider }} — {{ entry.name }}</option>
+        {% endfor %}
+    </select>
+    <button type="button" id="cck-add-from-library" class="btn">
+        {{ "Add from Library"|t('cookie-consent-flow') }}
+    </button>
+    <p class="light">
+        {{ "Pre-filled entries for common third-party cookies (Google Analytics, Meta Pixel, etc.) — verify duration/purpose against the provider's current docs before relying on it."|t('cookie-consent-flow') }}
+    </p>
+</div>
+<script type="application/json" id="cck-library-data">{{ library|json_encode|raw }}</script>
+
+<div class="cck-cookies-group">
+    <div class="cck-cookies-list">
+        {% for i, cookie in cookies %}
+            {% include 'cookie-consent-flow/cookies/_cookie-row' with {
+                cookie:     cookie,
+                index:      i,
+                categories: settings.categories,
+            } %}
+        {% else %}
+            <p class="light" data-cck-cookies-empty>{{ "No cookies documented yet."|t('cookie-consent-flow') }}</p>
+        {% endfor %}
+    </div>
+
+    <button type="button" class="btn add icon cck-add-cookie">
+        {{ "Add Cookie"|t('cookie-consent-flow') }}
+    </button>
+
+    <template class="cck-cookie-template">
+        {% include 'cookie-consent-flow/cookies/_cookie-row' with {
+            cookie:     { categoryKey: settings.categories[0].key ?? '', name: '', provider: '', purpose: '', duration: '' },
+            index:      '__INDEX__',
+            categories: settings.categories,
+        } %}
+    </template>
+</div>
+{% endblock %}

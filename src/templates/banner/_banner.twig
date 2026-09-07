@@ -30,6 +30,10 @@
 
     {# Content #}
     <div class="cck-banner__content">
+      {% if settings.logoUrl %}
+        <img src="{{ settings.logoUrl }}" alt="" class="cck-banner__logo">
+      {% endif %}
+
       {% if settings.bannerHeading %}
         <h2 class="cck-banner__heading">{{ settings.bannerHeading }}</h2>
       {% endif %}
@@ -101,6 +105,9 @@
 
     {# Header #}
     <div class="cck-preferences__header">
+      {% if settings.logoUrl %}
+        <img src="{{ settings.logoUrl }}" alt="" class="cck-preferences__logo">
+      {% endif %}
       <h2 id="cck-pref-title" class="cck-preferences__title">
         {{ settings.customizeButtonText }}
       </h2>
@@ -124,8 +131,10 @@
     {% endif %}
 
     {# Category toggles #}
+    {% set cookiesByCategory = craft.cookieConsent.cookieDefinitionsByCategory %}
     <div class="cck-categories" role="list">
       {% for category in settings.categories %}
+        {% set categoryCookies = cookiesByCategory[category.key] ?? [] %}
         <div
           class="cck-category{% if category.locked %} cck-category--locked{% endif %}"
           role="listitem"
@@ -152,6 +161,34 @@
               <span class="cck-toggle__track" aria-hidden="true"></span>
             </label>
           </div>
+
+          {# Per-cookie disclosure — WHAT is actually used, not just the
+             category-level description above. Documented on the Cookies CP
+             page; a category with nothing documented yet shows nothing here. #}
+          {% if categoryCookies|length %}
+            <details class="cck-category__cookies">
+              <summary class="cck-category__cookies-summary">
+                {{ "Cookies used ({count})"|t('cookie-consent-flow', { count: categoryCookies|length }) }}
+              </summary>
+              <ul class="cck-cookie-list">
+                {% for cookie in categoryCookies %}
+                  <li class="cck-cookie-list__item">
+                    <span class="cck-cookie-list__name">{{ cookie.name }}</span>
+                    {% if cookie.provider or cookie.duration %}
+                      <span class="cck-cookie-list__meta">
+                        {%- if cookie.provider -%}{{ cookie.provider }}{%- endif -%}
+                        {%- if cookie.provider and cookie.duration %} · {% endif -%}
+                        {%- if cookie.duration -%}{{ cookie.duration }}{%- endif -%}
+                      </span>
+                    {% endif %}
+                    {% if cookie.purpose %}
+                      <p class="cck-cookie-list__purpose">{{ cookie.purpose }}</p>
+                    {% endif %}
+                  </li>
+                {% endfor %}
+              </ul>
+            </details>
+          {% endif %}
         </div>
       {% endfor %}
     </div>{# /.cck-categories #}

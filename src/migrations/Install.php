@@ -25,6 +25,7 @@ class Install extends Migration
         'acceptButtonText', 'rejectButtonText', 'customizeButtonText',
         'savePreferencesText', 'closeButtonText',
         'borderRadius', 'padding', 'maxWidth', 'maxHeight',
+        'policyVersion',
     ];
 
     /** Colour settings columns. */
@@ -51,8 +52,13 @@ class Install extends Migration
      */
     private const JSON_FIELDS = ['geoTargetCountries'];
 
-    /** Integer settings columns. */
-    private const INT_FIELDS = ['logRetentionDays'];
+    /**
+     * Integer settings columns. `logoAssetId` (no FK to the elements/assets
+     * tables — a plain nullable id, like every other column here; if the
+     * asset is later deleted, Settings::getLogoAsset()/getLogoUrl() just
+     * return null for the stale id rather than needing cascade behaviour).
+     */
+    private const INT_FIELDS = ['logRetentionDays', 'consentExpiryDays', 'logoAssetId'];
 
     // Install
 
@@ -65,6 +71,8 @@ class Install extends Migration
         $this->_createOrUpgradeSettingsTable();
         $this->_addCategoryForeignKeyIfMissing();
         $this->_migrateLeftoverJsonCategoriesColumn();
+        $this->_createCookieDefinitionTableIfMissing();
+        $this->_createDetectedCookieTableIfMissing();
 
         return true;
     }
@@ -73,6 +81,8 @@ class Install extends Migration
 
     public function safeDown(): bool
     {
+        $this->dropTableIfExists('{{%cookieconsent_detected_cookie}}');
+        $this->dropTableIfExists('{{%cookieconsent_cookie}}');
         $this->dropTableIfExists('{{%cookieconsent_category}}');
         $this->dropTableIfExists('{{%cookieconsent_log}}');
         $this->dropTableIfExists('{{%cookieconsent_settings}}');
@@ -95,6 +105,7 @@ class Install extends Migration
             'siteId'      => $this->integer()->notNull(),
             'categories'  => $this->text()->notNull(),
             'action'      => $this->string(20)->notNull(),
+            'policyVersion' => $this->string(50)->notNull()->defaultValue(''),
             'countryCode' => $this->string(2)->null(),
             'userAgent'   => $this->string(500)->notNull()->defaultValue(''),
             'dateCreated' => $this->dateTime()->notNull(),
@@ -362,6 +373,76 @@ class Install extends Migration
                 'uid'         => \craft\helpers\StringHelper::UUID(),
             ]);
         }
+    }
+
+    /**
+     * Per-cookie disclosure content — name/provider/purpose/duration, grouped
+     * by category key — shown in the preferences modal alongside each
+     * category's description. Per-site exactly like `cookieconsent_category`:
+     * `settingsId` FKs to `cookieconsent_settings.id` (global row, or a site's
+     * own override row); a site with no cookie rows inherits the global list
+     * entirely. Runs after `_createOrUpgradeSettingsTable()`, so the FK can be
+     * added at creation time (unlike the category table, this one never
+     * needs to exist before `cookieconsent_settings` for a legacy-blob
+     * migration, so there's no need to split creation from FK-adding).
+     */
+    private function _createCookieDefinitionTableIfMissing(): void
+    {
+        if ($this->db->tableExists('{{%cookieconsent_cookie}}')) {
+            return;
+        }
+
+        $this->createTable('{{%cookieconsent_cookie}}', [
+            'id'          => $this->primaryKey(),
+            'settingsId'  => $this->integer()->notNull(),
+            'categoryKey' => $this->string(100)->notNull(),
+            'name'        => $this->string(255)->notNull(),
+            'provider'    => $this->string(255)->null(),
+            'purpose'     => $this->text()->null(),
+            'duration'    => $this->string(100)->null(),
+            'sortOrder'   => $this->integer()->notNull()->defaultValue(0),
+            'dateCreated' => $this->dateTime()->notNull(),
+            'dateUpdated' => $this->dateTime()->notNull(),
+            'uid'         => $this->uid(),
+        ]);
+
+        $this->createIndex(null, '{{%cookieconsent_cookie}}', ['settingsId', 'categoryKey']);
+
+        $this->addForeignKey(
+            null,
+            '{{%cookieconsent_cookie}}',
+            ['settingsId'],
+            '{{%cookieconsent_settings}}',
+            ['id'],
+            'CASCADE',
+            null
+        );
+    }
+
+    /**
+     * Raw "what's actually running" signal — one row per distinct cookie
+     * name a visitor's browser actually reported (see
+     * CookieDetectionController), so the Cookies page can flag anything
+     * nobody has documented yet without a developer having to already know
+     * it exists. Names only, never values, no visitor identifier.
+     */
+    private function _createDetectedCookieTableIfMissing(): void
+    {
+        if ($this->db->tableExists('{{%cookieconsent_detected_cookie}}')) {
+            return;
+        }
+
+        $this->createTable('{{%cookieconsent_detected_cookie}}', [
+            'id'          => $this->primaryKey(),
+            'siteId'      => $this->integer()->notNull(),
+            'name'        => $this->string(255)->notNull(),
+            'isDismissed' => $this->boolean()->notNull()->defaultValue(false),
+            'dateCreated' => $this->dateTime()->notNull(),
+            'dateUpdated' => $this->dateTime()->notNull(),
+            'uid'         => $this->uid(),
+        ]);
+
+        $this->createIndex(null, '{{%cookieconsent_detected_cookie}}', ['siteId', 'name'], true);
     }
 
     /**

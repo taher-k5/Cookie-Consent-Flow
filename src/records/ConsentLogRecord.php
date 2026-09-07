@@ -13,6 +13,7 @@ use craft\db\ActiveRecord;
  * @property string      $siteId       Craft site ID.
  * @property string      $categories   JSON-encoded array of accepted category keys.
  * @property string      $action       'accept_all' | 'reject_all' | 'custom'
+ * @property string      $policyVersion Settings::$policyVersion at the time consent was given.
  * @property string|null $countryCode  ISO 3166-1 alpha-2, resolved via GeoService.
  * @property string      $userAgent    Raw User-Agent string (truncated to 500 chars).
  * @property string      $dateCreated

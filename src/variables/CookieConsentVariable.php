@@ -63,12 +63,15 @@ class CookieConsentVariable
         $lockedKeys     = $settings->getLockedCategoryKeys();
 
         $configJson = \craft\helpers\Json::encode([
-            'saveUrl'         => $saveUrl,
-            'csrfTokenName'   => $csrfTokenName,
-            'csrfToken'       => $csrfTokenValue,
-            'allCategories'   => $allCategories,
+            'saveUrl'          => $saveUrl,
+            'reportCookiesUrl' => \craft\helpers\UrlHelper::actionUrl('cookie-consent-flow/cookie-detection/report'),
+            'csrfTokenName'    => $csrfTokenName,
+            'csrfToken'        => $csrfTokenValue,
+            'allCategories'    => $allCategories,
             'lockedCategories' => $lockedKeys,
-            'siteId'          => Craft::$app->getSites()->getCurrentSite()->id,
+            'siteId'           => Craft::$app->getSites()->getCurrentSite()->id,
+            'consentExpiryDays'=> $settings->consentExpiryDays,
+            'policyVersion'    => $settings->policyVersion,
         ]);
 
         $view->registerJs("window.cckConfig = {$configJson};", View::POS_HEAD);
@@ -164,6 +167,26 @@ class CookieConsentVariable
         $settings = $plugin->cookieSettings->getEffectiveSettings();
 
         return $settings->bannerEnabled && $plugin->geo->shouldShowBanner($settings);
+    }
+
+    /**
+     * Returns documented cookies (name/provider/purpose/duration) grouped by
+     * category key, for display under each category in the preferences
+     * modal — so visitors see WHAT they're consenting to, not just a
+     * category-level description.
+     *
+     * Usage: {{ craft.cookieConsent.cookieDefinitionsByCategory[category.key] }}
+     *
+     * @return array<string, array<int, array<string, mixed>>>
+     */
+    public function cookieDefinitionsByCategory(): array
+    {
+        $plugin = Plugin::getInstance();
+        $siteId = Craft::$app->getSites()->getCurrentSite()->id;
+
+        return $plugin->cookieDefinitions->getGroupedByCategory(
+            $plugin->cookieDefinitions->getEffectiveSettingsId($siteId)
+        );
     }
 }
 

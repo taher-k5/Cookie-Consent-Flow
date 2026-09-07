@@ -170,6 +170,109 @@
 }
 
 /* --------------------------------------------------------------------------
+   Cookies page
+   -------------------------------------------------------------------------- */
+.cck-cookie-row {
+    background: var(--white, #fff);
+    border: 1px solid var(--hairline-color, #e5e7eb);
+    border-radius: 4px;
+    padding: 16px;
+    margin-bottom: 12px;
+}
+
+.cck-cookie-row__fields {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 0 24px;
+}
+
+.cck-cookie-row__fields > .field:last-child {
+    grid-column: span 2;
+}
+
+.cck-remove-cookie {
+    margin-top: 12px;
+}
+
+.cck-detected-panel {
+    background: #fffbeb;
+    border: 1px solid #fde68a;
+    border-radius: 8px;
+    padding: 0;
+    margin-bottom: 20px;
+    overflow: hidden;
+}
+
+.cck-detected-panel__summary {
+    cursor: pointer;
+    padding: 12px 20px;
+    font-weight: 600;
+    list-style: none;
+}
+
+.cck-detected-panel__summary::-webkit-details-marker {
+    display: none;
+}
+
+.cck-detected-panel__summary::before {
+    content: '▸';
+    display: inline-block;
+    margin-right: 6px;
+    transition: transform 0.15s ease;
+}
+
+.cck-detected-panel[open] > .cck-detected-panel__summary::before {
+    transform: rotate(90deg);
+}
+
+.cck-detected-panel__body {
+    padding: 0 20px 16px;
+}
+
+.cck-detected-list {
+    list-style: none;
+    margin: 12px 0 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.cck-detected-list__item {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    background: var(--white, #fff);
+    border: 1px solid var(--hairline-color, #e5e7eb);
+    border-radius: 4px;
+    padding: 8px 12px;
+}
+
+.cck-detected-list__name {
+    font-size: 0.85em;
+}
+
+.cck-detected-list__actions {
+    display: flex;
+    gap: 8px;
+    flex-shrink: 0;
+}
+
+.cck-library-picker {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 20px;
+}
+
+.cck-library-picker p.light {
+    flex-basis: 100%;
+    margin: 4px 0 0;
+}
+
+/* --------------------------------------------------------------------------
    Multi Site Override page
    -------------------------------------------------------------------------- */
 .cck-site-panel {
@@ -244,6 +347,16 @@
 
 .cck-override-field--inherited {
     opacity: 0.55;
+}
+
+/* setOverrideFieldState() only disables input/select/textarea — plain
+   <button>s (Add Cookie, per-row Remove) need their own lockdown so an
+   inherited cookie list can't be edited via those either. (Add from Library
+   only exists on the standalone global Cookies page, which is never wrapped
+   in .cck-override-field--inherited, so it needs no rule here.) */
+.cck-override-field--inherited .cck-add-cookie,
+.cck-override-field--inherited .cck-remove-cookie {
+    pointer-events: none;
 }
 
 .cck-lightswitch--disabled {
