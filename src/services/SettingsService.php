@@ -6,6 +6,7 @@ use Craft;
 use craft\base\Component;
 use craft\helpers\Json;
 use sfsinfotech\craftcookieconsentflow\models\Settings;
+use sfsinfotech\craftcookieconsentflow\Plugin;
 use sfsinfotech\craftcookieconsentflow\records\CookieCategoryRecord;
 use sfsinfotech\craftcookieconsentflow\records\SettingsRecord;
 
@@ -29,6 +30,14 @@ class SettingsService extends Component
 
     /** JSON-encoded array settings fields (whole-value in/out). */
     private const JSON_FIELDS = ['geoTargetCountries'];
+
+    /**
+     * Integer settings fields. `logoAssetId` is nullable (no logo set) —
+     * unlike the other two, which always hold a real number on the global
+     * row — so _fromColumnValue() must preserve null for it rather than
+     * casting to 0 (which would be misread as a literal asset ID of 0).
+     */
+    private const INT_FIELDS = ['logRetentionDays', 'consentExpiryDays', 'logoAssetId'];
 
     /** @var array<int, Settings> Per-request cache, keyed by site ID. */
     private array $_effectiveCache = [];
@@ -70,10 +79,12 @@ class SettingsService extends Component
         }
 
         $globalRecord = $this->_getOrCreateGlobalRecord();
+        $cookieDefinitions = Plugin::getInstance()->cookieDefinitions;
 
         $settings = new Settings();
         $this->_applyRowToSettings($settings, $globalRecord);
         $settings->categories = $this->_loadCategoriesForSettingsRow((int) $globalRecord->id);
+        $settings->cookies    = $cookieDefinitions->getAll((int) $globalRecord->id);
 
         foreach (SettingsRecord::find()->andWhere(['!=', 'siteId', 0])->all() as $row) {
             /** @var SettingsRecord $row */
@@ -81,6 +92,11 @@ class SettingsService extends Component
 
             if ($this->_hasCategoryOverride((int) $row->id)) {
                 $overrides['categories'] = $this->_loadCategoriesForSettingsRow((int) $row->id);
+                $overrides['_updatedAt'] ??= strtotime((string) $row->dateUpdated) ?: time();
+            }
+
+            if ($cookieDefinitions->hasOverrideForSettingsId((int) $row->id)) {
+                $overrides['cookies'] = $cookieDefinitions->getAll((int) $row->id);
                 $overrides['_updatedAt'] ??= strtotime((string) $row->dateUpdated) ?: time();
             }
 
@@ -158,13 +174,29 @@ class SettingsService extends Component
         $hadCategoryOverride  = $record->id !== null && $this->_hasCategoryOverride((int) $record->id);
         $willHaveCategories   = $categoriesOverridden || (!$categoriesUseGlobal && $hadCategoryOverride);
 
-        $saved = $this->_saveOrDeleteSiteRecord($record, $willHaveCategories);
+        // Cookies: same "use global" toggle + repeatable-list pattern as
+        // categories, just persisted via CookieDefinitionService instead of
+        // an internal CookieCategoryRecord helper (a different table, but
+        // the same settingsId-row lifecycle).
+        $cookieDefinitions  = Plugin::getInstance()->cookieDefinitions;
+        $cookiesUseGlobal   = !empty($useGlobalFlags['cookies']);
+        $cookiesOverridden  = !$cookiesUseGlobal && array_key_exists('cookies', $raw);
+        $hadCookieOverride  = $record->id !== null && $cookieDefinitions->hasOverrideForSettingsId((int) $record->id);
+        $willHaveCookies    = $cookiesOverridden || (!$cookiesUseGlobal && $hadCookieOverride);
 
-        if ($saved && ($hasOtherOverride || $willHaveCategories)) {
+        $saved = $this->_saveOrDeleteSiteRecord($record, $willHaveCategories || $willHaveCookies);
+
+        if ($saved && ($hasOtherOverride || $willHaveCategories || $willHaveCookies)) {
             if ($categoriesUseGlobal) {
                 $this->_deleteCategoriesForSettingsRow((int) $record->id);
             } elseif ($categoriesOverridden) {
                 $this->_saveCategoriesForSettingsRow((int) $record->id, $raw['categories']);
+            }
+
+            if ($cookiesUseGlobal) {
+                $cookieDefinitions->deleteAllForSettingsId((int) $record->id);
+            } elseif ($cookiesOverridden) {
+                $cookieDefinitions->saveAll((int) $record->id, $raw['cookies']);
             }
         }
 
@@ -211,13 +243,25 @@ class SettingsService extends Component
             ? $this->_loadCategoriesForSettingsRow((int) $source->id)
             : [];
 
-        $saved = $this->_saveOrDeleteSiteRecord($target, $sourceHasCategoryOverride);
+        $cookieDefinitions      = Plugin::getInstance()->cookieDefinitions;
+        $sourceHasCookieOverride = $source !== null && $cookieDefinitions->hasOverrideForSettingsId((int) $source->id);
+        $sourceCookies           = $sourceHasCookieOverride
+            ? $cookieDefinitions->getAll((int) $source->id)
+            : [];
+
+        $saved = $this->_saveOrDeleteSiteRecord($target, $sourceHasCategoryOverride || $sourceHasCookieOverride);
 
         if ($saved) {
             if ($sourceHasCategoryOverride) {
                 $this->_saveCategoriesForSettingsRow((int) $target->id, $sourceCategories);
             } elseif ($target->id !== null) {
                 $this->_deleteCategoriesForSettingsRow((int) $target->id);
+            }
+
+            if ($sourceHasCookieOverride) {
+                $cookieDefinitions->saveAll((int) $target->id, $sourceCookies);
+            } elseif ($target->id !== null) {
+                $cookieDefinitions->deleteAllForSettingsId((int) $target->id);
             }
 
             $this->clearCache();
@@ -233,22 +277,76 @@ class SettingsService extends Component
         $this->_settingsCache  = null;
     }
 
+    // Site-row lookups (shared with CookieDefinitionService — a site's
+    // settingsId row is the one anchor categories AND cookies both attach
+    // overrides to, alongside the banner-field columns this service owns)
+
+    /** Returns the global settings row's id, creating the row from model defaults if missing. */
+    public function getGlobalSettingsId(): int
+    {
+        return (int) $this->_getOrCreateGlobalRecord()->id;
+    }
+
+    /** Returns a site's own settings row id, or null if it has no row yet (fully inherited). */
+    public function findSiteSettingsId(int $siteId): ?int
+    {
+        $record = $this->_findSiteRecord($siteId);
+
+        return $record !== null ? (int) $record->id : null;
+    }
+
+    /** Finds or creates (and persists) a site's own settings row, returning its id. */
+    public function getOrCreateSiteSettingsId(int $siteId): int
+    {
+        $record = $this->_findSiteRecord($siteId);
+
+        if ($record === null) {
+            $record = $this->_newSiteRecord($siteId);
+            $record->save();
+        }
+
+        return (int) $record->id;
+    }
+
+    /**
+     * Deletes a site's settings row if it now has no overrides left of any
+     * kind — banner fields, categories, or cookies. Call after
+     * CookieDefinitionService clears a site's cookie overrides, so a row
+     * that only existed to hold them doesn't linger empty.
+     */
+    public function pruneSiteSettingsRowIfEmpty(int $siteId): void
+    {
+        $record = $this->_findSiteRecord($siteId);
+        if ($record === null) {
+            return;
+        }
+
+        $hasCategoryOverride = $this->_hasCategoryOverride((int) $record->id);
+        $hasCookieOverride    = Plugin::getInstance()->cookieDefinitions->hasOverrideForSettingsId((int) $record->id);
+
+        $this->_saveOrDeleteSiteRecord($record, $hasCategoryOverride || $hasCookieOverride);
+        $this->clearCache();
+    }
+
     // Private helpers
 
     /** All settings fields the table has a column for (everything but `siteOverrides`). */
     private function _allFields(): array
     {
-        return array_merge($this->_columnOverridableFields(), ['logEnabled', 'logRetentionDays']);
+        return array_merge(
+            $this->_columnOverridableFields(),
+            ['logEnabled', 'logRetentionDays', 'consentExpiryDays', 'policyVersion']
+        );
     }
 
     /**
      * Overridable fields that still map to a real `cookieconsent_settings`
-     * column — everything except `categories`, which is persisted in its
-     * own `cookieconsent_category` table (see CookieCategoryRecord).
+     * column — everything except `categories` and `cookies`, which are each
+     * persisted in their own table (CookieCategoryRecord, CookieDefinitionRecord).
      */
     private function _columnOverridableFields(): array
     {
-        return array_values(array_diff(Settings::OVERRIDABLE_FIELDS, ['categories']));
+        return array_values(array_diff(Settings::OVERRIDABLE_FIELDS, ['categories', 'cookies']));
     }
 
     /** Finds the global row (siteId = 0), creating it from model defaults if missing. */
@@ -428,8 +526,8 @@ class SettingsService extends Component
             return (bool) $value;
         }
 
-        if ($field === 'logRetentionDays') {
-            return (int) $value;
+        if (in_array($field, self::INT_FIELDS, true)) {
+            return $value !== null ? (int) $value : null;
         }
 
         return (string) $value;
@@ -466,6 +564,14 @@ class SettingsService extends Component
                 }
             }
             $raw['categories'] = $normalised;
+        }
+
+        if (array_key_exists('logoAssetId', $raw)) {
+            // Craft's element-select input posts a bare '' when nothing is
+            // selected, or an array of one id (single:true, limit:1) when
+            // something is — never a plain scalar id.
+            $ids = (array) $raw['logoAssetId'];
+            $raw['logoAssetId'] = !empty($ids[0]) ? (int) $ids[0] : null;
         }
 
         if (isset($raw['geoTargetCountries']) && is_string($raw['geoTargetCountries'])) {

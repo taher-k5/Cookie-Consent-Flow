@@ -85,8 +85,23 @@
 
     <p class="light">{{ "Additional plugin-level options."|t('cookie-consent-flow') }}</p>
 
-    {# Placeholder for future advanced options (cache TTL, custom CSS, etc.) #}
-    <p class="light">{{ "More advanced options will appear here in future releases."|t('cookie-consent-flow') }}</p>
+    {{ forms.textField({
+        label:        "Consent Expiry (days)"|t('cookie-consent-flow'),
+        instructions: "How long a visitor's consent stays valid before the banner is shown again. Set to 0 to never expire. Guidance (ICO/CNIL) recommends re-asking within 6–12 months."|t('cookie-consent-flow'),
+        id:    'consentExpiryDays',
+        name:  'settings[consentExpiryDays]',
+        value: settings.consentExpiryDays,
+        type:  'number',
+        min:    0,
+    }) }}
+
+    {{ forms.textField({
+        label:        "Policy Version"|t('cookie-consent-flow'),
+        instructions: "Change this any time you materially change the cookie policy or categories — every visitor's existing consent is invalidated and they're asked to consent again."|t('cookie-consent-flow'),
+        id:    'policyVersion',
+        name:  'settings[policyVersion]',
+        value: settings.policyVersion,
+    }) }}
 
 </div>{# /tab-advanced #}
 
@@ -96,7 +111,7 @@
     <hr>
     <p>
         <a href="{{ cpUrl('cookie-consent-flow/settings/multi-site-override') }}">
-            {{ "Manage Multi Site Override →"|t('cookie-consent-flow') }}
+            {{ "Manage Multisite →"|t('cookie-consent-flow') }}
         </a>
     </p>
 {% endif %}

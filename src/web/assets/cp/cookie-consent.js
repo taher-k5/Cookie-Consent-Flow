@@ -174,6 +174,164 @@
     });
 
     /* ------------------------------------------------------------------
+       Cookie rows — add / remove / prefill.
+       Scoped per ".cck-cookies-group", exactly like the category rows
+       above, so the same logic drives both the single global list
+       (Cookies page) and any number of per-site cookie lists (the
+       "Cookies" card on the Multisite page).
+    ------------------------------------------------------------------ */
+    document.querySelectorAll('.cck-cookies-group').forEach(function (group) {
+      var list       = group.querySelector('.cck-cookies-list');
+      var addBtn     = group.querySelector('.cck-add-cookie');
+      var template   = group.querySelector('.cck-cookie-template');
+      var emptyState = list && list.querySelector('[data-cck-cookies-empty]');
+
+      function reindex() {
+        if (!list) return;
+        list.querySelectorAll('.cck-cookie-row').forEach(function (row, i) {
+          row.setAttribute('data-index', i);
+          // The index is always the last numeric segment, right before the
+          // final [field] segment — e.g. "cookies[0][name]" on the global
+          // page, or "sites[2][cookies][0][name]" on the Multisite page
+          // (where [2] is the site id, not the row index, and must be left
+          // alone).
+          row.querySelectorAll('[name]').forEach(function (el) {
+            el.name = el.name.replace(/\[\d+\](\[[a-zA-Z]+\])$/, function (match, fieldPart) {
+              return '[' + i + ']' + fieldPart;
+            });
+          });
+        });
+      }
+
+      function bindRemove(row) {
+        var removeBtn = row.querySelector('.cck-remove-cookie');
+        if (!removeBtn) return;
+        removeBtn.addEventListener('click', function () {
+          row.remove();
+          reindex();
+        });
+      }
+
+      if (list) {
+        list.querySelectorAll('.cck-cookie-row').forEach(bindRemove);
+      }
+
+      // prefill: { categoryKey, suggestedCategory, name, provider, duration, purpose }
+      // suggestedCategory is only applied if it matches one of this install's
+      // actual category options — categories are fully admin-configurable, so
+      // a library/detected entry can only ever hint at one.
+      function addCookieRow(prefill) {
+        if (!template || !list) return null;
+
+        if (emptyState) {
+          emptyState.remove();
+          emptyState = null;
+        }
+
+        prefill = prefill || {};
+
+        var count = list.querySelectorAll('.cck-cookie-row').length;
+        var html  = template.innerHTML.replace(/__INDEX__/g, count);
+        var tmp   = document.createElement('div');
+        tmp.innerHTML = html;
+        var newRow = tmp.firstElementChild;
+
+        var categorySelect = newRow.querySelector('select[name$="[categoryKey]"]');
+        var wantedCategory = prefill.categoryKey || prefill.suggestedCategory;
+        if (categorySelect && wantedCategory) {
+          var hasOption = Array.prototype.some.call(categorySelect.options, function (opt) {
+            return opt.value === wantedCategory;
+          });
+          if (hasOption) categorySelect.value = wantedCategory;
+        }
+
+        ['name', 'provider', 'duration', 'purpose'].forEach(function (field) {
+          if (prefill[field] === undefined) return;
+          var input = newRow.querySelector('[name$="[' + field + ']"]');
+          if (input) input.value = prefill[field];
+        });
+
+        list.appendChild(newRow);
+        bindRemove(newRow);
+
+        return newRow;
+      }
+
+      if (addBtn) {
+        addBtn.addEventListener('click', function () {
+          var newRow = addCookieRow({});
+          var firstInput = newRow && newRow.querySelector('select, input[type="text"]');
+          if (firstInput) firstInput.focus();
+        });
+      }
+
+      // Exposed so the page-level "Add from Library" / "Detected" features
+      // below (which only ever run on the standalone Cookies page, where
+      // exactly one .cck-cookies-group exists) can insert rows into it.
+      group.__cckAddCookieRow = addCookieRow;
+    });
+
+    /* ---- Add from Library (standalone Cookies page only) ---- */
+    var cckCookiesGroup = document.querySelector('.cck-cookies-group');
+    var librarySelect   = document.getElementById('cck-library-select');
+    var libraryAddBtn   = document.getElementById('cck-add-from-library');
+    var libraryDataEl   = document.getElementById('cck-library-data');
+    var libraryById     = {};
+
+    if (libraryDataEl) {
+      try {
+        (JSON.parse(libraryDataEl.textContent) || []).forEach(function (entry) {
+          libraryById[entry.id] = entry;
+        });
+      } catch (e) { /* malformed library data — Add from Library just no-ops */ }
+    }
+
+    if (libraryAddBtn && librarySelect && cckCookiesGroup && cckCookiesGroup.__cckAddCookieRow) {
+      libraryAddBtn.addEventListener('click', function () {
+        var entry = libraryById[librarySelect.value];
+        if (!entry) return;
+
+        var newRow = cckCookiesGroup.__cckAddCookieRow(entry);
+        if (newRow) newRow.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      });
+    }
+
+    /* ---- Detected, not yet documented — Document / Dismiss (standalone Cookies page only) ---- */
+    var detectedList = document.getElementById('cck-detected-list');
+    if (detectedList) {
+      detectedList.addEventListener('click', function (e) {
+        var documentBtn = e.target.closest('.cck-document-detected');
+        var dismissBtn  = e.target.closest('.cck-dismiss-detected');
+
+        if (documentBtn) {
+          var name   = documentBtn.getAttribute('data-name');
+          var newRow = (cckCookiesGroup && cckCookiesGroup.__cckAddCookieRow)
+            ? cckCookiesGroup.__cckAddCookieRow({ name: name })
+            : null;
+          if (newRow) newRow.scrollIntoView({ behavior: 'smooth', block: 'center' });
+          var item = documentBtn.closest('.cck-detected-list__item');
+          if (item) item.remove();
+          return;
+        }
+
+        if (dismissBtn) {
+          var dismissName = dismissBtn.getAttribute('data-name');
+          var listItem    = dismissBtn.closest('.cck-detected-list__item');
+          dismissBtn.disabled = true;
+
+          Craft.sendActionRequest('POST', 'cookie-consent-flow/cookies/dismiss-detected', {
+            data: { name: dismissName },
+          }).then(function () {
+            if (listItem) listItem.remove();
+          }).catch(function () {
+            dismissBtn.disabled = false;
+            Craft.cp.displayError('An error occurred.');
+          });
+        }
+      });
+    }
+
+    /* ------------------------------------------------------------------
        Multi Site Override — "Use Global Setting" checkboxes.
        Each checkbox carries data-target pointing at the id of the field
        wrapper whose inputs it should disable/enable. Checked = inherit
@@ -578,7 +736,14 @@
           var globalValue = row.getAttribute('data-global-value');
           var type        = row.getAttribute('data-field-type');
 
-          if (type === 'lightswitch') {
+          if (type === 'asset') {
+            // Craft's element-select widget keeps its own JS-side state
+            // (selected elements, thumbnail markup) that can't be faked by
+            // writing to a plain input — quietly skip it. The "Use Global
+            // Setting" toggle (not this quick-fill button) is still the way
+            // to actually revert this field to the global logo.
+            return;
+          } else if (type === 'lightswitch') {
             var lightswitchBtn = row.querySelector('.lightswitch');
             var hidden          = row.querySelector('input[type="hidden"]');
             var on               = globalValue === '1';

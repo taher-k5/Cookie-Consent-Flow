@@ -52,9 +52,10 @@ class ConsentService extends Component
             $record->visitorUuid = $visitorUuid;
             $record->ipHash      = ConsentHelper::hashIp($request->getRemoteIP() ?? '0.0.0.0');
             $record->siteId      = $siteId;
-            $record->categories  = Json::encode($categories);
-            $record->action      = $action;
-            $record->countryCode = Plugin::getInstance()->geo->getCountryCode();
+            $record->categories    = Json::encode($categories);
+            $record->action        = $action;
+            $record->policyVersion = $settings->policyVersion;
+            $record->countryCode   = Plugin::getInstance()->geo->getCountryCode();
             $record->userAgent   = mb_substr(
                 (string) $request->getHeaders()->get('user-agent', ''),
                 0,

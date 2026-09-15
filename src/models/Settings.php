@@ -30,6 +30,20 @@ class Settings extends Model
     public string $cornerPosition = 'bottom-right';
 
     // Banner – content
+
+    /**
+     * Asset ID of the logo shown in the banner/preferences modal, or null
+     * for no logo. Stored as a plain nullable ID (like every other setting
+     * column) rather than a Craft relation/junction table — this plugin has
+     * exactly one logo per settings row, not a many-relation field, so the
+     * extra machinery a real Assets field type brings isn't needed. If the
+     * asset is later deleted, getLogoAsset()/getLogoUrl() simply return null
+     * (same "fails open" handling used elsewhere in this plugin) rather than
+     * erroring — the stale ID is harmless and gets overwritten the next time
+     * an admin picks a new logo.
+     */
+    public ?int $logoAssetId = null;
+
     public string $bannerHeading     = 'We value your privacy';
     public string $bannerDescription = 'We use cookies to enhance your browsing experience, serve personalised content, and analyse our traffic. Please indicate your consent preferences.';
 
@@ -134,6 +148,17 @@ class Settings extends Model
         ],
     ];
 
+    // Cookie disclosure list (per-cookie name/provider/purpose/duration)
+    /**
+     * Documented cookies, grouped by category via each entry's `categoryKey`.
+     * Persisted relationally (CookieDefinitionRecord), exactly like
+     * `$categories` — this in-memory array is just the resolved shape
+     * (CookieDefinitionService::getAll()'s output), not a stored column.
+     *
+     * @var array<int, array<string, mixed>>
+     */
+    public array $cookies = [];
+
     // Geo-targeting
     public bool  $geoEnabled         = false;
     public array $geoTargetCountries = [];
@@ -141,6 +166,23 @@ class Settings extends Model
     // Consent logging
     public bool $logEnabled       = true;
     public int  $logRetentionDays = 365;
+
+    // Consent expiry & re-consent
+    /**
+     * Days after which stored consent is treated as stale and the banner is
+     * shown again (ICO/CNIL-style guidance recommends re-asking within
+     * ~6–12 months). 0 disables expiry entirely. Global-only, like the
+     * logging fields above — not per-site overridable.
+     */
+    public int $consentExpiryDays = 180;
+
+    /**
+     * Bump this (any change is sufficient — a counter, a date, etc.) whenever
+     * the cookie policy or category list changes materially. Stored consent
+     * carrying a different value is treated as invalid, forcing every
+     * visitor to re-consent. Global-only, like the logging fields above.
+     */
+    public string $policyVersion = '1';
 
     // Multi-site overrides
     /** @var array<int, array<string, mixed>> Keyed by Craft site ID. */
@@ -153,6 +195,7 @@ class Settings extends Model
      */
     public const OVERRIDABLE_FIELDS = [
         'bannerEnabled', 'bannerLayout', 'cornerPosition',
+        'logoAssetId',
         'bannerHeading', 'bannerDescription',
         'privacyPolicyUrl', 'privacyPolicyLinkText',
         'acceptButtonText', 'rejectButtonText', 'customizeButtonText',
@@ -168,7 +211,7 @@ class Settings extends Model
         'saveBgColor', 'saveTextColor', 'closeIconColor',
         'borderRadius', 'padding', 'maxWidth', 'maxHeight',
         'fullWidth', 'shadow', 'fixedPosition',
-        'categories',
+        'categories', 'cookies',
         'geoEnabled', 'geoTargetCountries',
     ];
 
@@ -197,7 +240,9 @@ class Settings extends Model
         return [
             'General' => [
                 ['key' => 'bannerEnabled', 'type' => 'lightswitch', 'label' => 'Enable Cookie Banner'],
-                ['key' => 'bannerLayout', 'type' => 'select', 'label' => 'Banner Layout', 'options' => [
+                ['key' => 'bannerLayout', 'type' => 'select', 'label' => 'Banner Layout',
+                    'instructions' => 'On mobile screens, the banner always appears as a bottom bar regardless of this setting.',
+                    'options' => [
                     ['value' => 'bottom-bar', 'label' => 'Bottom Bar'],
                     ['value' => 'top-bar', 'label' => 'Top Bar'],
                     ['value' => 'center-popup', 'label' => 'Center Popup'],
@@ -216,6 +261,7 @@ class Settings extends Model
                 ['key' => 'maxHeight', 'type' => 'text', 'label' => 'Max Height'],
             ],
             'Content' => [
+                ['key' => 'logoAssetId', 'type' => 'asset', 'label' => 'Logo'],
                 ['key' => 'bannerHeading', 'type' => 'text', 'label' => 'Heading'],
                 ['key' => 'bannerDescription', 'type' => 'textarea', 'label' => 'Description'],
                 ['key' => 'privacyPolicyUrl', 'type' => 'text', 'label' => 'Privacy Policy URL'],
@@ -427,6 +473,22 @@ class Settings extends Model
     }
 
     /**
+     * Resolves the configured logo, or null if none is set / the asset was
+     * since deleted (a stale id is treated the same as "no logo" rather than
+     * erroring — see the $logoAssetId property doc).
+     */
+    public function getLogoAsset(): ?\craft\elements\Asset
+    {
+        return $this->logoAssetId ? \craft\elements\Asset::find()->id($this->logoAssetId)->one() : null;
+    }
+
+    /** Convenience accessor for templates: the logo's URL, or null. */
+    public function getLogoUrl(): ?string
+    {
+        return $this->getLogoAsset()?->getUrl();
+    }
+
+    /**
      * Returns the banner description with only a small safe subset of HTML
      * allowed (links, bold, italic, line breaks). The admin field for this
      * value intentionally permits basic HTML, so it must be purified before
@@ -540,8 +602,10 @@ class Settings extends Model
                 ],
                 'string',
             ],
-            [['categories', 'geoTargetCountries', 'siteOverrides'], 'safe'],
-            [['logRetentionDays'], 'integer', 'min' => 0],
+            [['categories', 'cookies', 'geoTargetCountries', 'siteOverrides'], 'safe'],
+            [['logRetentionDays', 'consentExpiryDays'], 'integer', 'min' => 0],
+            [['logoAssetId'], 'integer'],
+            [['policyVersion'], 'string', 'max' => 50],
         ];
     }
 }

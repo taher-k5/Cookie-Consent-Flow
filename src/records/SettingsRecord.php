@@ -17,6 +17,7 @@ use craft\db\ActiveRecord;
  * @property bool|null   $bannerEnabled
  * @property string|null $bannerLayout
  * @property string|null $cornerPosition
+ * @property int|null    $logoAssetId
  * @property string|null $bannerHeading
  * @property string|null $bannerDescription
  * @property string|null $privacyPolicyUrl
@@ -61,6 +62,8 @@ use craft\db\ActiveRecord;
  * @property string|null $geoTargetCountries JSON-encoded array, whole-value override.
  * @property bool|null   $logEnabled Only meaningful on the global row.
  * @property int|null    $logRetentionDays Only meaningful on the global row.
+ * @property int|null    $consentExpiryDays Only meaningful on the global row.
+ * @property string|null $policyVersion Only meaningful on the global row.
  * @property string      $dateCreated
  * @property string      $dateUpdated
  * @property string      $uid

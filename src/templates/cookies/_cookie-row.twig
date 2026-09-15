@@ -1,0 +1,59 @@
+{# Partial: a single documented cookie row — used on the standalone (global)
+   Cookies page and, with a per-site namePrefix, on the Multisite page. #}
+{% import "_includes/forms" as forms %}
+{% set namePrefix = namePrefix ?? 'cookies' %}
+
+{% set categoryOptions = [] %}
+{% for category in categories %}
+    {% set categoryOptions = categoryOptions|merge([{ value: category.key, label: category.label }]) %}
+{% endfor %}
+
+<div class="cck-cookie-row" data-index="{{ index }}">
+    <div class="cck-cookie-row__fields">
+
+        {{ forms.selectField({
+            label:   "Category"|t('cookie-consent-flow'),
+            name:    namePrefix ~ '[' ~ index ~ '][categoryKey]',
+            options: categoryOptions,
+            value:   cookie.categoryKey,
+        }) }}
+
+        {{ forms.textField({
+            label:        "Cookie Name"|t('cookie-consent-flow'),
+            instructions: "The exact cookie name, or a pattern like _ga_* for a family of cookies."|t('cookie-consent-flow'),
+            name:         namePrefix ~ '[' ~ index ~ '][name]',
+            value:        cookie.name,
+            required:     true,
+            class:        'code',
+        }) }}
+
+        {{ forms.textField({
+            label: "Provider"|t('cookie-consent-flow'),
+            instructions: "Who sets this cookie, e.g. Google Analytics."|t('cookie-consent-flow'),
+            name:  namePrefix ~ '[' ~ index ~ '][provider]',
+            value: cookie.provider,
+        }) }}
+
+        {{ forms.textField({
+            label: "Duration"|t('cookie-consent-flow'),
+            instructions: "e.g. 2 years, Session."|t('cookie-consent-flow'),
+            name:  namePrefix ~ '[' ~ index ~ '][duration]',
+            value: cookie.duration,
+        }) }}
+
+        {{ forms.textareaField({
+            label: "Purpose"|t('cookie-consent-flow'),
+            instructions: "What this cookie is used for — shown to visitors in the preferences panel."|t('cookie-consent-flow'),
+            name:  namePrefix ~ '[' ~ index ~ '][purpose]',
+            value: cookie.purpose,
+            rows:  2,
+        }) }}
+    </div>
+
+    <button
+        type="button"
+        class="btn small delete icon cck-remove-cookie"
+        title="{{ 'Remove cookie'|t('cookie-consent-flow') }}"
+        aria-label="{{ 'Remove cookie'|t('cookie-consent-flow') }}"
+    >{{ "Remove"|t('cookie-consent-flow') }}</button>
+</div>

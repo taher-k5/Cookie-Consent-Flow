@@ -16,6 +16,7 @@ use craft\web\UrlManager;
 use craft\web\View;
 use sfsinfotech\craftcookieconsentflow\models\Settings;
 use sfsinfotech\craftcookieconsentflow\services\ConsentService;
+use sfsinfotech\craftcookieconsentflow\services\CookieDefinitionService;
 use sfsinfotech\craftcookieconsentflow\services\GeoService;
 use sfsinfotech\craftcookieconsentflow\services\SettingsService;
 use sfsinfotech\craftcookieconsentflow\variables\CookieConsentVariable;
@@ -27,10 +28,11 @@ use yii\base\Event;
 /**
  * Cookie Consent Flow plugin for Craft CMS 5.
  *
- * @property-read ConsentService  $consent
- * @property-read GeoService      $geo
- * @property-read SettingsService $cookieSettings
- * @property-read Settings        $settings
+ * @property-read ConsentService          $consent
+ * @property-read GeoService               $geo
+ * @property-read SettingsService          $cookieSettings
+ * @property-read CookieDefinitionService  $cookieDefinitions
+ * @property-read Settings                 $settings
  * @method  Settings getSettings()
  * @method  static Plugin getInstance()
  */
@@ -38,7 +40,7 @@ class Plugin extends BasePlugin
 {
     public static Plugin $plugin;
 
-    public string $schemaVersion = '1.1.0';
+    public string $schemaVersion = '1.6.0';
     public bool $hasCpSettings   = true;
     public bool $hasCpSection     = true;
 
@@ -140,24 +142,31 @@ class Plugin extends BasePlugin
                 'label' => Craft::t('cookie-consent-flow', 'Banner'),
                 'url'   => 'cookie-consent-flow/banner',
             ],
+            'cookies' => [
+                'label' => Craft::t('cookie-consent-flow', 'Cookies'),
+                'url'   => 'cookie-consent-flow/cookies',
+            ],
             'logs' => [
                 'label' => Craft::t('cookie-consent-flow', 'Consent Logs'),
                 'url'   => 'cookie-consent-flow/logs',
-            ],
-            'settings' => [
-                'label' => Craft::t('cookie-consent-flow', 'Settings'),
-                'url'   => 'cookie-consent-flow/settings',
             ],
         ];
 
         // Only surface the Multi Site Override page on genuinely multi-site
         // installs, to keep the nav uncluttered for the common single-site case.
+        // Added before 'settings' below (rather than appended after it) so it
+        // sits just to the left of Settings in the tab order.
         if (count(Craft::$app->getSites()->getAllSites()) > 1) {
             $item['subnav']['multi-site-override'] = [
-                'label' => Craft::t('cookie-consent-flow', 'Multi Site Override'),
+                'label' => Craft::t('cookie-consent-flow', 'Multisite'),
                 'url'   => 'cookie-consent-flow/settings/multi-site-override',
             ];
         }
+
+        $item['subnav']['settings'] = [
+            'label' => Craft::t('cookie-consent-flow', 'Settings'),
+            'url'   => 'cookie-consent-flow/settings',
+        ];
 
         return $item;
     }
@@ -166,9 +175,10 @@ class Plugin extends BasePlugin
     private function _registerServices(): void
     {
         $this->setComponents([
-            'consent'        => ConsentService::class,
-            'geo'            => GeoService::class,
-            'cookieSettings' => SettingsService::class,
+            'consent'           => ConsentService::class,
+            'geo'               => GeoService::class,
+            'cookieSettings'    => SettingsService::class,
+            'cookieDefinitions' => CookieDefinitionService::class,
         ]);
     }
 
@@ -202,6 +212,9 @@ class Plugin extends BasePlugin
                 $event->rules['POST cookie-consent-flow/banner/save']      = 'cookie-consent-flow/settings/save-banner';
                 $event->rules['cookie-consent-flow/logs']                  = 'cookie-consent-flow/logs/index';
                 $event->rules['cookie-consent-flow/logs/view/<id:\d+>']    = 'cookie-consent-flow/logs/view';
+                $event->rules['cookie-consent-flow/cookies']               = 'cookie-consent-flow/cookies/index';
+                $event->rules['POST cookie-consent-flow/cookies/save']     = 'cookie-consent-flow/cookies/save';
+                $event->rules['POST cookie-consent-flow/cookies/dismiss-detected'] = 'cookie-consent-flow/cookies/dismiss-detected';
                 $event->rules['cookie-consent-flow/settings']              = 'cookie-consent-flow/settings/index';
                 $event->rules['POST cookie-consent-flow/settings/save']    = 'cookie-consent-flow/settings/save';
                 $event->rules['cookie-consent-flow/settings/multi-site-override']            = 'cookie-consent-flow/settings/multi-site-override';
@@ -332,11 +345,14 @@ class Plugin extends BasePlugin
                 // another on a shared-origin multi-site install.
                 $configJson = \craft\helpers\Json::encode([
                     'saveUrl'          => \craft\helpers\UrlHelper::actionUrl('cookie-consent-flow/consent/save'),
+                    'reportCookiesUrl' => \craft\helpers\UrlHelper::actionUrl('cookie-consent-flow/cookie-detection/report'),
                     'csrfTokenName'    => Craft::$app->getConfig()->getGeneral()->csrfTokenName,
                     'csrfToken'        => Craft::$app->getRequest()->getCsrfToken(),
                     'allCategories'    => $settings->getCategoryKeys(),
                     'lockedCategories' => $settings->getLockedCategoryKeys(),
                     'siteId'           => Craft::$app->getSites()->getCurrentSite()->id,
+                    'consentExpiryDays'=> $settings->consentExpiryDays,
+                    'policyVersion'    => $settings->policyVersion,
                 ]);
 
                 // Build the snippet to inject before </body>

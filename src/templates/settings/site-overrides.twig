@@ -2,7 +2,7 @@
 {% import "_includes/forms" as forms %}
 {% import "cookie-consent-flow/settings/_override-field" as overrideField %}
 
-{% set title = "Multi Site Override"|t('cookie-consent-flow') %}
+{% set title = "Multisite"|t('cookie-consent-flow') %}
 {% set fullPageForm = true %}
 {% set selectedSubnavItem = 'multi-site-override' %}
 {% set mainFormAttributes = {'data-confirm-unload': true, 'data-saveshortcut': true} %}
@@ -39,6 +39,7 @@
 {% for site in sites %}
     {% set resolved = settings.resolveForSite(site.id) %}
     {% set isCategoriesOverridden = settings.isFieldOverridden(site.id, 'categories') %}
+    {% set isCookiesOverridden = settings.isFieldOverridden(site.id, 'cookies') %}
     {% set overrideCount = settings.getSiteOverrideCount(site.id) %}
     {% set updatedAt = settings.getSiteOverrideUpdatedAt(site.id) %}
     {% set bannerLayoutLabel = settings.getOverrideFieldOptionLabel('bannerLayout', resolved.bannerLayout) %}
@@ -63,6 +64,10 @@
             <div class="cck-site-summary-card__stat">
                 <span class="cck-field-label">{{ "Categories"|t('cookie-consent-flow') }}</span>
                 {{ resolved.categories|length }}
+            </div>
+            <div class="cck-site-summary-card__stat">
+                <span class="cck-field-label">{{ "Cookies"|t('cookie-consent-flow') }}</span>
+                {{ resolved.cookies|length }}
             </div>
             <div class="cck-site-summary-card__stat">
                 <span class="cck-field-label">{{ "Last Updated"|t('cookie-consent-flow') }}</span>
@@ -97,7 +102,7 @@
                 {% endif %}
 
                 <button type="button" class="btn cck-reset-site" data-reset-site="{{ site.id }}">
-                    {{ "Reset Multi Site Override"|t('cookie-consent-flow') }}
+                    {{ "Reset Multisite"|t('cookie-consent-flow') }}
                 </button>
 
                 <button type="button" class="btn cck-expand-all" data-expand-all="{{ site.id }}">
@@ -234,6 +239,73 @@
                                 category:   { key: '', label: '', description: '', default: false, locked: false },
                                 index:      '__INDEX__',
                                 namePrefix: 'sites[' ~ site.id ~ ']',
+                            } %}
+                        </template>
+                    </div>
+                </div>
+            </div>
+
+            <div class="cck-override-card cck-override-row{% if not isCookiesOverridden %} cck-override-card--inherited{% endif %}"
+                 data-group-card
+                 data-card-key="cookies"
+                 data-collapsed="{{ isCookiesOverridden ? '0' : '1' }}"
+                 data-search="{{ 'cookies documented cookies'|lower }}"
+                 data-overridden="{{ isCookiesOverridden ? '1' : '0' }}"
+            >
+                <div class="cck-override-card__header">
+                    <button type="button" class="cck-override-card__disclosure" data-toggle-collapse aria-expanded="{{ isCookiesOverridden ? 'true' : 'false' }}" aria-controls="site{{ site.id }}-cookies-block">
+                        <span class="cck-override-card__chevron" aria-hidden="true"></span>
+                        <h3 class="cck-override-card__title">{{ "Cookies"|t('cookie-consent-flow') }}</h3>
+                    </button>
+
+                    <div class="cck-override-card__toggle">
+                        <span class="cck-badge {{ isCookiesOverridden ? 'cck-badge--overridden' : 'cck-badge--inherited' }}" data-group-badge>
+                            {{ isCookiesOverridden ? "Site Override"|t('cookie-consent-flow') : "Inherited"|t('cookie-consent-flow') }}
+                        </span>
+                        <label class="cck-group-toggle-label" for="site{{ site.id }}-cookies-toggle">
+                            {{ "Use Global Cookies"|t('cookie-consent-flow') }}
+                        </label>
+                        <span class="cck-group-toggle-switch">
+                            <input
+                                type="checkbox"
+                                id="site{{ site.id }}-cookies-toggle"
+                                class="cck-group-toggle cck-use-global-checkbox"
+                                name="sites[{{ site.id }}][__useGlobal][cookies]"
+                                value="1"
+                                data-group-target="site{{ site.id }}-cookies-block"
+                                data-target="site{{ site.id }}-cookies-block"
+                                {% if not isCookiesOverridden %}checked{% endif %}
+                            >
+                            <span class="cck-group-toggle-slider" aria-hidden="true"></span>
+                        </span>
+                    </div>
+                </div>
+
+                <div class="cck-override-card__body">
+                    <div id="site{{ site.id }}-cookies-block" class="cck-cookies-group{% if not isCookiesOverridden %} cck-override-field--inherited{% endif %}">
+                        <div class="cck-cookies-list">
+                            {% for i, cookie in resolved.cookies %}
+                                {% include 'cookie-consent-flow/cookies/_cookie-row' with {
+                                    cookie:     cookie,
+                                    index:      i,
+                                    categories: resolved.categories,
+                                    namePrefix: 'sites[' ~ site.id ~ '][cookies]',
+                                } %}
+                            {% else %}
+                                <p class="light" data-cck-cookies-empty>{{ "No cookies documented yet."|t('cookie-consent-flow') }}</p>
+                            {% endfor %}
+                        </div>
+
+                        <button type="button" class="btn add icon cck-add-cookie">
+                            {{ "Add Cookie"|t('cookie-consent-flow') }}
+                        </button>
+
+                        <template class="cck-cookie-template">
+                            {% include 'cookie-consent-flow/cookies/_cookie-row' with {
+                                cookie:     { categoryKey: resolved.categories[0].key ?? '', name: '', provider: '', purpose: '', duration: '' },
+                                index:      '__INDEX__',
+                                categories: resolved.categories,
+                                namePrefix: 'sites[' ~ site.id ~ '][cookies]',
                             } %}
                         </template>
                     </div>

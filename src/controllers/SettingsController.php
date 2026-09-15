@@ -87,7 +87,7 @@ class SettingsController extends Controller
 
             if (!$plugin->cookieSettings->saveSiteOverrides((int) $siteId, $siteData, $useGlobal)) {
                 Craft::$app->getSession()->setError(
-                    Craft::t('cookie-consent-flow', "Couldn't save Multi Site Override.")
+                    Craft::t('cookie-consent-flow', "Couldn't save Multisite.")
                 );
 
                 return $this->renderTemplate('cookie-consent-flow/settings/site-overrides', [
@@ -105,7 +105,7 @@ class SettingsController extends Controller
 
         Craft::$app->getSession()->setNotice(Craft::t(
             'cookie-consent-flow',
-            '✓ Multi Site Override Saved — {count, plural, =1{1 overridden setting} other{# overridden settings}}',
+            '✓ Multisite Saved — {count, plural, =1{1 overridden setting} other{# overridden settings}}',
             ['count' => $totalOverrides]
         ));
 
@@ -137,14 +137,14 @@ class SettingsController extends Controller
 
         if ($request->getAcceptsJson()) {
             return $success
-                ? $this->asJson(['success' => true, 'message' => Craft::t('cookie-consent-flow', 'Multi Site Override reset.')])
-                : $this->asFailure(Craft::t('cookie-consent-flow', "Couldn't reset Multi Site Override."));
+                ? $this->asJson(['success' => true, 'message' => Craft::t('cookie-consent-flow', 'Multisite reset.')])
+                : $this->asFailure(Craft::t('cookie-consent-flow', "Couldn't reset Multisite."));
         }
 
         if ($success) {
-            Craft::$app->getSession()->setNotice(Craft::t('cookie-consent-flow', 'Multi Site Override reset.'));
+            Craft::$app->getSession()->setNotice(Craft::t('cookie-consent-flow', 'Multisite reset.'));
         } else {
-            Craft::$app->getSession()->setError(Craft::t('cookie-consent-flow', "Couldn't reset Multi Site Override."));
+            Craft::$app->getSession()->setError(Craft::t('cookie-consent-flow', "Couldn't reset Multisite."));
         }
 
         return $this->redirectToPostedUrl();
@@ -176,14 +176,14 @@ class SettingsController extends Controller
 
         if ($request->getAcceptsJson()) {
             return $success
-                ? $this->asJson(['success' => true, 'message' => Craft::t('cookie-consent-flow', 'Multi Site Override copied.')])
-                : $this->asFailure(Craft::t('cookie-consent-flow', "Couldn't copy Multi Site Override."));
+                ? $this->asJson(['success' => true, 'message' => Craft::t('cookie-consent-flow', 'Multisite copied.')])
+                : $this->asFailure(Craft::t('cookie-consent-flow', "Couldn't copy Multisite."));
         }
 
         if ($success) {
-            Craft::$app->getSession()->setNotice(Craft::t('cookie-consent-flow', 'Multi Site Override copied.'));
+            Craft::$app->getSession()->setNotice(Craft::t('cookie-consent-flow', 'Multisite copied.'));
         } else {
-            Craft::$app->getSession()->setError(Craft::t('cookie-consent-flow', "Couldn't copy Multi Site Override."));
+            Craft::$app->getSession()->setError(Craft::t('cookie-consent-flow', "Couldn't copy Multisite."));
         }
 
         return $this->redirectToPostedUrl();
