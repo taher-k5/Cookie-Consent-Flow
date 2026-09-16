@@ -34,4 +34,16 @@ class CookieDefinitionRecord extends ActiveRecord
     {
         return '{{%cookieconsent_cookie}}';
     }
+
+    public function rules(): array
+    {
+        return [
+            [['settingsId', 'categoryKey', 'name'], 'required'],
+            [['settingsId', 'sortOrder'], 'integer'],
+            [['categoryKey'], 'string', 'max' => 100],
+            [['name', 'provider'], 'string', 'max' => 255],
+            [['duration'], 'string', 'max' => 100],
+            [['purpose'], 'string'],
+        ];
+    }
 }
