@@ -124,6 +124,22 @@
 }
 
 /* --------------------------------------------------------------------------
+   Settings page – tab panels
+
+   Craft renders and drives the tab bar itself; these rules only give each
+   panel consistent breathing room under it, so switching tabs never shifts
+   the first field up or down.
+   -------------------------------------------------------------------------- */
+#cck-settings > [role="tabpanel"] {
+    padding-top: 4px;
+}
+
+#cck-settings > [role="tabpanel"] > .field:first-child,
+#cck-settings > [role="tabpanel"] > .cck-page-intro:first-child {
+    margin-top: 0;
+}
+
+/* --------------------------------------------------------------------------
    Settings page – layout grid
    -------------------------------------------------------------------------- */
 .cck-layout-grid {
@@ -139,15 +155,41 @@
 .cck-category-row {
     background: var(--white, #fff);
     border: 1px solid var(--hairline-color, #e5e7eb);
-    border-radius: 4px;
-    padding: 16px;
-    margin-bottom: 12px;
+    border-radius: 8px;
+    padding: 0;
+    margin-bottom: 14px;
+    overflow: hidden;
+    transition: border-color .15s ease, box-shadow .15s ease;
+}
+
+.cck-category-row:hover {
+    border-color: var(--gray-300, #d1d5db);
+    box-shadow: 0 1px 3px rgba(0, 0, 0, .05);
+}
+
+.cck-category-row__header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 10px 16px;
+    background: var(--gray-050, #f9fafb);
+    border-bottom: 1px solid var(--hairline-color, #e5e7eb);
+}
+
+.cck-category-row__label {
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: .05em;
+    color: var(--medium-text-color, #6b7280);
 }
 
 .cck-category-row__fields {
     display: grid;
     grid-template-columns: 1fr 1fr;
     gap: 0 24px;
+    padding: 16px;
 }
 
 .cck-category-row__fields > .field:nth-child(3) {
@@ -165,45 +207,192 @@
     margin-top: 0;
 }
 
-.cck-remove-category {
-    margin-top: 12px;
+/* The signals field is the widest thing in the row, so it spans the grid
+   instead of sitting in one column with dead space beside it. */
+.cck-gcm-field {
+    grid-column: span 2;
+    margin-top: 4px;
+}
+
+.cck-gcm-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+    gap: 8px;
+}
+
+/* Each signal is its own click target, label included — no modifier-key
+   multi-select, and the checkbox needs no id to be labelled. */
+.cck-gcm-option {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 12px;
+    background: var(--gray-050, #f9fafb);
+    border: 1px solid var(--hairline-color, #e5e7eb);
+    border-radius: 6px;
+    cursor: pointer;
+    transition: border-color .12s ease, background .12s ease;
+}
+
+.cck-gcm-option:hover {
+    border-color: var(--gray-300, #d1d5db);
+    background: var(--white, #fff);
+}
+
+.cck-gcm-option input[type="checkbox"] {
+    flex: 0 0 auto;
+    margin: 0;
+    cursor: pointer;
+}
+
+.cck-gcm-option__name {
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: 12px;
+    overflow-wrap: anywhere;
+}
+
+/* A checked signal is the row's real state, so it reads as selected rather
+   than only showing a small tick. */
+.cck-gcm-option:has(input:checked) {
+    background: var(--white, #fff);
+    border-color: var(--link-color, #2563eb);
+    box-shadow: inset 0 0 0 1px var(--link-color, #2563eb);
+}
+
+.cck-gcm-option:focus-within {
+    outline: 2px solid var(--link-color, #2563eb);
+    outline-offset: 1px;
+}
+
+@media (max-width: 760px) {
+    .cck-category-row__fields {
+        grid-template-columns: 1fr;
+    }
+
+    .cck-category-row__fields > .field:nth-child(3),
+    .cck-category-row__toggles,
+    .cck-gcm-field {
+        grid-column: auto;
+    }
+
+    .cck-category-row__toggles {
+        flex-direction: column;
+        gap: 0;
+    }
+}
+
+/* Shared "the next row goes here" affordance for both add buttons. */
+.cck-add-row--block,
+.cck-add-cookie--block {
+    width: 100%;
+    justify-content: center;
 }
 
 /* --------------------------------------------------------------------------
    Cookies page
    -------------------------------------------------------------------------- */
+
+/* Long legal-ish intro copy reads as a wall unless it is given a shell and
+   a measure to wrap against. */
+.cck-page-intro {
+    margin: 0 0 20px;
+    padding: 14px 16px;
+    background: var(--gray-050, #f9fafb);
+    border: 1px solid var(--hairline-color, #e5e7eb);
+    border-left: 3px solid var(--link-color, #2563eb);
+    border-radius: 8px;
+}
+
+.cck-page-intro p {
+    max-width: 100%;
+    margin: 0;
+    line-height: 1.55;
+    color: var(--medium-text-color, #596673);
+}
+
 .cck-cookie-row {
     background: var(--white, #fff);
     border: 1px solid var(--hairline-color, #e5e7eb);
-    border-radius: 4px;
-    padding: 16px;
-    margin-bottom: 12px;
+    border-radius: 8px;
+    padding: 0;
+    margin-bottom: 14px;
+    overflow: hidden;
+    transition: border-color .15s ease, box-shadow .15s ease;
+}
+
+.cck-cookie-row:hover {
+    border-color: var(--gray-300, #d1d5db);
+    box-shadow: 0 1px 3px rgba(0, 0, 0, .05);
+}
+
+/* Row title and its delete control on one strip, so removing a cookie sits
+   at the top of the thing it removes instead of below five fields. */
+.cck-cookie-row__header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 10px 16px;
+    background: var(--gray-050, #f9fafb);
+    border-bottom: 1px solid var(--hairline-color, #e5e7eb);
+}
+
+.cck-cookie-row__label {
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: .05em;
+    color: var(--medium-text-color, #6b7280);
 }
 
 .cck-cookie-row__fields {
     display: grid;
     grid-template-columns: 1fr 1fr;
     gap: 0 24px;
+    padding: 16px;
 }
 
 .cck-cookie-row__fields > .field:last-child {
     grid-column: span 2;
 }
 
-.cck-remove-cookie {
-    margin-top: 12px;
+@media (max-width: 760px) {
+    .cck-cookie-row__fields {
+        grid-template-columns: 1fr;
+    }
+
+    .cck-cookie-row__fields > .field:last-child {
+        grid-column: auto;
+    }
+}
+
+.cck-cookies-empty {
+    padding: 28px 16px;
+    margin-bottom: 14px;
+    text-align: center;
+    background: var(--gray-050, #f9fafb);
+    border: 1px solid var(--hairline-color, #e5e7eb);
+    border-radius: 8px;
+}
+
+.cck-cookies-empty p {
+    margin: 0;
+    color: var(--medium-text-color, #6b7280);
 }
 
 .cck-detected-panel {
     background: #fffbeb;
     border: 1px solid #fde68a;
-    border-radius: 8px;
+    border-radius: 10px;
     padding: 0;
     margin-bottom: 20px;
     overflow: hidden;
 }
 
 .cck-detected-panel__summary {
+    display: flex;
+    align-items: center;
+    gap: 10px;
     cursor: pointer;
     padding: 12px 20px;
     font-weight: 600;
@@ -217,7 +406,6 @@
 .cck-detected-panel__summary::before {
     content: '▸';
     display: inline-block;
-    margin-right: 6px;
     transition: transform 0.15s ease;
 }
 
@@ -225,8 +413,30 @@
     transform: rotate(90deg);
 }
 
+/* The count belongs to the panel, not to its sentence — a chip keeps it
+   readable once the number gets to two digits. */
+.cck-detected-panel__count {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 22px;
+    height: 20px;
+    padding: 0 7px;
+    border-radius: 10px;
+    background: #f59e0b;
+    color: #fff;
+    font-size: 12px;
+    font-weight: 700;
+    line-height: 1;
+}
+
 .cck-detected-panel__body {
     padding: 0 20px 16px;
+}
+
+.cck-detected-panel__body > p.light {
+    max-width: 90ch;
+    line-height: 1.5;
 }
 
 .cck-detected-list {
@@ -235,7 +445,7 @@
     padding: 0;
     display: flex;
     flex-direction: column;
-    gap: 8px;
+    gap: 6px;
 }
 
 .cck-detected-list__item {
@@ -244,32 +454,63 @@
     justify-content: space-between;
     gap: 12px;
     background: var(--white, #fff);
-    border: 1px solid var(--hairline-color, #e5e7eb);
-    border-radius: 4px;
-    padding: 8px 12px;
+    border: 1px solid #fde68a;
+    border-radius: 6px;
+    padding: 7px 8px 7px 12px;
+    transition: border-color .15s ease;
+}
+
+.cck-detected-list__item:hover {
+    border-color: #f59e0b;
 }
 
 .cck-detected-list__name {
     font-size: 0.85em;
+    overflow-wrap: anywhere;
 }
 
 .cck-detected-list__actions {
     display: flex;
-    gap: 8px;
+    gap: 6px;
     flex-shrink: 0;
 }
 
+/* Select and button read as one control; the caveat sits under them on its
+   own line rather than stretching the row. */
 .cck-library-picker {
     display: flex;
     flex-wrap: wrap;
     align-items: center;
     gap: 8px;
     margin-bottom: 20px;
+    padding: 12px 16px;
+    background: var(--white, #fff);
+    border: 1px solid var(--hairline-color, #e5e7eb);
+    border-radius: 8px;
+}
+
+.cck-library-picker__label {
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: .04em;
+    color: var(--medium-text-color, #6b7280);
+}
+
+.cck-library-picker .select {
+    min-width: 260px;
+}
+
+.cck-library-picker .select select {
+    width: 100%;
 }
 
 .cck-library-picker p.light {
     flex-basis: 100%;
-    margin: 4px 0 0;
+    max-width: 90ch;
+    margin: 2px 0 0;
+    font-size: 12px;
+    line-height: 1.45;
 }
 
 /* --------------------------------------------------------------------------
@@ -285,12 +526,19 @@
 
 .cck-site-panel__summary {
     cursor: pointer;
-    padding: 14px 20px;
+    padding: 11px 20px;
+    font-size: 11px;
     font-weight: 600;
-    font-size: 0.95rem;
-    color: var(--dark-text-color, #111827);
-    background: #f9fafb;
+    letter-spacing: .05em;
+    text-transform: uppercase;
+    color: var(--medium-text-color, #6b7280);
+    background: var(--gray-050, #f9fafb);
     list-style: none;
+    transition: background .12s ease;
+}
+
+.cck-site-panel__summary:hover {
+    background: var(--gray-100, #f3f4f6);
 }
 
 .cck-site-panel__summary::-webkit-details-marker {
@@ -586,12 +834,12 @@
 
 .cck-override-toolbar__search {
     flex: 1 1 auto;
-    max-width: 360px;
+    max-width: 520px;
 }
 
 .cck-override-toolbar__search input {
     width: 100%;
-    height: 34px;
+    height: 36px;
     padding: 0 12px;
     border: 1px solid var(--hairline-color, #d1d5db);
     border-radius: 6px;
@@ -638,12 +886,25 @@
 .cck-site-summary-card__stats {
     display: grid;
     grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
-    gap: 12px 20px;
+    gap: 12px;
 }
 
 .cck-site-summary-card__stat {
+    padding: 10px 12px;
+    background: var(--gray-050, #f9fafb);
+    border: 1px solid var(--hairline-color, #e5e7eb);
+    border-radius: 6px;
     font-size: 0.875rem;
+    font-weight: 600;
     color: var(--dark-text-color, #111827);
+}
+
+.cck-site-summary-card__stat .cck-field-label {
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: .04em;
+    margin-bottom: 4px;
 }
 
 /* Per-site action row (Copy Global / Copy From / Reset) */
@@ -651,28 +912,54 @@
     display: flex;
     flex-wrap: wrap;
     align-items: center;
-    gap: 10px;
+    gap: 8px;
     margin-bottom: 16px;
+    padding: 12px;
+    background: var(--gray-050, #f9fafb);
+    border: 1px solid var(--hairline-color, #e5e7eb);
+    border-radius: 8px;
 }
 
+/* "Copy From <site> [Copy]" is one action in three parts; boxing it keeps
+   its select from reading as a loose control between two buttons. */
 .cck-copy-from {
     display: inline-flex;
     align-items: center;
     gap: 6px;
-    font-size: 0.8125rem;
-    color: var(--medium-dark-text-color, #6b7280);
+    padding: 4px 8px;
+    background: var(--white, #fff);
+    border: 1px solid var(--hairline-color, #e5e7eb);
+    border-radius: 6px;
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: .04em;
+    color: var(--medium-text-color, #6b7280);
+}
+
+/* Expand All sits apart from the copy/reset actions it does not belong with. */
+.cck-expand-all {
+    margin-left: auto;
 }
 
 .cck-empty-state {
-    color: var(--medium-dark-text-color, #6b7280);
-    font-style: italic;
-    padding: 12px 0;
+    margin: 0 0 16px;
+    padding: 20px 16px;
+    text-align: center;
+    color: var(--medium-text-color, #6b7280);
+    background: var(--gray-050, #f9fafb);
+    border: 1px solid var(--hairline-color, #e5e7eb);
+    border-radius: 8px;
 }
 
 @media (max-width: 700px) {
     .cck-override-toolbar {
         flex-direction: column;
         align-items: stretch;
+    }
+
+    .cck-expand-all {
+        margin-left: 0;
     }
 
     .cck-override-toolbar__search {
@@ -1327,8 +1614,11 @@
   border-left: 4px solid var(--warning-color, #cf6d1c);
 }
 
+/* Sits between the row header and the fields now, so it carries the card's
+   own horizontal padding rather than the field grid's. */
 .cck-cookie-row__warning {
-  margin: 0 0 10px;
+  margin: 0;
+  padding: 10px 16px 0;
   color: var(--warning-color, #cf6d1c);
   font-weight: 500;
 }

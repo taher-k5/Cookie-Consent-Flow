@@ -30,13 +30,28 @@
 {% endif %}
 
 <div class="cck-cookie-row{% if isOrphaned %} cck-cookie-row--orphaned{% endif %}" data-index="{{ index }}">
-    <div class="cck-cookie-row__fields">
+    {# Header strip: the row's own label plus its delete control, so removing
+       a cookie is where you expect it rather than below five fields. The
+       button keeps its class and stays inside the row, which is all the
+       row-scoped JS looks for. #}
+    <div class="cck-cookie-row__header">
+        <span class="cck-cookie-row__label">{{ "Cookie"|t('cookie-consent-flow') }}</span>
 
-        {% if isOrphaned %}
-            <p class="cck-cookie-row__warning" role="note">
-                {{ "This cookie's category no longer exists, so visitors are not shown it. Pick a current category, or remove the row."|t('cookie-consent-flow') }}
-            </p>
-        {% endif %}
+        <button
+            type="button"
+            class="btn small delete icon cck-remove-cookie"
+            title="{{ 'Remove cookie'|t('cookie-consent-flow') }}"
+            aria-label="{{ 'Remove cookie'|t('cookie-consent-flow') }}"
+        >{{ "Remove"|t('cookie-consent-flow') }}</button>
+    </div>
+
+    {% if isOrphaned %}
+        <p class="cck-cookie-row__warning" role="note">
+            {{ "This cookie's category no longer exists, so visitors are not shown it. Pick a current category, or remove the row."|t('cookie-consent-flow') }}
+        </p>
+    {% endif %}
+
+    <div class="cck-cookie-row__fields">
 
         {{ forms.selectField({
             label:   "Category"|t('cookie-consent-flow'),
@@ -76,11 +91,4 @@
             rows:  2,
         }) }}
     </div>
-
-    <button
-        type="button"
-        class="btn small delete icon cck-remove-cookie"
-        title="{{ 'Remove cookie'|t('cookie-consent-flow') }}"
-        aria-label="{{ 'Remove cookie'|t('cookie-consent-flow') }}"
-    >{{ "Remove"|t('cookie-consent-flow') }}</button>
 </div>

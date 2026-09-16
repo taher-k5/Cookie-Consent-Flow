@@ -120,9 +120,9 @@ class SettingsController extends Controller
             $totalOverrides += $plugin->getSettings()->getSiteOverrideCount($site->id);
         }
 
-        Craft::$app->getSession()->setNotice(Craft::t(
+        Craft::$app->getSession()->setSuccess(Craft::t(
             'cookie-consent-flow',
-            '✓ Multisite Saved — {count, plural, =1{1 overridden setting} other{# overridden settings}}',
+            'Multisite Saved — {count, plural, =1{1 overridden setting} other{# overridden settings}}',
             ['count' => $totalOverrides]
         ));
 
@@ -203,7 +203,7 @@ class SettingsController extends Controller
         }
 
         if ($success) {
-            Craft::$app->getSession()->setNotice(Craft::t('cookie-consent-flow', 'Multisite reset.'));
+            Craft::$app->getSession()->setSuccess(Craft::t('cookie-consent-flow', 'Multisite reset.'));
         } else {
             Craft::$app->getSession()->setError(Craft::t('cookie-consent-flow', "Couldn't reset Multisite."));
         }
@@ -242,7 +242,7 @@ class SettingsController extends Controller
         }
 
         if ($success) {
-            Craft::$app->getSession()->setNotice(Craft::t('cookie-consent-flow', 'Multisite copied.'));
+            Craft::$app->getSession()->setSuccess(Craft::t('cookie-consent-flow', 'Multisite copied.'));
         } else {
             Craft::$app->getSession()->setError(Craft::t('cookie-consent-flow', "Couldn't copy Multisite."));
         }
@@ -291,7 +291,7 @@ class SettingsController extends Controller
             ]);
         }
 
-        Craft::$app->getSession()->setNotice(Craft::t('cookie-consent-flow', 'Banner settings saved.'));
+        Craft::$app->getSession()->setSuccess(Craft::t('cookie-consent-flow', 'Banner settings saved.'));
 
         return $this->redirectToPostedUrl();
     }
@@ -323,7 +323,7 @@ class SettingsController extends Controller
             ]);
         }
 
-        Craft::$app->getSession()->setNotice(Craft::t('cookie-consent-flow', 'Settings saved.'));
+        Craft::$app->getSession()->setSuccess(Craft::t('cookie-consent-flow', 'Settings saved.'));
 
         return $this->redirectToPostedUrl();
     }
@@ -387,7 +387,7 @@ class SettingsController extends Controller
             return $this->asJson(['success' => true, 'message' => $message, 'policyVersion' => $version]);
         }
 
-        Craft::$app->getSession()->setNotice($message);
+        Craft::$app->getSession()->setSuccess($message);
 
         return $this->redirectToPostedUrl();
     }

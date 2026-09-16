@@ -16,9 +16,11 @@
 {{ redirectInput('cookie-consent-flow/cookies') }}
 {{ csrfInput() }}
 
-<p class="light">
+<div class="cck-page-intro">
+    <p>
     {{ "Document each cookie your site actually sets, grouped by category. GDPR/ePrivacy expect visitors to be told WHAT cookies are used and why, not just a category-level description — this list is shown to visitors in the preferences panel alongside each category. It's disclosure content only: it doesn't block anything itself — blocking is still controlled by tagging scripts/iframes with data-cck-category (see the plugin README). Site-specific cookies (where a site's list differs from Global) are managed on the Multisite page."|t('cookie-consent-flow') }}
-</p>
+    </p>
+</div>
 
 {% if orphaned|default([])|length %}
     <div class="cck-orphan-notice" role="note">
@@ -37,7 +39,8 @@
 {% if undocumented|length %}
 <details class="cck-detected-panel">
     <summary class="cck-detected-panel__summary">
-        {{ "Detected, not yet documented ({count})"|t('cookie-consent-flow', { count: undocumented|length }) }}
+        <span>{{ "Detected, not yet documented"|t('cookie-consent-flow') }}</span>
+        <span class="cck-detected-panel__count">{{ undocumented|length }}</span>
     </summary>
     <div class="cck-detected-panel__body">
         <p class="light">
@@ -63,13 +66,18 @@
 {% endif %}
 
 <div class="cck-library-picker">
-    <select id="cck-library-select">
+    <label class="cck-library-picker__label" for="cck-library-select">
+        {{ "Add from Library"|t('cookie-consent-flow') }}
+    </label>
+    <div class="select">
+        <select id="cck-library-select">
         {% for entry in library %}
             <option value="{{ entry.id }}">{{ entry.provider }} — {{ entry.name }}</option>
         {% endfor %}
-    </select>
-    <button type="button" id="cck-add-from-library" class="btn">
-        {{ "Add from Library"|t('cookie-consent-flow') }}
+        </select>
+    </div>
+    <button type="button" id="cck-add-from-library" class="btn add icon">
+        {{ "Add"|t('cookie-consent-flow') }}
     </button>
     <p class="light">
         {{ "Pre-filled entries for common third-party cookies (Google Analytics, Meta Pixel, etc.) — verify duration/purpose against the provider's current docs before relying on it."|t('cookie-consent-flow') }}
@@ -86,11 +94,13 @@
                 categories: settings.categories,
             } %}
         {% else %}
-            <p class="light" data-cck-cookies-empty>{{ "No cookies documented yet."|t('cookie-consent-flow') }}</p>
+            <div class="cck-cookies-empty" data-cck-cookies-empty>
+                <p>{{ "No cookies documented yet."|t('cookie-consent-flow') }}</p>
+            </div>
         {% endfor %}
     </div>
 
-    <button type="button" class="btn add icon cck-add-cookie">
+    <button type="button" class="btn add icon cck-add-cookie cck-add-cookie--block">
         {{ "Add Cookie"|t('cookie-consent-flow') }}
     </button>
 

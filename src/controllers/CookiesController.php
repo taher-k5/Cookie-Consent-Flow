@@ -55,7 +55,7 @@ class CookiesController extends Controller
             return $this->renderTemplate('cookie-consent-flow/cookies/index', $this->_templateVars());
         }
 
-        Craft::$app->getSession()->setNotice(Craft::t('cookie-consent-flow', 'Cookies saved.'));
+        Craft::$app->getSession()->setSuccess(Craft::t('cookie-consent-flow', 'Cookies saved.'));
 
         return $this->redirectToPostedUrl();
     }
