@@ -26,30 +26,32 @@ final class ConsentModeServiceTest extends TestCase
         $this->settings = new Settings();
     }
 
-    public function testDefaultStateDeniesEveryOptionalSignal(): void
-    {
-        $state = $this->service->buildDefaultState();
-
-        self::assertSame('denied', $state['ad_storage']);
-        self::assertSame('denied', $state['ad_user_data']);
-        self::assertSame('denied', $state['ad_personalization']);
-        self::assertSame('denied', $state['analytics_storage']);
-        self::assertSame('denied', $state['functionality_storage']);
-        self::assertSame('denied', $state['personalization_storage']);
-    }
-
     /**
-     * security_storage is the one exception, and it is deliberate: denying it
-     * breaks Google's own security features, and it does not depend on consent
-     * under the "strictly necessary" carve-out.
+     * security_storage is granted and every other signal denied. That one
+     * exception is deliberate: denying it breaks Google's own security
+     * features, and it does not depend on consent under the "strictly
+     * necessary" carve-out.
+     *
+     * Asserted as an exhaustive partition rather than signal by signal, so a
+     * signal added to the default state without a decision about it fails here
+     * instead of defaulting to something nobody chose.
      */
     public function testDefaultStateGrantsOnlySecurityStorage(): void
     {
         $state = $this->service->buildDefaultState();
 
         $granted = array_keys(array_filter($state, static fn(string $v): bool => $v === 'granted'));
+        $denied = array_keys(array_filter($state, static fn(string $v): bool => $v === 'denied'));
 
         self::assertSame(['security_storage'], $granted);
+        self::assertSame([
+            'ad_storage',
+            'ad_user_data',
+            'ad_personalization',
+            'analytics_storage',
+            'functionality_storage',
+            'personalization_storage',
+        ], $denied);
     }
 
     public function testDefaultStateCoversEveryV2Signal(): void

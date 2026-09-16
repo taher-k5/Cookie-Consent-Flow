@@ -67,11 +67,6 @@ class ConsentModeService extends Component
      */
     private bool $_emitted = false;
 
-    public function hasEmitted(): bool
-    {
-        return $this->_emitted;
-    }
-
     /**
      * Builds the conservative default consent state: every optional signal
      * `denied`, regardless of how categories are mapped. Locked categories do

@@ -474,26 +474,6 @@ class SettingsService extends Component
         return (int) $record->id;
     }
 
-    /**
-     * Deletes a site's settings row if it now has no overrides left of any
-     * kind — banner fields, categories, or cookies. Call after
-     * CookieDefinitionService clears a site's cookie overrides, so a row
-     * that only existed to hold them doesn't linger empty.
-     */
-    public function pruneSiteSettingsRowIfEmpty(int $siteId): void
-    {
-        $record = $this->_findSiteRecord($siteId);
-        if ($record === null) {
-            return;
-        }
-
-        $hasCategoryOverride = $this->_hasCategoryOverride((int) $record->id);
-        $hasCookieOverride    = Plugin::getInstance()->cookieDefinitions->hasOverrideForSettingsId((int) $record->id);
-
-        $this->_saveOrDeleteSiteRecord($record, $hasCategoryOverride || $hasCookieOverride);
-        $this->clearCache();
-    }
-
     // Private helpers
 
     /** All settings fields the table has a column for (everything but `siteOverrides`). */

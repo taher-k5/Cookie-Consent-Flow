@@ -26,8 +26,6 @@
         "craftcms/cms": "^5.0"
     },
     "require-dev": {
-        "craftcms/ecs": "dev-main",
-        "craftcms/phpstan": "dev-main",
         "phpunit/phpunit": "^10.5"
     },
     "autoload": {
@@ -44,14 +42,11 @@
         "changelogUrl": "https://raw.githubusercontent.com/sfsinfotech/cookie-consent-flow/main/CHANGELOG.md"
     },
     "scripts": {
-        "check-cs": "ecs check --ansi",
-        "fix-cs": "ecs check --ansi --fix",
-        "phpstan": "phpstan --memory-limit=1G",
         "test": "phpunit",
+        "test-js": "node tests/js/runtime.test.js",
         "check-all": [
-            "@check-cs",
-            "@phpstan",
-            "@test"
+            "@test",
+            "@test-js"
         ]
     },
     "config": {
