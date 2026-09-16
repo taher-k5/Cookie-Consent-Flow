@@ -1,6 +1,6 @@
 {
     "name": "sfs-infotech/craft-cookie-consent-flow",
-    "description": "Cookie consent and compliance management for Craft CMS 5 — banners, categories, geo-targeting, consent logs, and multi-site support.",
+    "description": "Cookie consent and compliance management for Craft CMS 5 \u2014 banners, categories, geo-targeting, consent logs, and multi-site support.",
     "type": "craft-plugin",
     "version": "1.0.0",
     "license": "MIT",
@@ -27,7 +27,8 @@
     },
     "require-dev": {
         "craftcms/ecs": "dev-main",
-        "craftcms/phpstan": "dev-main"
+        "craftcms/phpstan": "dev-main",
+        "phpunit/phpunit": "^10.5"
     },
     "autoload": {
         "psr-4": {
@@ -45,7 +46,13 @@
     "scripts": {
         "check-cs": "ecs check --ansi",
         "fix-cs": "ecs check --ansi --fix",
-        "phpstan": "phpstan --memory-limit=1G"
+        "phpstan": "phpstan --memory-limit=1G",
+        "test": "phpunit",
+        "check-all": [
+            "@check-cs",
+            "@phpstan",
+            "@test"
+        ]
     },
     "config": {
         "sort-packages": true,
@@ -55,6 +62,11 @@
         "allow-plugins": {
             "yiisoft/yii2-composer": true,
             "craftcms/plugin-installer": true
+        }
+    },
+    "autoload-dev": {
+        "psr-4": {
+            "sfsinfotech\\craftcookieconsentflow\\tests\\": "tests/"
         }
     }
 }
