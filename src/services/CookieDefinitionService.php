@@ -70,6 +70,29 @@ class CookieDefinitionService extends Component
     }
 
     /**
+     * Documented cookies whose category no longer exists.
+     *
+     * Categories are admin-configurable and identified by a free-form key, so
+     * renaming or deleting one leaves its disclosures pointing at a key
+     * nothing resolves. Nothing repoints them automatically — which category a
+     * cookie now belongs in is a judgement only a human can make, and silently
+     * refiling or deleting disclosure content would be worse than leaving it.
+     * So they are surfaced instead: the visitor-facing modal skips them (a
+     * cookie cannot be disclosed under a category that does not exist), and
+     * the Cookies screen shows them for an admin to refile or remove.
+     *
+     * @param  string[] $categoryKeys The category keys that currently exist.
+     * @return array<int, array<string, mixed>>
+     */
+    public function getOrphaned(int $settingsId, array $categoryKeys): array
+    {
+        return array_values(array_filter(
+            $this->getAll($settingsId),
+            static fn(array $cookie): bool => !in_array($cookie['categoryKey'], $categoryKeys, true)
+        ));
+    }
+
+    /**
      * Whether a settings row has any cookie rows of its own — the same
      * "presence of child rows = override" convention already used for
      * categories. Only meaningful for a site's settingsId: the global row
@@ -108,7 +131,13 @@ class CookieDefinitionService extends Component
      */
     public function saveAll(int $settingsId, array $raw): bool
     {
-        $transaction = Craft::$app->getDb()->beginTransaction();
+        $db = Craft::$app->getDb();
+        $transaction = $db->getTransaction();
+        $ownsTransaction = $transaction === null || !$transaction->getIsActive();
+
+        if ($ownsTransaction) {
+            $transaction = $db->beginTransaction();
+        }
 
         try {
             CookieDefinitionRecord::deleteAll(['settingsId' => $settingsId]);
@@ -128,16 +157,24 @@ class CookieDefinitionService extends Component
                 $record->sortOrder   = $sortOrder;
 
                 if (!$record->save()) {
-                    $transaction->rollBack();
+                    if ($ownsTransaction) {
+                        $transaction->rollBack();
+                    }
                     return false;
                 }
             }
         } catch (Throwable $e) {
-            $transaction->rollBack();
-            throw $e;
+            if ($ownsTransaction && $transaction->getIsActive()) {
+                $transaction->rollBack();
+            }
+            Craft::error('Cookie disclosure save failed: ' . $e->getMessage(), __METHOD__);
+
+            return false;
         }
 
-        $transaction->commit();
+        if ($ownsTransaction) {
+            $transaction->commit();
+        }
 
         return true;
     }

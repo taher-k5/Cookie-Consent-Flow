@@ -4,12 +4,39 @@
 {% set namePrefix = namePrefix ?? 'cookies' %}
 
 {% set categoryOptions = [] %}
+{% set categoryKeys = [] %}
 {% for category in categories %}
     {% set categoryOptions = categoryOptions|merge([{ value: category.key, label: category.label }]) %}
+    {% set categoryKeys = categoryKeys|merge([category.key]) %}
 {% endfor %}
 
-<div class="cck-cookie-row" data-index="{{ index }}">
+{# A cookie can outlive the category it was filed under — the category was
+   renamed or deleted, and nothing repoints a disclosure automatically, because
+   only a human knows which category the cookie now belongs in.
+
+   The orphaned key is added to this row's options rather than left out of
+   them. A <select> whose stored value matches no option shows the first option
+   instead, so saving the page would silently refile every orphaned cookie
+   under whatever category happens to sort first — losing the admin's original
+   classification without telling anyone. Keeping the value selectable means
+   saving preserves it, and the warning below makes the reassignment a
+   deliberate act. #}
+{% set isOrphaned = cookie.categoryKey and cookie.categoryKey not in categoryKeys %}
+{% if isOrphaned %}
+    {% set categoryOptions = categoryOptions|merge([{
+        value: cookie.categoryKey,
+        label: "{key} (category no longer exists)"|t('cookie-consent-flow', { key: cookie.categoryKey }),
+    }]) %}
+{% endif %}
+
+<div class="cck-cookie-row{% if isOrphaned %} cck-cookie-row--orphaned{% endif %}" data-index="{{ index }}">
     <div class="cck-cookie-row__fields">
+
+        {% if isOrphaned %}
+            <p class="cck-cookie-row__warning" role="note">
+                {{ "This cookie's category no longer exists, so visitors are not shown it. Pick a current category, or remove the row."|t('cookie-consent-flow') }}
+            </p>
+        {% endif %}
 
         {{ forms.selectField({
             label:   "Category"|t('cookie-consent-flow'),

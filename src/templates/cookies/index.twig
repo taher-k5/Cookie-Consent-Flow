@@ -20,6 +20,20 @@
     {{ "Document each cookie your site actually sets, grouped by category. GDPR/ePrivacy expect visitors to be told WHAT cookies are used and why, not just a category-level description — this list is shown to visitors in the preferences panel alongside each category. It's disclosure content only: it doesn't block anything itself — blocking is still controlled by tagging scripts/iframes with data-cck-category (see the plugin README). Site-specific cookies (where a site's list differs from Global) are managed on the Multisite page."|t('cookie-consent-flow') }}
 </p>
 
+{% if orphaned|default([])|length %}
+    <div class="cck-orphan-notice" role="note">
+        <strong>{{ "{count, plural, =1{1 cookie is filed under a category that no longer exists} other{# cookies are filed under categories that no longer exist}}"|t('cookie-consent-flow', { count: orphaned|length }) }}</strong>
+        <p>
+            {{ "Visitors are not shown these, because the category they belong to is gone — renamed or deleted on the Settings page. Each one is flagged below: give it a current category, or remove it."|t('cookie-consent-flow') }}
+        </p>
+        <ul>
+            {% for cookie in orphaned %}
+                <li><code>{{ cookie.name }}</code> — <code>{{ cookie.categoryKey }}</code></li>
+            {% endfor %}
+        </ul>
+    </div>
+{% endif %}
+
 {% if undocumented|length %}
 <details class="cck-detected-panel">
     <summary class="cck-detected-panel__summary">

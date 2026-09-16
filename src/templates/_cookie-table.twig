@@ -1,0 +1,45 @@
+{#
+  Documented cookies, grouped by category — rendered by
+  {{ craft.cookieConsent.cookieTable() }}.
+
+  Override this by creating templates/cookie-consent-flow/_cookie-table.twig in
+  your own site templates; the plugin's site template root is registered under
+  the same namespace, so yours takes precedence.
+
+  Variables:
+    grouped — { categoryKey: [ {name, provider, purpose, duration}, … ] }
+    labels  — { categoryKey: 'Display name' }
+#}
+{% if grouped is empty %}
+  <p class="cck-cookie-table__empty">
+    {{ "No cookies have been documented yet."|t('cookie-consent-flow') }}
+  </p>
+{% else %}
+  {% for categoryKey, cookies in grouped %}
+    {% set caption = labels[categoryKey] ?? categoryKey %}
+
+    <table class="cck-cookie-table">
+      {# A caption rather than a heading: it associates the category with the
+         table for screen readers, which a sibling <h*> would not. #}
+      <caption class="cck-cookie-table__caption">{{ caption }}</caption>
+      <thead>
+        <tr>
+          <th scope="col">{{ "Name"|t('cookie-consent-flow') }}</th>
+          <th scope="col">{{ "Provider"|t('cookie-consent-flow') }}</th>
+          <th scope="col">{{ "Purpose"|t('cookie-consent-flow') }}</th>
+          <th scope="col">{{ "Duration"|t('cookie-consent-flow') }}</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for cookie in cookies %}
+          <tr>
+            <th scope="row"><code>{{ cookie.name }}</code></th>
+            <td>{{ cookie.provider ?: '—' }}</td>
+            <td>{{ cookie.purpose ?: '—' }}</td>
+            <td>{{ cookie.duration ?: '—' }}</td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  {% endfor %}
+{% endif %}
