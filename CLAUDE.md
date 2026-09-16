@@ -45,16 +45,16 @@ in `README.md`; audit evidence and remaining release checks belong in
 - `cookieconsent_detected_cookie`: observed cookie names only, never values.
 - `cookieconsent_log`: consent evidence and metadata.
 
-`Install.php` is the idempotent schema definition and, during this rebuild
-phase, the **single canonical migration**. A schema change is made there, so a
-fresh install creates the complete current schema; do not add timestamped
-incremental migrations or a historical migration chain. There is no supported
-upgrade path from a pre-rebuild database — reinstall instead.
+`Install.php` is the idempotent schema definition and the **single canonical
+migration** for 1.0.0. It creates the complete schema on a fresh install, and
+its helpers reconcile an existing table rather than assuming an empty one.
 
-Once the rebuild is released and real installations carry consent evidence,
-this convention has to change: from that point a schema change also needs a
-timestamped incremental migration, because requiring uninstall/reinstall to
-upgrade would destroy that evidence.
+**This convention ends with 1.0.0.** Nothing was published before it, so there
+was no installation to upgrade and no consent evidence to protect. Once 1.0.0
+is out that stops being true: from the next schema change onwards, update
+`Install.php` **and** add a timestamped incremental migration, because
+requiring uninstall/reinstall to upgrade would destroy the consent evidence
+real installations now hold.
 
 ## Front-end contract
 
@@ -74,20 +74,28 @@ it affects future loading and the next navigation.
 ## Commands
 
 ```bash
-composer test
-composer check-cs
-composer phpstan
+composer test       # PHPUnit
+composer test-js    # front-end runtime harness (node, no dependencies)
+composer check-all  # both
 php craft cookie-consent-flow/retention/clear --dry-run=1
 ```
 
 The unit bootstrap uses the nearest Craft Composer autoloader and a temporary
-Yii runtime. Database/controller/migration behavior needs the real Craft test
-site and both supported database drivers before release.
+Yii runtime. `tests/js/` runs `cookie-banner.js` against a stub browser, which
+is where the runtime's silent failures are pinned down. Database, controller
+and migration behavior still needs the real Craft test site on both supported
+drivers.
+
+There is no static analysis. `craftcms/ecs` resolves a Craft 4-era toolchain
+whose config API no longer matches and which is incompatible with current PHP,
+and `craftcms/phpstan` ships no binary — so both were removed rather than left
+as commands that cannot run. Adding working static analysis is open work; if
+you do, add the config files in the same change.
 
 ## Release checklist
 
-- Run PHP syntax, JavaScript syntax, PHPUnit, ECS, PHPStan, and `git diff --check`.
-- Test fresh install and previous-version upgrade on MySQL and PostgreSQL.
+- Run PHP syntax, JavaScript syntax, `composer check-all`, and `git diff --check`.
+- Test fresh install on MySQL and PostgreSQL.
 - Exercise every CP save/reset/copy/filter/export flow.
 - Test accept, reject, custom, GPC, DNT, API, expiry, and policy invalidation.
 - Verify rejected categories make no optional network requests.
