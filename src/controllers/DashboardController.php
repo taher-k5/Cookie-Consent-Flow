@@ -5,8 +5,8 @@ namespace sfsinfotech\craftcookieconsentflow\controllers;
 use Craft;
 use craft\web\Controller;
 use sfsinfotech\craftcookieconsentflow\helpers\ConsentHelper;
+use sfsinfotech\craftcookieconsentflow\helpers\Permissions;
 use sfsinfotech\craftcookieconsentflow\Plugin;
-use yii\web\ForbiddenHttpException;
 use yii\web\Response;
 
 /**
@@ -27,13 +27,7 @@ class DashboardController extends Controller
         // permission rather than leaving it open to any CP user, matching
         // SettingsController/LogsController's posture. Admins always pass
         // checkPermission() regardless, per Craft's own convention.
-        $user = Craft::$app->getUser();
-        if (
-            !$user->checkPermission('cookieConsentFlow:manageSettings') &&
-            !$user->checkPermission('cookieConsentFlow:viewLogs')
-        ) {
-            throw new ForbiddenHttpException('User is not permitted to perform this action.');
-        }
+        Permissions::requireAny(Permissions::MANAGE_SETTINGS, Permissions::VIEW_LOGS);
 
         return true;
     }
@@ -60,6 +54,11 @@ class DashboardController extends Controller
             'settings'    => $settings,
             'currentSite' => $site,
             'allSites'    => Craft::$app->getSites()->getAllSites(),
+            // Cached aggregate (see StatisticsService) rather than a fresh
+            // scan — this page is reloaded constantly while an admin is
+            // tuning the banner right next to it.
+            'overview'    => $plugin->statistics->getOverview($site->id),
+            'canViewLogs' => Permissions::canAny(Permissions::VIEW_LOGS),
         ]);
     }
 }
