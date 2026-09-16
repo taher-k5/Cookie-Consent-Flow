@@ -699,3 +699,163 @@
     display: none !important;
   }
 }
+
+/* ==========================================================================
+   Accessibility
+   ========================================================================== */
+
+/**
+ * Visually hidden, still announced. Used for the banner's region label when
+ * an admin has cleared the heading text, and for the state of each category
+ * toggle — both are information a sighted visitor gets from layout and colour,
+ * which has to reach everyone else some other way.
+ */
+.cck-visually-hidden {
+  position: absolute !important;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+/**
+ * A visible focus ring on every interactive control.
+ *
+ * :focus-visible rather than :focus, so the ring appears for keyboard and
+ * assistive-technology users without following every mouse click. Declared
+ * with an outline (not a box-shadow) so it survives Windows High Contrast
+ * mode, where box-shadows are dropped.
+ */
+.cck-banner :focus-visible,
+.cck-preferences :focus-visible,
+.cck-btn:focus-visible {
+  outline: 2px solid currentColor;
+  outline-offset: 2px;
+  border-radius: 2px;
+}
+
+/* The panel receives focus when the dialog opens; it is a scroll container,
+   not a control, so it should not advertise itself with a focus ring. The
+   banner's inner wrapper is the same case for the center-popup layout, which
+   is a dialog and likewise moves focus to itself on open. */
+.cck-preferences__panel:focus,
+.cck-preferences__panel:focus-visible,
+.cck-banner__inner:focus,
+.cck-banner__inner:focus-visible {
+  outline: none;
+}
+
+/**
+ * Comfortable touch targets. 44px is the WCAG 2.2 "Target Size (Minimum)"
+ * threshold; the icon-only close button is the one most likely to fall short
+ * of it, so it is pinned explicitly.
+ */
+.cck-btn {
+  min-height: 44px;
+}
+
+.cck-preferences__close {
+  min-width: 44px;
+  min-height: 44px;
+}
+
+/**
+ * Honour a reduced-motion preference. The banner's entrance animation is
+ * decorative; for a visitor who has asked for less motion it is at best
+ * unwanted and at worst genuinely unpleasant, so it is removed rather than
+ * merely shortened.
+ */
+@media (prefers-reduced-motion: reduce) {
+  .cck-banner,
+  .cck-banner.cck-visible,
+  .cck-preferences,
+  .cck-preferences__panel,
+  .cck-toggle__track,
+  .cck-toggle__track::after {
+    animation: none !important;
+    transition: none !important;
+  }
+}
+
+/**
+ * Keep the plugin's own visibility control authoritative. The runtime shows
+ * and hides elements with the `hidden` attribute; a site stylesheet that sets
+ * `display` on these classes would otherwise leave a "hidden" banner on
+ * screen, which for a consent banner means covering the page permanently.
+ */
+.cck-banner[hidden],
+.cck-banner-overlay[hidden],
+.cck-preferences[hidden] {
+  display: none !important;
+}
+
+/* ==========================================================================
+   Cookie table — {{ craft.cookieConsent.cookieTable() }}
+   ========================================================================== */
+
+.cck-cookie-table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 0 0 2rem;
+  font-size: 0.9375rem;
+}
+
+.cck-cookie-table__caption {
+  text-align: left;
+  font-weight: 600;
+  padding: 0 0 0.5rem;
+}
+
+.cck-cookie-table th,
+.cck-cookie-table td {
+  text-align: left;
+  vertical-align: top;
+  padding: 0.5rem 0.75rem 0.5rem 0;
+  border-bottom: 1px solid currentColor;
+  border-color: color-mix(in srgb, currentColor 15%, transparent);
+}
+
+.cck-cookie-table thead th {
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.cck-cookie-table tbody th {
+  font-weight: 400;
+}
+
+/* Narrow screens: a four-column table cannot fit, so each row becomes a
+   labelled block rather than being squeezed or clipped. */
+@media (max-width: 40em) {
+  .cck-cookie-table,
+  .cck-cookie-table thead,
+  .cck-cookie-table tbody,
+  .cck-cookie-table tr,
+  .cck-cookie-table th,
+  .cck-cookie-table td {
+    display: block;
+  }
+
+  .cck-cookie-table thead {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+  }
+
+  .cck-cookie-table tr {
+    padding: 0.75rem 0;
+    border-bottom: 1px solid color-mix(in srgb, currentColor 15%, transparent);
+  }
+
+  .cck-cookie-table th,
+  .cck-cookie-table td {
+    border: 0;
+    padding: 0.125rem 0;
+  }
+}

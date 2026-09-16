@@ -3,7 +3,6 @@
 namespace sfsinfotech\craftcookieconsentflow\helpers;
 
 use Craft;
-use sfsinfotech\craftcookieconsentflow\Plugin;
 
 /**
  * Consent Helper — static utility methods shared across services and templates.
@@ -12,25 +11,6 @@ use sfsinfotech\craftcookieconsentflow\Plugin;
  */
 class ConsentHelper
 {
-    /**
-     * Returns the default list of consent category identifiers.
-     *
-     * @return string[]
-     */
-    public static function defaultCategories(): array
-    {
-        return ['necessary', 'analytics', 'marketing', 'preferences'];
-    }
-
-    /**
-     * Returns a human-readable label for a category identifier.
-     * Falls back to the raw identifier if no translation is found.
-     */
-    public static function categoryLabel(string $category): string
-    {
-        return Craft::t('cookie-consent-flow', ucfirst($category));
-    }
-
     /**
      * Generates an anonymous visitor UUID to store in a first-party cookie.
      * Uses PHP's built-in random_bytes for cryptographic randomness.
@@ -50,6 +30,17 @@ class ConsentHelper
     /**
      * Returns a one-way hash of an IP address for privacy-safe logging.
      * The raw IP is never stored.
+     *
+     * The salt is fresh randomness per call, which makes the result
+     * non-reversible **and** non-correlatable: two records from the same IP
+     * hash differently. That is deliberate — the column is a token that an IP
+     * was present, not a means of grouping or identifying a visitor — and it
+     * is why the value is useless for deduplication or abuse analysis.
+     *
+     * An empty address (no request context, e.g. a queue job or a command)
+     * still produces a valid hash rather than erroring, because the column is
+     * NOT NULL and a consent record with no IP context is still a valid record
+     * of consent.
      */
     public static function hashIp(string $ip): string
     {

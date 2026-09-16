@@ -325,7 +325,7 @@
             if (listItem) listItem.remove();
           }).catch(function () {
             dismissBtn.disabled = false;
-            Craft.cp.displayError('An error occurred.');
+            Craft.cp.displayError(cckT('An error occurred.'));
           });
         }
       });
@@ -792,11 +792,11 @@
 
       Craft.sendActionRequest('POST', action, {data: data})
         .then(function (response) {
-          Craft.cp.displaySuccess((response.data && response.data.message) || 'Done.');
+          Craft.cp.displaySuccess((response.data && response.data.message) || cckT('Done.'));
           window.location.reload();
         })
         .catch(function (error) {
-          var msg = (error.response && error.response.data && error.response.data.message) || 'An error occurred.';
+          var msg = (error.response && error.response.data && error.response.data.message) || cckT('An error occurred.');
           Craft.cp.displayError(msg);
         });
     }
@@ -805,7 +805,7 @@
       btn.addEventListener('click', function () {
         var siteId = btn.getAttribute('data-reset-site');
         cckConfirmAndSend(
-          'Remove every override for this site and return it to Global Settings?',
+          cckT('Remove every override for this site and return it to Global Settings?'),
           'cookie-consent-flow/settings/reset-multi-site-override',
           {siteId: siteId}
         );
@@ -820,12 +820,33 @@
         if (!fromSiteId) return;
 
         cckConfirmAndSend(
-          'Replace this site’s overrides with a copy of the selected site’s? This cannot be undone.',
+          cckT('Replace this site’s overrides with a copy of the selected site’s? This cannot be undone.'),
           'cookie-consent-flow/settings/copy-multi-site-override',
           {fromSiteId: fromSiteId, toSiteId: toSiteId}
         );
       });
     });
+
+    /* ------------------------------------------------------------------
+       Invalidate existing consent
+
+       A button rather than a submit control: the Settings page is one form
+       posting to settings/save, so a second submit inside it would have to
+       fight over the `action` parameter. The confirm step is not ceremony —
+       this asks the site's entire audience to consent again and cannot be
+       undone.
+    ------------------------------------------------------------------ */
+    var invalidateBtn = document.getElementById('cck-invalidate-consent');
+
+    if (invalidateBtn) {
+      invalidateBtn.addEventListener('click', function () {
+        cckConfirmAndSend(
+          invalidateBtn.getAttribute('data-confirm'),
+          invalidateBtn.getAttribute('data-action'),
+          {}
+        );
+      });
+    }
 
     /* ------------------------------------------------------------------
        Dashboard live preview — Desktop / Tablet / Mobile switcher

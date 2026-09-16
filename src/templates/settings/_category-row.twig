@@ -2,7 +2,36 @@
 {% import "_includes/forms" as forms %}
 {% set namePrefix = namePrefix ?? 'settings' %}
 
+{# Every Google Consent Mode v2 signal. Listed here rather than derived from a
+   category key, because the mapping is entirely the admin's to make: category
+   keys are free-form, so nothing can be inferred from one being called
+   "analytics". A category with no signals selected simply grants none. #}
+{% set gcmSignalOptions = [
+    { value: 'ad_storage',              label: 'ad_storage' },
+    { value: 'ad_user_data',            label: 'ad_user_data' },
+    { value: 'ad_personalization',      label: 'ad_personalization' },
+    { value: 'analytics_storage',       label: 'analytics_storage' },
+    { value: 'functionality_storage',   label: 'functionality_storage' },
+    { value: 'personalization_storage', label: 'personalization_storage' },
+    { value: 'security_storage',        label: 'security_storage' },
+] %}
+
 <div class="cck-category-row" data-index="{{ index }}">
+    {# Header strip carrying the row's own delete control, matching the cookie
+       rows. The button keeps its class and stays inside the row, which is all
+       the row-scoped JS looks for. #}
+    <div class="cck-category-row__header">
+        <span class="cck-category-row__label">{{ "Category"|t('cookie-consent-flow') }}</span>
+
+        <button
+            type="button"
+            class="btn small delete icon cck-remove-category"
+            title="{{ 'Remove category'|t('cookie-consent-flow') }}"
+            aria-label="{{ 'Remove category'|t('cookie-consent-flow') }}"
+            {% if category.locked %}disabled{% endif %}
+        >{{ "Remove"|t('cookie-consent-flow') }}</button>
+    </div>
+
     <div class="cck-category-row__fields">
 
         {{ forms.textField({
@@ -42,13 +71,47 @@
                 on:           category.locked,
             }) }}
         </div>
-    </div>
 
-    <button
-        type="button"
-        class="btn small delete icon cck-remove-category"
-        title="{{ 'Remove category'|t('cookie-consent-flow') }}"
-        aria-label="{{ 'Remove category'|t('cookie-consent-flow') }}"
-        {% if category.locked %}disabled{% endif %}
-    >{{ "Remove"|t('cookie-consent-flow') }}</button>
+        {# Checkboxes rather than a multi-select listbox: seven fixed options,
+           all of which should be readable at once, and picking several never
+           needs a modifier key.
+
+           Hand-rolled instead of forms.checkboxGroupField because the row is
+           also a clone template — Craft generates checkbox ids, and a cloned
+           row would carry a duplicate id whose <label for> then toggled the
+           first row's box. Wrapping each input in its own label needs no id
+           at all. The posted shape is unchanged: a `[]` array of signal
+           names, allow-listed server-side against the real Consent Mode
+           signals. #}
+        {% set selectedSignals = category.gcmSignals ?? [] %}
+        <div class="field cck-gcm-field">
+            <div class="heading">
+                <label>{{ "Google Consent Mode signals"|t('cookie-consent-flow') }}</label>
+            </div>
+            <div class="instructions">
+                <p>{{ "Signals granted when a visitor accepts this category. Only used when Consent Mode is enabled; leave empty to grant none."|t('cookie-consent-flow') }}</p>
+            </div>
+            <div class="input">
+                {# Posts the key even when every box is unchecked, so clearing
+                   the last signal is saved as "none" rather than read as
+                   "field absent". The empty string is dropped by the same
+                   server-side allow-list. #}
+                <input type="hidden" name="{{ namePrefix }}[categories][{{ index }}][gcmSignals]" value="">
+
+                <div class="cck-gcm-grid">
+                    {% for option in gcmSignalOptions %}
+                        <label class="cck-gcm-option">
+                            <input
+                                type="checkbox"
+                                name="{{ namePrefix }}[categories][{{ index }}][gcmSignals][]"
+                                value="{{ option.value }}"
+                                {% if option.value in selectedSignals %}checked{% endif %}
+                            >
+                            <span class="cck-gcm-option__name">{{ option.label }}</span>
+                        </label>
+                    {% endfor %}
+                </div>
+            </div>
+        </div>
+    </div>
 </div>

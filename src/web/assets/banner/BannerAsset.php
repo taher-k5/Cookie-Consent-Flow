@@ -12,10 +12,14 @@ use craft\web\AssetBundle;
  */
 class BannerAsset extends AssetBundle
 {
-    public $publishOptions = ['forceCopy' => true];
-
     public function init(): void
     {
+        // Re-publish on every request only while developing. In production the
+        // published copy is refreshed when the source files change, so forcing
+        // a copy per request just copies the same bytes again on every page
+        // view that renders the banner through the Twig tag.
+        $this->publishOptions = ['forceCopy' => \Craft::$app->getConfig()->getGeneral()->devMode];
+
         $this->sourcePath = __DIR__;
 
         $this->css = [

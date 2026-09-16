@@ -13,6 +13,14 @@
         label: "Consent Logging"|t('cookie-consent-flow'),
         url: '#cck-logging',
     },
+    'cck-integrations': {
+        label: "Integrations"|t('cookie-consent-flow'),
+        url: '#cck-integrations',
+    },
+    'cck-privacy-signals': {
+        label: "Privacy Signals"|t('cookie-consent-flow'),
+        url: '#cck-privacy-signals',
+    },
     'cck-advanced': {
         label: "Advanced"|t('cookie-consent-flow'),
         url: '#cck-advanced',
@@ -33,7 +41,9 @@
 
 {# ── Categories ────────────────────────────────────────────────────────── #}
 <div id="cck-categories" role="tabpanel" aria-labelledby="tab-cck-categories">
-    <p class="light">{{ "Configure the cookie categories visitors can toggle in the preferences panel."|t('cookie-consent-flow') }}</p>
+    <div class="cck-page-intro">
+        <p>{{ "Configure the cookie categories visitors can toggle in the preferences panel."|t('cookie-consent-flow') }}</p>
+    </div>
 
     <div class="cck-categories-group">
         <div id="cck-categories-list" class="cck-categories-list">
@@ -45,7 +55,7 @@
             {% endfor %}
         </div>
 
-        <button type="button" id="cck-add-category" class="btn add icon cck-add-category">
+        <button type="button" id="cck-add-category" class="btn add icon cck-add-category cck-add-row--block">
             {{ "Add Category"|t('cookie-consent-flow') }}
         </button>
 
@@ -80,10 +90,101 @@
 
 </div>{# /tab-logging #}
 
+{# ── Integrations: Google Consent Mode v2 ──────────────────────────────── #}
+<div id="cck-integrations" class="hidden" role="tabpanel" aria-labelledby="tab-cck-integrations">
+
+    <div class="cck-page-intro">
+        <p>{{ "Google Consent Mode tells Google's own tags what they may store. It is not a replacement for blocking — tag this site's Google scripts with data-cck-category as well."|t('cookie-consent-flow') }}</p>
+    </div>
+
+    {{ forms.lightswitchField({
+        label:        "Enable Google Consent Mode v2"|t('cookie-consent-flow'),
+        instructions: "Send consent signals to Google tags. Map each category to its signals on the Cookie Categories tab."|t('cookie-consent-flow'),
+        id:   'consentModeEnabled',
+        name: 'settings[consentModeEnabled]',
+        on:   settings.consentModeEnabled,
+    }) }}
+
+    {{ forms.selectField({
+        label:        "Implementation"|t('cookie-consent-flow'),
+        instructions: "Advanced: Google tags load immediately with storage denied, and receive an update once the visitor decides. Basic: no Google tag loads until its category is accepted — tag them with data-cck-category."|t('cookie-consent-flow'),
+        id:      'consentModeType',
+        name:    'settings[consentModeType]',
+        value:   settings.consentModeType,
+        options: [
+            { value: 'advanced', label: "Advanced"|t('cookie-consent-flow') },
+            { value: 'basic',    label: "Basic"|t('cookie-consent-flow') },
+        ],
+    }) }}
+
+    {{ forms.lightswitchField({
+        label:        "Auto-inject into <head>"|t('cookie-consent-flow'),
+        instructions: "Place the snippet as the first thing in <head> automatically. Turn off only if you need to position it yourself with craft.cookieConsent.consentModeScript()."|t('cookie-consent-flow'),
+        id:   'consentModeAutoInject',
+        name: 'settings[consentModeAutoInject]',
+        on:   settings.consentModeAutoInject,
+    }) }}
+
+    {{ forms.textField({
+        label:        "wait_for_update (ms)"|t('cookie-consent-flow'),
+        instructions: "How long Google waits for a consent update before acting on the default state. 500 suits most sites; 0 disables the wait."|t('cookie-consent-flow'),
+        id:    'consentModeWaitForUpdate',
+        name:  'settings[consentModeWaitForUpdate]',
+        value: settings.consentModeWaitForUpdate,
+        type:  'number',
+        min:    0,
+        max:    10000,
+    }) }}
+
+    {{ forms.lightswitchField({
+        label:        "URL passthrough"|t('cookie-consent-flow'),
+        instructions: "Pass ad click information through URLs when ad storage is denied, so conversions can still be measured without cookies."|t('cookie-consent-flow'),
+        id:   'consentModeUrlPassthrough',
+        name: 'settings[consentModeUrlPassthrough]',
+        on:   settings.consentModeUrlPassthrough,
+    }) }}
+
+    {{ forms.lightswitchField({
+        label:        "Ads data redaction"|t('cookie-consent-flow'),
+        instructions: "Redact ad click identifiers in network requests while ad storage is denied."|t('cookie-consent-flow'),
+        id:   'consentModeAdsDataRedaction',
+        name: 'settings[consentModeAdsDataRedaction]',
+        on:   settings.consentModeAdsDataRedaction,
+    }) }}
+
+</div>{# /tab-integrations #}
+
+{# ── Privacy Signals ───────────────────────────────────────────────────── #}
+<div id="cck-privacy-signals" class="hidden" role="tabpanel" aria-labelledby="tab-cck-privacy-signals">
+
+    <div class="cck-page-intro">
+        <p>{{ "Some browsers send a machine-readable privacy preference. When one is honoured, the visitor is treated as having rejected every optional category and is not shown the banner."|t('cookie-consent-flow') }}</p>
+    </div>
+
+    {{ forms.lightswitchField({
+        label:        "Honour Global Privacy Control (GPC)"|t('cookie-consent-flow'),
+        instructions: "GPC is an explicit, deliberate signal and is recognised by several US state privacy laws. Recommended."|t('cookie-consent-flow'),
+        id:   'respectGpc',
+        name: 'settings[respectGpc]',
+        on:   settings.respectGpc,
+    }) }}
+
+    {{ forms.lightswitchField({
+        label:        "Honour Do Not Track (DNT)"|t('cookie-consent-flow'),
+        instructions: "DNT carries no general legal force and some browsers enable it by default, so it is a weaker signal of intent than GPC. Off unless you have decided to treat it as a rejection."|t('cookie-consent-flow'),
+        id:   'respectDnt',
+        name: 'settings[respectDnt]',
+        on:   settings.respectDnt,
+    }) }}
+
+</div>{# /tab-privacy-signals #}
+
 {# ── Advanced ──────────────────────────────────────────────────────────── #}
 <div id="cck-advanced" class="hidden" role="tabpanel" aria-labelledby="tab-cck-advanced">
 
-    <p class="light">{{ "Additional plugin-level options."|t('cookie-consent-flow') }}</p>
+    <div class="cck-page-intro">
+        <p>{{ "Additional plugin-level options."|t('cookie-consent-flow') }}</p>
+    </div>
 
     {{ forms.textField({
         label:        "Consent Expiry (days)"|t('cookie-consent-flow'),
@@ -97,11 +198,40 @@
 
     {{ forms.textField({
         label:        "Policy Version"|t('cookie-consent-flow'),
-        instructions: "Change this any time you materially change the cookie policy or categories — every visitor's existing consent is invalidated and they're asked to consent again."|t('cookie-consent-flow'),
+        instructions: "Every stored consent carries the policy version in effect when it was given. Change this and each visitor is asked again."|t('cookie-consent-flow'),
         id:    'policyVersion',
         name:  'settings[policyVersion]',
         value: settings.policyVersion,
     }) }}
+
+    <hr>
+
+    <div class="field">
+        <div class="heading">
+            <label>{{ "Invalidate Existing Consent"|t('cookie-consent-flow') }}</label>
+        </div>
+        <div class="instructions">
+            <p>
+                {{ "Sets a new policy version, so every visitor is asked to consent again on their next visit. Do this after a material change — a new category, a new tracker, a changed purpose."|t('cookie-consent-flow') }}
+            </p>
+            <p class="light">
+                {{ "Existing consent records are not deleted: they remain accurate evidence of what each visitor agreed to under the previous policy."|t('cookie-consent-flow') }}
+            </p>
+        </div>
+        <div class="input">
+            {# Posted by cookie-consent.js rather than being a submit button:
+               this page is one big form targeting settings/save, and a second
+               submit control inside it would either fight over the action
+               parameter or require nesting a form, which is invalid markup. #}
+            <button
+                type="button"
+                class="btn caution"
+                id="cck-invalidate-consent"
+                data-action="cookie-consent-flow/settings/invalidate-consent"
+                data-confirm="{{ 'Ask every visitor for consent again? This cannot be undone, and existing consent records are kept.'|t('cookie-consent-flow') }}"
+            >{{ "Invalidate Existing Consent"|t('cookie-consent-flow') }}</button>
+        </div>
+    </div>
 
 </div>{# /tab-advanced #}
 

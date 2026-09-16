@@ -17,6 +17,7 @@ use craft\db\ActiveRecord;
  * @property string|null $description Shown in the preferences modal.
  * @property bool        $isDefault   Pre-checked in the preferences panel.
  * @property bool        $isLocked    Always enabled, toggle disabled.
+ * @property string|null $gcmSignals  JSON array of Google Consent Mode v2 signals this category grants.
  * @property int         $sortOrder   Display order within its settings row.
  * @property string      $dateCreated
  * @property string      $dateUpdated
@@ -27,5 +28,17 @@ class CookieCategoryRecord extends ActiveRecord
     public static function tableName(): string
     {
         return '{{%cookieconsent_category}}';
+    }
+
+    public function rules(): array
+    {
+        return [
+            [['settingsId', 'key', 'label'], 'required'],
+            [['settingsId', 'sortOrder'], 'integer'],
+            [['isDefault', 'isLocked'], 'boolean'],
+            [['key'], 'string', 'max' => 100],
+            [['label'], 'string', 'max' => 255],
+            [['description', 'gcmSignals'], 'string'],
+        ];
     }
 }

@@ -18,9 +18,9 @@
 {{ redirectInput('cookie-consent-flow/settings/multi-site-override') }}
 {{ csrfInput() }}
 
-<p class="light">
-    {{ "These settings override Global Settings for an individual site. Each section below has its own \"Use Global Settings\" toggle — leave it on to inherit every value in that section from Global Settings, or turn it off to edit and save site-specific values just for that section."|t('cookie-consent-flow') }}
-</p>
+<div class="cck-page-intro">
+    <p>{{ "These settings override Global Settings for an individual site. Each section below has its own \"Use Global Settings\" toggle — leave it on to inherit every value in that section from Global Settings, or turn it off to edit and save site-specific values just for that section."|t('cookie-consent-flow') }}</p>
+</div>
 
 {# ── Sticky toolbar: search ─────────────────────────────────────────────── #}
 <div class="cck-override-toolbar">
@@ -77,7 +77,7 @@
     </div>
 
     <details class="cck-site-panel" data-site-id="{{ site.id }}"{% if loop.first %} open{% endif %}>
-        <summary class="cck-site-panel__summary">{{ site.name }}</summary>
+        <summary class="cck-site-panel__summary">{{ "Site Settings"|t('cookie-consent-flow') }}</summary>
 
         <div class="cck-site-panel__body">
             <div class="cck-site-panel__actions">
@@ -314,14 +314,9 @@
         </div>
     </details>
 {% endfor %}
-{% endblock %}
 
-{% js %}
-    window.cckStrings = {{ {
-        'Inherited':           'Inherited'|t('cookie-consent-flow'),
-        'Overridden':          'Overridden'|t('cookie-consent-flow'),
-        'Site Override':       'Site Override'|t('cookie-consent-flow'),
-        'Expand All Sections': 'Expand All Sections'|t('cookie-consent-flow'),
-        'Collapse All Sections': 'Collapse All Sections'|t('cookie-consent-flow'),
-    }|json_encode|raw }};
-{% endjs %}
+{# The `window.cckStrings` dictionary this page's JavaScript reads is
+   registered for every control-panel page by Plugin::_registerCpAsset(), so
+   the same strings are available on the Cookies and Settings pages, which
+   raise some of the same messages. #}
+{% endblock %}

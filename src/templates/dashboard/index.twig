@@ -6,6 +6,48 @@
 <div class="cck-dashboard">
     <div class="readable">
 
+        {# ── Consent at a glance ────────────────────────────────────────── #}
+        {% if canViewLogs %}
+            <h2>{{ "Consent Overview"|t('cookie-consent-flow') }}</h2>
+
+            {% if overview.total == 0 %}
+                <p class="light">
+                    {{ "No consent has been recorded for this site yet. Figures appear here once visitors start responding to the banner."|t('cookie-consent-flow') }}
+                </p>
+            {% else %}
+                <div class="ccf-stats-grid">
+                    {% set outcomeCards = [
+                        { label: "Accepted all"|t('cookie-consent-flow'),  count: overview.acceptAll },
+                        { label: "Rejected all"|t('cookie-consent-flow'),  count: overview.rejectAll },
+                        { label: "Partial consent"|t('cookie-consent-flow'), count: overview.custom },
+                        { label: "Total decisions"|t('cookie-consent-flow'), count: overview.total },
+                    ] %}
+
+                    {% for card in outcomeCards %}
+                        <div class="ccf-stat-card">
+                            <div class="ccf-stat-title">{{ card.label }}</div>
+                            <div class="ccf-stat-main">{{ card.count }}</div>
+                            <div class="ccf-stat-meta">
+                                {%- if card.label == "Total decisions"|t('cookie-consent-flow') -%}
+                                    {{ "All recorded decisions"|t('cookie-consent-flow') }}
+                                {%- else -%}
+                                    {{ ((card.count / overview.total) * 100)|round }}% {{ "of decisions"|t('cookie-consent-flow') }}
+                                {%- endif -%}
+                            </div>
+                        </div>
+                    {% endfor %}
+                </div>
+
+                <p>
+                    <a href="{{ cpUrl('cookie-consent-flow/logs', { site: currentSite.handle }) }}" class="btn">
+                        {{ "View consent records"|t('cookie-consent-flow') }}
+                    </a>
+                </p>
+            {% endif %}
+
+            <hr>
+        {% endif %}
+
         <h2>{{ "Live Banner Preview"|t('cookie-consent-flow') }}</h2>
         <p class="light">
             {{ "This is how your cookie banner currently looks to visitors, using your saved Banner settings."|t('cookie-consent-flow') }}
@@ -68,8 +110,10 @@
                     <span class="cck-skeleton cck-skeleton--card"></span>
                 </div>
 
-                {# The real banner, rendered with the admin's actual saved settings #}
-                {% include 'cookie-consent-flow/banner/_banner' with { settings: settings } %}
+                {# The real banner, rendered with the admin's actual saved settings.
+                   `isPreview` keeps it from announcing itself as a modal dialog
+                   inside a control-panel page the admin is still using. #}
+                {% include 'cookie-consent-flow/banner/_banner' with { settings: settings, isPreview: true } %}
             </div>
         </div>
 
@@ -80,9 +124,11 @@
             <a href="{{ cpUrl('cookie-consent-flow/settings') }}" class="btn">
                 {{ "Edit Settings"|t('cookie-consent-flow') }}
             </a>
-            <a href="{{ cpUrl('cookie-consent-flow/logs') }}" class="btn">
-                {{ "View Consent Logs"|t('cookie-consent-flow') }}
-            </a>
+            {% if canViewLogs %}
+                <a href="{{ cpUrl('cookie-consent-flow/logs') }}" class="btn">
+                    {{ "View Consent Records"|t('cookie-consent-flow') }}
+                </a>
+            {% endif %}
         </p>
 
     </div>
