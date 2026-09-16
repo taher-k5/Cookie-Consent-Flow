@@ -174,4 +174,91 @@ final class SettingsTest extends TestCase
             'privacyPolicyUrl' => 'https://example.com/privacy',
         ]))->getSafePrivacyPolicyUrl());
     }
+
+    // -----------------------------------------------------------------
+    // Colour bounds
+    //
+    // Three things have to agree about how long a colour may be: the storage
+    // column, the model's validation rule, and the renderer. While validation
+    // was unbounded and the column was 30 characters, a legitimate longer
+    // `hsla(...)` passed the control panel and then failed at INSERT on strict
+    // MySQL and on PostgreSQL — a save that looked accepted and was not.
+    // -----------------------------------------------------------------
+
+    /**
+     * @return array<string, array{0: string}>
+     */
+    public static function validColorProvider(): array
+    {
+        return [
+            'short hex'        => ['#f00'],
+            'six digit hex'    => ['#ff0000'],
+            'eight digit hex'  => ['#ff0000cc'],
+            'named'            => ['red'],
+            'longest named'    => ['lightgoldenrodyellow'],
+            'rgb'              => ['rgb(255, 0, 0)'],
+            'longest rgba'     => ['rgba(255, 255, 255, 0.875)'],
+            'hsl'              => ['hsl(214, 100%, 50%)'],
+            'longest hsla'     => ['hsla(214.285, 100.000%, 50.000%, 0.875)'],
+        ];
+    }
+
+    /**
+     * @dataProvider validColorProvider
+     */
+    public function testSupportedColoursRenderAndFitTheColumn(string $color): void
+    {
+        $settings = new Settings(['bannerBgColor' => $color]);
+
+        self::assertStringContainsString("--cck-banner-bg: {$color};", $settings->getCssVars());
+        self::assertLessThanOrEqual(
+            Settings::COLOR_MAX_LENGTH,
+            mb_strlen($color),
+            'A colour the renderer accepts must fit the storage column'
+        );
+
+        self::assertTrue($settings->validate(['bannerBgColor']));
+    }
+
+    /**
+     * The bound is enforced at both ends: validation refuses an over-long
+     * value with a message naming the field, so it never reaches a column it
+     * cannot fit, and the renderer falls back rather than emitting it.
+     */
+    public function testOverLongColourIsRefusedAndFallsBack(): void
+    {
+        $tooLong  = 'rgba(' . str_repeat('255, ', 20) . '0)';
+        $settings = new Settings(['bannerBgColor' => $tooLong]);
+
+        self::assertGreaterThan(Settings::COLOR_MAX_LENGTH, mb_strlen($tooLong));
+        self::assertFalse($settings->validate(['bannerBgColor']));
+        self::assertArrayHasKey('bannerBgColor', $settings->getErrors());
+        self::assertStringContainsString('--cck-banner-bg: #ffffff;', $settings->getCssVars());
+    }
+
+    /** Every colour setting shares the one bound, not just the one tested above. */
+    public function testEveryColourFieldIsBounded(): void
+    {
+        $tooLong  = str_repeat('a', Settings::COLOR_MAX_LENGTH + 1);
+        $settings = new Settings();
+
+        foreach (Settings::COLOR_FIELDS as $field) {
+            $settings->$field = $tooLong;
+        }
+
+        self::assertFalse($settings->validate(Settings::COLOR_FIELDS));
+        self::assertSame(
+            count(Settings::COLOR_FIELDS),
+            count($settings->getErrors()),
+            'Each colour field should report its own error'
+        );
+    }
+
+    /** An invalid colour is still rejected regardless of length. */
+    public function testInvalidColourSyntaxStillFallsBack(): void
+    {
+        $settings = new Settings(['bannerBgColor' => 'url(javascript:alert(1))']);
+
+        self::assertStringContainsString('--cck-banner-bg: #ffffff;', $settings->getCssVars());
+    }
 }

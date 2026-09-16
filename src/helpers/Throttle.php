@@ -64,16 +64,48 @@ class Throttle
      * ever lives in the cache for the length of one window, and is never
      * stored alongside consent records — those keep using
      * ConsentHelper::hashIp()'s deliberately non-correlatable salted hash.
+     *
+     * The address comes from {@see resolveIp()}.
      */
     private static function _key(string $bucket, int $window): string
     {
-        $ip = Craft::$app->getRequest()->getRemoteIP() ?? 'unknown';
-
         return sprintf(
             'cookie-consent-flow:throttle:%s:%s:%d',
             $bucket,
-            substr(hash_hmac('sha256', $ip, Craft::$app->getConfig()->getGeneral()->securityKey), 0, 16),
+            substr(hash_hmac('sha256', self::resolveIp(), Craft::$app->getConfig()->getGeneral()->securityKey), 0, 16),
             (int) floor(time() / max(1, $window))
         );
+    }
+
+    /**
+     * The address a throttle bucket belongs to.
+     *
+     * `getUserIP()`, not `getRemoteIP()`. The latter is the raw socket peer,
+     * which behind a CDN or load balancer is the edge node rather than the
+     * visitor — so every visitor arriving through one edge shared a single
+     * bucket, and a site busy enough to matter started refusing legitimate
+     * consent saves with a 429. `getUserIP()` is the proxy-aware answer: it
+     * reads a forwarded header **only** where the install has configured that
+     * proxy as trusted (`trustedHosts`), and otherwise falls back to the
+     * socket address.
+     *
+     * Nothing here parses `X-Forwarded-For`, `CF-Connecting-IP` or any other
+     * header itself. That is the point: header trust is a deployment fact only
+     * the install's configuration knows, and a helper that guessed would hand
+     * anyone a free bucket per spoofed header — turning the rate limit off for
+     * exactly the caller it exists to stop.
+     *
+     * A request that is not a web request (a console command, a queue job) has
+     * no address at all and gets a shared, constant bucket rather than an
+     * error.
+     *
+     * @param mixed $request Defaults to the current application request;
+     *                       injectable so the resolution can be verified.
+     */
+    public static function resolveIp(mixed $request = null): string
+    {
+        $request ??= Craft::$app->getRequest();
+
+        return ($request instanceof \yii\web\Request ? $request->getUserIP() : null) ?? 'unknown';
     }
 }

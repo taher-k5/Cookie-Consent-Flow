@@ -4,25 +4,28 @@ namespace sfsinfotech\craftcookieconsentflow\migrations;
 
 use craft\db\Migration;
 use craft\helpers\Json;
+use sfsinfotech\craftcookieconsentflow\models\Settings;
 
 /**
  * Install migration — creates every table and column Cookie Consent Flow needs.
  *
- * **This is the single source of truth for the schema, and during the rebuild
- * phase the single canonical migration.** A schema change updates this file and
- * bumps `Plugin::$schemaVersion`; no timestamped incremental migration is added,
- * and there is no supported upgrade path from a pre-rebuild database.
+ * **This is the single source of truth for the schema, and the single
+ * canonical migration for 1.0.0.** A schema change updates this file and bumps
+ * `Plugin::$schemaVersion`. From the first change after 1.0.0 it also needs a
+ * timestamped incremental migration, because by then real installations hold
+ * consent evidence that an uninstall/reinstall would destroy — see CLAUDE.md.
  *
- * Its helpers are nonetheless written to be idempotent — reconciling an
- * existing table rather than assuming an empty one — so that re-running this
- * migration against a database that is partway to the current schema converges
- * on it instead of failing. That is what keeps development databases usable,
- * and what a post-rebuild incremental migration would reuse if the convention
- * changes once real installations hold consent evidence (see CLAUDE.md).
+ * Every helper here reconciles an existing table rather than assuming an empty
+ * one, so re-running this against a database partway to the current schema
+ * converges on it instead of failing. That is what makes the migration safe to
+ * re-run, and what an incremental migration will reuse.
  *
- * The legacy upgrade paths below (`settingsData` JSON blob → relational columns,
- * a leftover `categories` column) predate the rebuild and are kept because
- * they are already relied on by existing dev databases.
+ * The two data-migration paths below (`settingsData` JSON blob → relational
+ * columns, and a leftover `categories` column) predate 1.0.0 and are
+ * unreachable on any published install, since nothing was published before it.
+ * They are retained only so that development databases created during the
+ * rebuild still converge; they are guarded by column-existence checks and are
+ * safe to delete once no such database remains.
  */
 class Install extends Migration
 {
@@ -48,7 +51,15 @@ class Install extends Migration
         'consentModeType',
     ];
 
-    /** Colour settings columns. */
+    /**
+     * Colour settings columns.
+     *
+     * Width comes from {@see Settings::COLOR_MAX_LENGTH} rather than a literal,
+     * because the model's validation is bounded by the same constant. These
+     * were 30 characters while validation was unbounded, so a legitimate
+     * longer `hsla(...)`/`rgba(...)` value passed the control panel and then
+     * failed at INSERT on strict MySQL and on PostgreSQL.
+     */
     private const COLOR_FIELDS = [
         'bannerBgColor', 'bannerBorderColor', 'overlayColor',
         'headingColor', 'descriptionColor', 'linkColor',
@@ -287,6 +298,38 @@ class Install extends Migration
                 $this->addColumn('{{%cookieconsent_settings}}', $field, $definition);
             }
         }
+
+        $this->_widenColorColumns();
+    }
+
+    /**
+     * Brings colour columns created at the old 30-character width up to
+     * {@see Settings::COLOR_MAX_LENGTH}.
+     *
+     * A column that is merely present is not a column that is wide enough, and
+     * the add-if-missing loop above cannot see the difference — so a database
+     * created before the width changed would keep rejecting the longer
+     * `hsla(...)` values the model now accepts. Widening is loss-free in both
+     * supported drivers, and skipped where the column is already at least this
+     * wide so re-running the migration alters nothing.
+     */
+    private function _widenColorColumns(): void
+    {
+        $columns = $this->db->getSchema()->getTableSchema('{{%cookieconsent_settings}}', true)?->columns ?? [];
+
+        foreach (self::COLOR_FIELDS as $field) {
+            $column = $columns[$field] ?? null;
+
+            if ($column === null || (int) $column->size >= Settings::COLOR_MAX_LENGTH) {
+                continue;
+            }
+
+            $this->alterColumn(
+                '{{%cookieconsent_settings}}',
+                $field,
+                $this->string(Settings::COLOR_MAX_LENGTH)->null()
+            );
+        }
     }
 
     private function _createSettingsTableFresh(): void
@@ -321,7 +364,7 @@ class Install extends Migration
             $columns[$field] = $this->string(255)->null();
         }
         foreach (self::COLOR_FIELDS as $field) {
-            $columns[$field] = $this->string(30)->null();
+            $columns[$field] = $this->string(Settings::COLOR_MAX_LENGTH)->null();
         }
         foreach (self::TEXT_FIELDS as $field) {
             $columns[$field] = $this->text()->null();

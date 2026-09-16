@@ -239,12 +239,12 @@ class LogsController extends Controller
     private function _csvDownload(array $rows, string $filename): Response
     {
         $handle = fopen('php://temp', 'r+');
-        fputcsv($handle, self::EXPORT_COLUMNS);
+        self::_putCsvRow($handle, self::EXPORT_COLUMNS);
 
         foreach ($rows as $row) {
             $row['categories'] = implode(' ', $row['categories']);
-            fputcsv($handle, array_map(
-                static fn(string $column): string => (string) ($row[$column] ?? ''),
+            self::_putCsvRow($handle, array_map(
+                static fn(string $column): string => self::csvCell($row[$column] ?? ''),
                 self::EXPORT_COLUMNS
             ));
         }
@@ -255,7 +255,7 @@ class LogsController extends Controller
         // final row; a parser reading the `uid` column sees a value that is
         // obviously not a uid.
         if ($this->_exportTruncated) {
-            fputcsv($handle, [sprintf(
+            self::_putCsvRow($handle, [sprintf(
                 'TRUNCATED: limited to %d records. Narrow the filters and export again to get the rest.',
                 self::EXPORT_LIMIT
             )]);
@@ -268,6 +268,55 @@ class LogsController extends Controller
         // A UTF-8 BOM, so Excel opens non-ASCII site names correctly instead
         // of mojibake — the single most common complaint about CSV exports.
         return $this->_download("\xEF\xBB\xBF" . $csv, $filename, 'text/csv');
+    }
+
+    /**
+     * Writes one CSV row.
+     *
+     * `$escape` is passed explicitly because PHP is changing its default:
+     * omitting it is deprecated as of PHP 8.4/8.5 and would fill the log of
+     * any install on a current PHP with a deprecation per exported row. An
+     * empty string is the standards-compliant setting — it turns off PHP's
+     * non-standard backslash handling, so quoting is plain RFC 4180 doubling
+     * and a value containing a backslash round-trips unchanged.
+     *
+     * @param resource            $handle
+     * @param array<int, string>  $fields
+     */
+    private static function _putCsvRow($handle, array $fields): void
+    {
+        fputcsv($handle, $fields, ',', '"', '');
+    }
+
+    /**
+     * Renders one CSV cell so a spreadsheet cannot read it as a formula.
+     *
+     * Excel, LibreOffice and Sheets evaluate any cell whose text begins with
+     * `=`, `+`, `-` or `@` (and treat a leading tab or carriage return as
+     * leading whitespace before one). Several exported columns carry text an
+     * administrator controls — a site name, a policy version — so a value like
+     * `=HYPERLINK(...)` would execute on whoever opened the export rather than
+     * being read as the name it is.
+     *
+     * The guard is a single leading apostrophe, the convention spreadsheets
+     * already understand as "this cell is text". Deliberately narrow:
+     *
+     * - Numbers are left exactly as they are. Prefixing `-1` would turn a
+     *   number into a string, and the export's numeric columns (`siteId`) are
+     *   generated here, not supplied by anyone.
+     * - Quoting is left entirely to `fputcsv()`. This returns a plain string
+     *   and never writes a delimiter, quote or newline of its own, so the file
+     *   stays valid CSV.
+     */
+    public static function csvCell(mixed $value): string
+    {
+        $value = (string) $value;
+
+        if ($value === '' || is_numeric($value)) {
+            return $value;
+        }
+
+        return preg_match('/^[\t\r]*[=+\-@]/', $value) ? "'" . $value : $value;
     }
 
     /**

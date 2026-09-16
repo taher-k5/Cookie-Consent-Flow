@@ -190,15 +190,22 @@ class ConsentService extends Component
      * is proportional to the number of records, so the result is cached by
      * the caller (see StatisticsService) rather than recomputed per render.
      *
-     * @param  string[] $categoryKeys Keys to report on, in display order.
+     * Takes the same `$filters` as {@see buildQuery()}, and for the same
+     * reason the outcome counts do: a screen that reports outcome totals for a
+     * filtered set beside a category breakdown of the whole table is showing
+     * two answers to two different questions under one heading. Omitting the
+     * argument still means "every record", so unfiltered callers are unchanged.
+     *
+     * @param  string[]             $categoryKeys Keys to report on, in display order.
+     * @param  array<string, mixed> $filters      Optional record filters; see buildQuery().
      * @return array<string, array{count: int, percent: float}>
      */
-    public function getCategoryStats(?int $siteId, array $categoryKeys): array
+    public function getCategoryStats(?int $siteId, array $categoryKeys, array $filters = []): array
     {
         $counts = array_fill_keys($categoryKeys, 0);
         $total  = 0;
 
-        $query = $this->_baseQuery($siteId)->select(['categories'])->asArray();
+        $query = $this->buildQuery($siteId, $filters)->select(['categories'])->asArray();
 
         foreach ($query->batch(500) as $rows) {
             foreach ($rows as $row) {
@@ -237,7 +244,11 @@ class ConsentService extends Component
      */
     public function getDailyTrend(?int $siteId, int $days = 30): array
     {
-        $since = (new \DateTimeImmutable("-{$days} days"))->format('Y-m-d 00:00:00');
+        // UTC, because `dateCreated` is stored in UTC. Built from the server's
+        // local clock, the window silently started or ended hours off on every
+        // install whose configured timezone is not UTC.
+        $since = (new \DateTimeImmutable("-{$days} days", new \DateTimeZone('UTC')))
+            ->format('Y-m-d 00:00:00');
 
         $rows = $this->_baseQuery($siteId)
             ->andWhere(['>=', 'dateCreated', $since])
@@ -381,6 +392,14 @@ class ConsentService extends Component
      * and reports success. Zero means "keep indefinitely"; a negative value
      * would put the cutoff in the *future* and match every record, so it is
      * rejected rather than trusted.
+     *
+     * The result is **UTC**, because that is what `dateCreated` is compared
+     * against. It used to be formatted in whatever timezone the install had
+     * configured, which on any non-UTC site put the cutoff hours out — keeping
+     * records that were due for deletion, or deleting records still inside
+     * their retention period. A supplied `$now` is converted rather than
+     * assumed to already be UTC, and the day arithmetic happens after that
+     * conversion so a timezone's DST transitions cannot shift the boundary.
      */
     public static function retentionCutoff(int $days, ?\DateTimeImmutable $now = null): ?string
     {
@@ -388,9 +407,49 @@ class ConsentService extends Component
             return null;
         }
 
-        return ($now ?? new \DateTimeImmutable())
+        $utc = new \DateTimeZone('UTC');
+
+        return ($now ?? new \DateTimeImmutable('now', $utc))
+            ->setTimezone($utc)
             ->modify("-{$days} days")
             ->format('Y-m-d H:i:s');
+    }
+
+    /**
+     * Converts a filter date into the UTC datetime string `dateCreated` is
+     * compared against.
+     *
+     * Accepts a `Y-m-d` date (what the CP date field posts) or a full
+     * datetime. A bare date is read in `$timezone` — the admin typing
+     * "16 September" means that day where they are, not that day in UTC — and
+     * then converted. A value carrying its own offset keeps it. Anything
+     * unparseable yields null, which buildQuery() treats as no filter rather
+     * than as "match nothing": a malformed date in a URL must not silently
+     * produce an empty, apparently-authoritative export.
+     *
+     * Static and explicitly parameterised so the conversion can be verified
+     * against several timezones without a configured application.
+     */
+    public static function normalizeFilterDate(mixed $value, string $timeFallback, ?string $timezone = null): ?string
+    {
+        $value = trim((string) $value);
+
+        if ($value === '') {
+            return null;
+        }
+
+        if (preg_match('/^\d{4}-\d{2}-\d{2}$/', $value)) {
+            $value .= ' ' . $timeFallback;
+        }
+
+        try {
+            $local = new \DateTimeZone($timezone ?? 'UTC');
+            $date  = new \DateTimeImmutable($value, $local);
+        } catch (\Exception) {
+            return null;
+        }
+
+        return $date->setTimezone(new \DateTimeZone('UTC'))->format('Y-m-d H:i:s');
     }
 
     public function getLogById(int $id): ?ConsentLogRecord
@@ -410,28 +469,12 @@ class ConsentService extends Component
     }
 
     /**
-     * Accepts a `Y-m-d` date (what the CP date field posts) or a full
-     * datetime, and returns a datetime string. An unparseable value yields
-     * null, which buildQuery() treats as no filter rather than as "match
-     * nothing" — a malformed date in a URL should not silently produce an
-     * empty, apparently-authoritative export.
+     * Resolves a posted filter date against the install's configured
+     * timezone — which is the one the admin entering it is reading dates in —
+     * and hands back UTC. See {@see normalizeFilterDate()}.
      */
     private function _normalizeDate(mixed $value, string $timeFallback): ?string
     {
-        $value = trim((string) $value);
-
-        if ($value === '') {
-            return null;
-        }
-
-        if (preg_match('/^\d{4}-\d{2}-\d{2}$/', $value)) {
-            return $value . ' ' . $timeFallback;
-        }
-
-        try {
-            return (new \DateTimeImmutable($value))->format('Y-m-d H:i:s');
-        } catch (\Exception) {
-            return null;
-        }
+        return self::normalizeFilterDate($value, $timeFallback, Craft::$app->getTimeZone());
     }
 }

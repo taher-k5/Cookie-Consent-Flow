@@ -4,6 +4,7 @@ namespace sfsinfotech\craftcookieconsentflow\services;
 
 use Craft;
 use craft\base\Component;
+use craft\helpers\Json;
 use sfsinfotech\craftcookieconsentflow\Plugin;
 use yii\caching\TagDependency;
 
@@ -38,20 +39,28 @@ class StatisticsService extends Component
     /**
      * Everything the dashboard needs, in one call.
      *
+     * `$filters` (see ConsentService::buildQuery()) is applied to the outcome
+     * counts and the category breakdown together, so the two always describe
+     * the same set of records. The trend line keeps its own `$trendDays`
+     * window, which is what it is for.
+     *
+     * @param array<string, mixed> $filters
      * @return array{
      *     total: int, acceptAll: int, rejectAll: int, custom: int,
      *     categories: array<string, array{count: int, percent: float, label: string}>,
      *     trend: array<int, array{date: string, count: int}>
      * }
      */
-    public function getOverview(?int $siteId, int $trendDays = 30): array
+    public function getOverview(?int $siteId, int $trendDays = 30, array $filters = []): array
     {
-        return $this->_cached("overview:{$siteId}:{$trendDays}", function () use ($siteId, $trendDays): array {
+        $key = "overview:{$siteId}:{$trendDays}:" . self::filterKey($filters);
+
+        return $this->_cached($key, function () use ($siteId, $trendDays, $filters): array {
             $plugin = Plugin::getInstance();
             $labels = $this->_categoryLabels($siteId);
 
-            $stats      = $plugin->consent->getStats($siteId);
-            $categories = $plugin->consent->getCategoryStats($siteId, array_keys($labels));
+            $stats      = $plugin->consent->getStats($siteId, $filters);
+            $categories = $plugin->consent->getCategoryStats($siteId, array_keys($labels), $filters);
 
             foreach ($categories as $key => $data) {
                 $categories[$key]['label'] = $labels[$key];
@@ -76,6 +85,28 @@ class StatisticsService extends Component
             "actions:{$siteId}",
             fn(): array => Plugin::getInstance()->consent->getStats($siteId)
         );
+    }
+
+    /**
+     * A short, stable cache-key fragment for a filter set.
+     *
+     * Order-independent and value-sensitive: two callers asking the same
+     * question with the keys written in a different order must hit the same
+     * entry, and two callers asking different questions must never share one.
+     * An empty set gets a fixed marker rather than an empty string, so an
+     * unfiltered key can't collide with anything.
+     *
+     * @param array<string, mixed> $filters
+     */
+    public static function filterKey(array $filters): string
+    {
+        if ($filters === []) {
+            return 'all';
+        }
+
+        ksort($filters);
+
+        return substr(sha1(Json::encode($filters)), 0, 12);
     }
 
     /**

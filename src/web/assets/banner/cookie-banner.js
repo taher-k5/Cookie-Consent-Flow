@@ -136,6 +136,49 @@
     return out;
   }
 
+  /** Shallow copy, so a queued payload can carry bookkeeping of its own. */
+  function assign(target, source) {
+    for (var key in source) {
+      if (Object.prototype.hasOwnProperty.call(source, key)) target[key] = source[key];
+    }
+    return target;
+  }
+
+  /**
+   * How many times a failed-but-retryable sync is re-sent on later page loads
+   * before it is given up on. A decision the server has refused five times
+   * over five page views is not going to be accepted on the sixth, and the
+   * visitor's own storage — which is authoritative for what actually runs —
+   * already holds it.
+   */
+  var MAX_SYNC_ATTEMPTS = 5;
+
+  /**
+   * Whether a failed request is worth sending again later.
+   *
+   * The queue exists for the case where the server never got the message. It
+   * is not a way to argue with an answer: re-sending a body the server has
+   * already rejected produces the same rejection, once per page load, for as
+   * long as the visitor keeps browsing.
+   */
+  function isRetryable(error) {
+    var status = error && typeof error.status === 'number' ? error.status : 0;
+
+    // No status: the request got no answer at all — offline, DNS, a dropped
+    // connection, an aborted fetch. Precisely what queueing is for.
+    if (!status) return true;
+
+    // Asked to come back later rather than refused.
+    if (status === 408 || status === 429) return true;
+
+    // The server's problem, and usually a passing one.
+    if (status >= 500) return true;
+
+    // Any other 4xx is a refusal of this exact payload (400 invalid_action,
+    // 403, 404, 422). Nothing about re-sending it unchanged can succeed.
+    return false;
+  }
+
   /* ------------------------------------------------------------------
      Focus management
 
@@ -291,6 +334,25 @@
     _csrfToken: null,
     _ready: false,
 
+    /**
+     * Whether this page view is running under the site's geo policy rather
+     * than under a decision the visitor made — see _applyGeoBypass().
+     *
+     * Deliberately per page view and never persisted. It is not consent and
+     * must not be stored, logged, expire, or carry a policy version; if the
+     * admin narrows the target countries tomorrow, this visitor is simply
+     * asked, because nothing was written on their device today.
+     */
+    _geoBypass: false,
+
+    /**
+     * Counter identifying the current consent decision for the purposes of
+     * server sync. Every new decision and every reset increments it, and an
+     * in-flight sync that finishes carrying an older number is discarded —
+     * see _sync() and resetConsent().
+     */
+    _syncGeneration: 0,
+
     /* ---------------------------------------------------------------
        Initialisation
     --------------------------------------------------------------- */
@@ -308,18 +370,17 @@
       // while the banner happens to be on screen.
       this._bindGlobalEvents();
 
-      // Runs before the hasConsent() branch on purpose. The point of cookie
-      // detection is to surface what exists *outside* any consent decision —
-      // strictly necessary cookies, and anything a script set without going
-      // through the tagging convention at all. Names only, never values.
-      this._reportDetectedCookies();
-
       var stored = this.getConsent();
 
       if (stored) {
         activateGatedContent(stored.categories);
         this._pushConsentMode(stored.categories);
         this._retryPendingSync();
+
+        // Only once a decision exists. See _reportDetectedCookies() for why
+        // this deliberately no longer runs on a visitor's first page view.
+        this._reportDetectedCookies();
+
         this._emit('loaded', stored);
         this._emit('ready', stored);
         return;
@@ -445,8 +506,20 @@
      */
     hasConsent: function (category) {
       var stored = this.getConsent();
-      if (!stored) return false;
+
+      // Under a geo bypass there is no decision, but optional content is
+      // permitted — so a site gating its own code on this has to get the same
+      // answer the `data-cck-category` convention already acts on, or the two
+      // would disagree about the same visitor.
+      if (!stored) {
+        if (!this._geoBypass) return false;
+        if (category === undefined || category === null) return true;
+
+        return this._allCategories().indexOf(category) !== -1;
+      }
+
       if (category === undefined || category === null) return true;
+
       return stored.categories.indexOf(category) !== -1;
     },
 
@@ -460,9 +533,12 @@
       var stored = this.getConsent();
       var state = {};
       var all = this._config.allCategories || [];
+      // No decision, but permitted by the site's geo policy — see
+      // _applyGeoBypass().
+      var allowed = !stored && this._geoBypass;
 
       for (var i = 0; i < all.length; i++) {
-        state[all[i]] = stored ? stored.categories.indexOf(all[i]) !== -1 : false;
+        state[all[i]] = stored ? stored.categories.indexOf(all[i]) !== -1 : allowed;
       }
 
       return state;
@@ -471,7 +547,13 @@
     /** Re-scans for gated content against the current decision. */
     refreshGatedContent: function () {
       var stored = this.getConsent();
-      activateGatedContent(stored ? stored.categories : []);
+
+      if (stored) {
+        activateGatedContent(stored.categories);
+        return;
+      }
+
+      activateGatedContent(this._geoBypass ? this._allCategories() : []);
     },
 
     /* ---------------------------------------------------------------
@@ -539,7 +621,7 @@
       } catch (e) {}
 
       if (cached === 'show') { this._showBanner(); return; }
-      if (cached === 'hide') { this._emit('suppressed', { reason: 'geo' }); return; }
+      if (cached === 'hide') { this._applyGeoBypass(null); return; }
 
       fetch(cfg.geoUrl, {
         credentials: 'same-origin',
@@ -553,10 +635,68 @@
         } catch (e) {}
 
         if (show) self._showBanner();
-        else self._emit('suppressed', { reason: 'geo', country: json && json.country });
+        else self._applyGeoBypass(json && json.country);
       }).catch(function () {
         self._showBanner();
       });
+    },
+
+    /**
+     * Applies the site's geo policy to a visitor the banner does not apply to.
+     *
+     * Geo-targeting in this plugin answers one question: in which countries
+     * does this site need to ask for consent. A visitor outside that list is
+     * one the site has decided it does not need to ask — so the banner is not
+     * shown, and optional content runs.
+     *
+     * Previously only the first half of that happened. The banner was
+     * suppressed and then nothing else was: no decision existed, so every
+     * `data-cck-category` script and iframe stayed inert and Consent Mode kept
+     * the denied default, permanently, for every visitor outside the target
+     * countries. A site targeting the EU lost all analytics everywhere else,
+     * silently and with no way for the visitor to resolve it.
+     *
+     * What this is **not** is a consent record:
+     *
+     * - nothing is written to the visitor's storage, so there is no decision
+     *   to expire, to carry a policy version, or to invalidate later;
+     * - `_commit()` is not called and `_sync()` never runs, so no consent log
+     *   row is created and the statistics are unchanged. The audit trail keeps
+     *   meaning "a visitor chose this", which is the only thing that makes it
+     *   evidence;
+     * - the flag lives for one page view only.
+     *
+     * If the admin narrows the target countries later, this visitor is simply
+     * asked on their next page load, because nothing was recorded on their
+     * device to suppress the question.
+     */
+    _applyGeoBypass: function (country) {
+      var categories = this._allCategories();
+
+      this._geoBypass = true;
+
+      activateGatedContent(categories);
+      this._pushConsentMode(categories);
+
+      // Consistent with every other settled state: detection reports only once
+      // the page has stopped being a pending question.
+      this._reportDetectedCookies();
+
+      this._emit('suppressed', {
+        reason: 'geo',
+        country: country || null,
+        categories: categories
+      });
+    },
+
+    /**
+     * Whether this page view is running under the site's geo policy rather
+     * than a decision the visitor made. Exposed so a site can tell the two
+     * apart — `hasConsent()` answers "may this run", which is the same for
+     * both, and is usually the question worth asking.
+     */
+    isGeoBypassed: function () {
+      return this._geoBypass && !this.hasStoredConsent();
     },
 
     /**
@@ -831,6 +971,18 @@
      * the documentation rather than papered over.
      */
     resetConsent: function () {
+      // Retire every sync belonging to the withdrawn decision, in flight or
+      // not. Clearing the queue alone is not enough and was the bug: a request
+      // sent before this call still had its own handlers to run, and on
+      // failure they wrote the withdrawn decision straight back into the
+      // queue — so the next page load posted consent the visitor had already
+      // taken back. Bumping the generation makes those handlers no-ops (see
+      // _sync()), which is the only ordering-independent way to do it.
+      this._syncGeneration++;
+
+      // Not a decision, so it does not survive one either.
+      this._geoBypass = false;
+
       Store.remove(this._storageKey);
       Store.remove(this._visitorKey);
 
@@ -852,6 +1004,15 @@
 
     _commit: function (action, categories, source) {
       categories = unique((categories || []).concat(this._lockedCategories()));
+
+      // This decision supersedes anything already in flight, for the same
+      // reason resetConsent() does: a sync for the previous decision that
+      // fails after this one is made must not queue the superseded payload
+      // over the current one.
+      this._syncGeneration++;
+
+      // A real decision replaces the geo policy's standing permission.
+      this._geoBypass = false;
 
       var data = {
         v: STORAGE_VERSION,
@@ -875,6 +1036,12 @@
       this._emit(action === 'accept_all' ? 'accepted' : (action === 'reject_all' ? 'rejected' : 'custom'), data);
 
       this._sync(data);
+
+      // Now that the page has a settled state — and the consent save has
+      // already established the session this needs anyway — the browser's
+      // cookie names can be reported. Covers accept, reject, custom, the
+      // JavaScript API, and the GPC/DNT paths, all of which arrive here.
+      this._reportDetectedCookies();
     },
 
     /* ---------------------------------------------------------------
@@ -942,20 +1109,72 @@
 
       if (!cfg.saveUrl || !window.fetch) return;
 
+      var pendingKey = this._storageKey + '_pending';
+
+      // Captured now, compared later. A reset or a newer decision bumps the
+      // counter, at which point this request's handlers must not touch stored
+      // state whatever they were about to do — the decision they belong to no
+      // longer exists.
+      var generation = this._syncGeneration;
+
       this._post(cfg.saveUrl, { action: data.action, categories: data.categories, source: data.source })
         .then(function (json) {
+          if (generation !== self._syncGeneration) return;
+
           if (json && json.visitorUuid) Store.set(self._visitorKey, json.visitorUuid);
-          Store.remove(self._storageKey + '_pending');
+          Store.remove(pendingKey);
         })
-        .catch(function () {
-          Store.set(self._storageKey + '_pending', data);
+        .catch(function (error) {
+          if (generation !== self._syncGeneration) return;
+
+          // A refusal of this payload is final. Queueing it would re-send the
+          // identical body on every page load for the rest of the visit, and
+          // every visit after it, and be refused every time.
+          if (!isRetryable(error)) {
+            Store.remove(pendingKey);
+            self._emit('syncFailed', { permanent: true, status: (error && error.status) || 0 });
+
+            return;
+          }
+
+          var attempts = (typeof data.syncAttempts === 'number' ? data.syncAttempts : 0) + 1;
+
+          if (attempts > MAX_SYNC_ATTEMPTS) {
+            Store.remove(pendingKey);
+            self._emit('syncFailed', {
+              permanent: false,
+              status: (error && error.status) || 0,
+              attempts: attempts
+            });
+
+            return;
+          }
+
+          // Queued as a copy: the attempt count is bookkeeping for the queue
+          // and has no business in the decision the visitor's storage holds.
+          Store.set(pendingKey, assign(assign({}, data), { syncAttempts: attempts }));
         });
     },
 
-    /** Re-sends a decision whose server sync failed on an earlier page view. */
+    /**
+     * Re-sends a decision whose server sync failed on an earlier page view.
+     *
+     * Only ever a decision: a queued entry without an action is malformed and
+     * is dropped rather than posted, since nothing can make it valid.
+     */
     _retryPendingSync: function () {
-      var pending = Store.get(this._storageKey + '_pending');
-      if (pending && pending.action) this._sync(pending);
+      var pendingKey = this._storageKey + '_pending';
+      var pending = Store.get(pendingKey);
+
+      if (!pending) return;
+
+      if (!pending.action) {
+        Store.remove(pendingKey);
+
+        return;
+      }
+
+      this._sync(pending);
     },
 
     /**
@@ -984,7 +1203,15 @@
           });
         });
       }).then(function (res) {
-        if (!res.ok) throw new Error('Request failed: ' + res.status);
+        if (!res.ok) {
+          // The status travels with the error, because the caller's decision
+          // about whether to try again depends entirely on it.
+          var error = new Error('Request failed: ' + res.status);
+          error.status = res.status;
+
+          throw error;
+        }
+
         return res.json();
       });
     },
@@ -1044,6 +1271,24 @@
        reason (a restore, a reinstall, an admin clearing the table), with no
        way for the client to learn that it had. A day-long window means
        detection heals itself instead.
+
+       ## Why this waits for a settled state
+
+       This used to run on every page view, including a visitor's first, before
+       they had been asked anything. It POSTs, so it fetches a CSRF token
+       first, and that request makes Craft issue a session cookie and a CSRF
+       cookie — meaning the cookie-consent plugin was itself the reason a
+       visitor who had not yet decided (and one who went on to reject) had
+       cookies set. Strictly necessary or not, that is the one thing this
+       plugin should not be doing on its own initiative.
+
+       So it is called only once the page view has a settled state: a stored
+       decision on load, immediately after a decision is made (_commit(), which
+       every path including GPC and DNT goes through), or under a geo bypass.
+       In all of those the session either already exists or is being
+       established by the consent save itself, so detection adds nothing the
+       visitor did not already have. The endpoint keeps its CSRF requirement —
+       the fix is to stop calling it early, not to make it cheaper to call.
     --------------------------------------------------------------- */
 
     _reportDetectedCookies: function () {

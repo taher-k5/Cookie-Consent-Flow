@@ -51,7 +51,6 @@ return [
 
     // Dashboard
     'Consent Overview' => 'Consent Overview',
-    'Acceptance by category' => 'Acceptance by category',
     'Accepted all' => 'Accepted all',
     'Rejected all' => 'Rejected all',
     'Partial consent' => 'Partial consent',
@@ -160,7 +159,6 @@ return [
     'A quick comparison of the records in the current view.' => 'A quick comparison of the records in the current view.',
     'Accept All Button' => 'Accept All Button',
     'Accept Button' => 'Accept Button',
-    'Accepted' => 'Accepted',
     'Accepted All' => 'Accepted All',
     "Accessible name and tooltip for the preference centre's close icon." => "Accessible name and tooltip for the preference centre's close icon.",
     'Add Cookie' => 'Add Cookie',
@@ -170,7 +168,6 @@ return [
     'Additional plugin-level options.' => 'Additional plugin-level options.',
     'Advanced: Google tags load immediately with storage denied, and receive an update once the visitor decides. Basic: no Google tag loads until its category is accepted — tag them with data-cck-category.' => 'Advanced: Google tags load immediately with storage denied, and receive an update once the visitor decides. Basic: no Google tag loads until its category is accepted — tag them with data-cck-category.',
     'All actions' => 'All actions',
-    'All consent submissions' => 'All consent submissions',
     'All recorded decisions' => 'All recorded decisions',
     'An error occurred.' => 'An error occurred.',
     'Ask every visitor for consent again? This cannot be undone, and existing consent records are kept.' => 'Ask every visitor for consent again? This cannot be undone, and existing consent records are kept.',
@@ -251,7 +248,6 @@ return [
     'Machine-readable identifier, e.g. analytics (lowercase, no spaces).' => 'Machine-readable identifier, e.g. analytics (lowercase, no spaces).',
     'Main heading shown at the top of the banner.' => 'Main heading shown at the top of the banner.',
     'Manage Multisite →' => 'Manage Multisite →',
-    'Matching consent submissions' => 'Matching consent submissions',
     'Max Height' => 'Max Height',
     'Max Width' => 'Max Width',
     'Maximum width and height for popup layouts (center and corner). Ignored for bar layouts. Max Width is ignored when Full Width is enabled. Examples: 600px (width), 80vh or 600px (height). Leave blank for no limit.' => 'Maximum width and height for popup layouts (center and corner). Ignored for bar layouts. Max Width is ignored when Full Width is enabled. Examples: 600px (width), 80vh or 600px (height). Leave blank for no limit.',
@@ -274,7 +270,6 @@ return [
     'Previewing site' => 'Previewing site',
     'Privacy Policy Link Label' => 'Privacy Policy Link Label',
     'Privacy Policy URL' => 'Privacy Policy URL',
-    'Rate' => 'Rate',
     'records' => 'records',
     'Redact ad click identifiers in network requests while ad storage is denied.' => 'Redact ad click identifiers in network requests while ad storage is denied.',
     'Reject All Button' => 'Reject All Button',
@@ -322,7 +317,7 @@ return [
     'wait_for_update (ms)' => 'wait_for_update (ms)',
     'What this cookie is used for — shown to visitors in the preferences panel.' => 'What this cookie is used for — shown to visitors in the preferences panel.',
     'Who sets this cookie, e.g. Google Analytics.' => 'Who sets this cookie, e.g. Google Analytics.',
-    '✓ Multisite Saved — {count, plural, =1{1 overridden setting} other{# overridden settings}}' => '✓ Multisite Saved — {count, plural, =1{1 overridden setting} other{# overridden settings}}',
+    'Multisite Saved — {count, plural, =1{1 overridden setting} other{# overridden settings}}' => 'Multisite Saved — {count, plural, =1{1 overridden setting} other{# overridden settings}}',
 
     // Strings that take parameters (counts, field names, site names).
     'Cookies used ({count})' => 'Cookies used ({count})',
@@ -339,5 +334,4 @@ return [
     '{field}: unexpected value.' => '{field}: unexpected value.',
     '{key} (category no longer exists)' => '{key} (category no longer exists)',
     '{label}: {count} records, {percent}%' => '{label}: {count} records, {percent}%',
-    '{percent}% of matching records' => '{percent}% of matching records',
 ];

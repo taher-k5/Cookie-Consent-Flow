@@ -250,6 +250,39 @@ class Settings extends Model
     public array $siteOverrides = [];
 
     /**
+     * The settings that hold a CSS colour, and so share one storage column
+     * width and one validation bound.
+     *
+     * Kept as a list because three things have to agree about it: the column
+     * definition in `Install.php`, the `string` rule below, and
+     * `safeCssColor()`. When they disagree the failure is asymmetric — a value
+     * the validator accepts but the column cannot hold passes the control
+     * panel and then fails at INSERT on strict MySQL or PostgreSQL.
+     */
+    public const COLOR_FIELDS = [
+        'bannerBgColor', 'bannerBorderColor', 'overlayColor',
+        'headingColor', 'descriptionColor', 'linkColor',
+        'acceptBgColor', 'acceptTextColor', 'acceptBorderColor',
+        'acceptHoverBgColor', 'acceptHoverTextColor',
+        'rejectBgColor', 'rejectTextColor', 'rejectBorderColor',
+        'rejectHoverBgColor', 'rejectHoverTextColor',
+        'customizeBgColor', 'customizeTextColor', 'customizeBorderColor',
+        'customizeHoverBgColor', 'customizeHoverTextColor',
+        'saveBgColor', 'saveTextColor', 'closeIconColor',
+    ];
+
+    /**
+     * Maximum stored length of a colour value, in characters.
+     *
+     * Comfortably clears the longest thing `safeCssColor()` accepts — a fully
+     * spelled-out `hsla(214.285, 100.000%, 50.000%, 0.875)` is 43, the longest
+     * CSS named colour (`lightgoldenrodyellow`) is 20, and an 8-digit hex is 9
+     * — while staying a bounded VARCHAR rather than TEXT, which is all a
+     * colour ever needs to be.
+     */
+    public const COLOR_MAX_LENGTH = 64;
+
+    /**
      * Fields a site is allowed to override. Consent logging is intentionally
      * excluded — it's an operational/compliance setting for the whole
      * install, not per-site branding.
@@ -442,26 +475,6 @@ class Settings extends Model
     }
 
     /**
-     * Whether ANY field in a settings group currently has a site-specific
-     * value stored. Drives the single group-level "Use Global Settings"
-     * toggle on the Multi Site Override page — the toggle's own on/off
-     * state doesn't correspond to a single stored field, so it's derived
-     * from the fields it controls instead.
-     *
-     * @param string[] $fieldKeys
-     */
-    public function isGroupOverridden(int $siteId, array $fieldKeys): bool
-    {
-        foreach ($fieldKeys as $field) {
-            if ($this->isFieldOverridden($siteId, $field)) {
-                return true;
-            }
-        }
-
-        return false;
-    }
-
-    /**
      * Counts how many of a group's fields currently have a site-specific
      * value stored. Used to distinguish a fully-inherited group (0), a
      * fully-overridden one (count === total fields), and a partially
@@ -647,6 +660,14 @@ class Settings extends Model
     {
         $value = $this->normalizeColor($value);
 
+        // Bounded for the same reason the column is: `[a-z]+` and the
+        // functional-notation branch below are both otherwise unlimited, so
+        // without this the accepted syntax and the storage width could not be
+        // made to agree.
+        if (mb_strlen($value) > self::COLOR_MAX_LENGTH) {
+            return $fallback;
+        }
+
         if (preg_match('/^(#[0-9a-f]{3,8}|[a-z]+)$/i', $value)) {
             return $value;
         }
@@ -767,19 +788,14 @@ class Settings extends Model
                     'bannerHeading', 'bannerDescription', 'privacyPolicyUrl', 'privacyPolicyLinkText',
                     'acceptButtonText', 'rejectButtonText', 'customizeButtonText',
                     'savePreferencesText', 'closeButtonText',
-                    'bannerBgColor', 'bannerBorderColor', 'overlayColor',
-                    'headingColor', 'descriptionColor', 'linkColor',
-                    'acceptBgColor', 'acceptTextColor', 'acceptBorderColor',
-                    'acceptHoverBgColor', 'acceptHoverTextColor',
-                    'rejectBgColor', 'rejectTextColor', 'rejectBorderColor',
-                    'rejectHoverBgColor', 'rejectHoverTextColor',
-                    'customizeBgColor', 'customizeTextColor', 'customizeBorderColor',
-                    'customizeHoverBgColor', 'customizeHoverTextColor',
-                    'saveBgColor', 'saveTextColor', 'closeIconColor',
                     'borderRadius', 'padding', 'maxWidth', 'maxHeight',
                 ],
                 'string',
             ],
+            // Bounded to the storage width, so an over-long colour is refused
+            // on the settings screen with a message naming the field, rather
+            // than passing validation and failing at INSERT.
+            [self::COLOR_FIELDS, 'string', 'max' => self::COLOR_MAX_LENGTH],
             [['categories', 'cookies', 'geoTargetCountries', 'siteOverrides'], 'safe'],
             [['logRetentionDays', 'consentExpiryDays'], 'integer', 'min' => 0],
             [['logoAssetId'], 'integer'],

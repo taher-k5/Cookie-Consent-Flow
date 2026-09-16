@@ -47,7 +47,13 @@ class Plugin extends BasePlugin
     /** Whether a Twig call already rendered (or deliberately suppressed) the banner this request. */
     private bool $_bannerHandled = false;
 
-    public string $schemaVersion = '1.7.0';
+    /**
+     * Craft compares this against the version stored at install time to decide
+     * whether migrations are pending. It starts at 1.0.0 with the first
+     * release: `Install.php` is the whole schema history, so there is nothing
+     * earlier to number. Bump it with every schema change from now on.
+     */
+    public string $schemaVersion = '1.0.0';
     public bool $hasCpSettings   = true;
     public bool $hasCpSection     = true;
 
@@ -373,7 +379,7 @@ class Plugin extends BasePlugin
                 }
 
                 $content = $response->content;
-                if (!is_string($content) || stripos($content, '</body>') === false) {
+                if (!is_string($content) || self::findBodyClose($content) === null) {
                     return;
                 }
 
@@ -399,6 +405,36 @@ class Plugin extends BasePlugin
                 $response->content = $content;
             }
         );
+    }
+
+    /**
+     * Locates the document's **last** closing body tag, as `[offset, length]`,
+     * or null when there is none.
+     *
+     * Matched case-insensitively and tolerant of whitespace before the `>`,
+     * because HTML is: `</body>`, `</BODY>`, `</Body>` and `</body >` are all
+     * the same tag. The guard used to test case-insensitively while the
+     * insertion used a case-sensitive `strrpos()`, so a document written with
+     * `</BODY>` passed the guard, received the Consent Mode snippet, and then
+     * silently got no banner at all.
+     *
+     * The *last* match is used rather than the first, matching the previous
+     * `strrpos()` behaviour: a page whose content mentions the string earlier
+     * (an escaped example in an article, say) must still have the banner
+     * appended at the real end of the document.
+     *
+     * @return array{0: int, 1: int}|null
+     */
+    public static function findBodyClose(string $content): ?array
+    {
+        if (!preg_match_all('/<\/body\s*>/i', $content, $matches, PREG_OFFSET_CAPTURE)) {
+            return null;
+        }
+
+        /** @var array{0: string, 1: int} $last */
+        $last = end($matches[0]);
+
+        return [$last[1], strlen($last[0])];
     }
 
     /**
@@ -460,16 +496,27 @@ class Plugin extends BasePlugin
         $assetSrcPath = Craft::getAlias('@sfsinfotech/craftcookieconsentflow') . '/web/assets/banner';
         [, $baseUrl]  = Craft::$app->getAssetManager()->publish($assetSrcPath);
 
+        // Re-located here rather than reused from the guard: the Consent Mode
+        // snippet may already have been spliced into <head> above, which moves
+        // every offset after it.
+        $body = self::findBodyClose($content);
+
+        if ($body === null) {
+            return $content;
+        }
+
+        [$pos, $length] = $body;
+
         $inject  = "\n" . '<link rel="stylesheet" href="' . $baseUrl . '/cookie-banner.css">';
         $inject .= "\n" . $bannerHtml;
         $inject .= "\n" . '<script>window.cckConfig = '
             . \craft\helpers\Json::encode($this->buildRuntimeConfig($settings)) . ';</script>';
         $inject .= "\n" . '<script src="' . $baseUrl . '/cookie-banner.js" defer></script>';
-        $inject .= "\n" . '</body>';
+        // The document's own closing tag is put back verbatim, so a page that
+        // wrote `</BODY>` still reads as it did before the banner arrived.
+        $inject .= "\n" . substr($content, $pos, $length);
 
-        $pos = strrpos($content, '</body>');
-
-        return $pos !== false ? substr_replace($content, $inject, $pos, strlen('</body>')) : $content;
+        return substr_replace($content, $inject, $pos, $length);
     }
 
     /**
