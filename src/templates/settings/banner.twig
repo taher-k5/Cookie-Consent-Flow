@@ -284,6 +284,20 @@
         placeholder: 'Save Preferences',
     }) }}
 
+    {# The preference centre's close control shows an icon, not text, so this
+       value is its accessible name (aria-label) and tooltip rather than a
+       visible label — which is exactly why it needs to be editable here: it is
+       the one button label a screen-reader user depends on, and it was the one
+       label with no field on this page. #}
+    {{ forms.textField({
+        label:        "Close Button"|t('cookie-consent-flow'),
+        instructions: "Accessible name and tooltip for the preference centre's close icon."|t('cookie-consent-flow'),
+        id:    'closeButtonText',
+        name:  'settings[closeButtonText]',
+        value: settings.closeButtonText,
+        placeholder: 'Close',
+    }) }}
+
 </div>{# /#ccf-content #}
 
 {# ── Tab 3: Banner Colours ─────────────────────────────────────────────── #}

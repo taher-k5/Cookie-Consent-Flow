@@ -2,6 +2,20 @@
 {% import "_includes/forms" as forms %}
 {% set namePrefix = namePrefix ?? 'settings' %}
 
+{# Every Google Consent Mode v2 signal. Listed here rather than derived from a
+   category key, because the mapping is entirely the admin's to make: category
+   keys are free-form, so nothing can be inferred from one being called
+   "analytics". A category with no signals selected simply grants none. #}
+{% set gcmSignalOptions = [
+    { value: 'ad_storage',              label: 'ad_storage' },
+    { value: 'ad_user_data',            label: 'ad_user_data' },
+    { value: 'ad_personalization',      label: 'ad_personalization' },
+    { value: 'analytics_storage',       label: 'analytics_storage' },
+    { value: 'functionality_storage',   label: 'functionality_storage' },
+    { value: 'personalization_storage', label: 'personalization_storage' },
+    { value: 'security_storage',        label: 'security_storage' },
+] %}
+
 <div class="cck-category-row" data-index="{{ index }}">
     <div class="cck-category-row__fields">
 
@@ -42,6 +56,15 @@
                 on:           category.locked,
             }) }}
         </div>
+
+        {{ forms.multiselectField({
+            label:        "Google Consent Mode signals"|t('cookie-consent-flow'),
+            instructions: "Signals granted when a visitor accepts this category. Only used when Consent Mode is enabled; leave empty to grant none."|t('cookie-consent-flow'),
+            name:         namePrefix ~ '[categories][' ~ index ~ '][gcmSignals]',
+            options:      gcmSignalOptions,
+            values:       category.gcmSignals ?? [],
+            class:        'cck-gcm-signals',
+        }) }}
     </div>
 
     <button

@@ -314,14 +314,9 @@
         </div>
     </details>
 {% endfor %}
-{% endblock %}
 
-{% js %}
-    window.cckStrings = {{ {
-        'Inherited':           'Inherited'|t('cookie-consent-flow'),
-        'Overridden':          'Overridden'|t('cookie-consent-flow'),
-        'Site Override':       'Site Override'|t('cookie-consent-flow'),
-        'Expand All Sections': 'Expand All Sections'|t('cookie-consent-flow'),
-        'Collapse All Sections': 'Collapse All Sections'|t('cookie-consent-flow'),
-    }|json_encode|raw }};
-{% endjs %}
+{# The `window.cckStrings` dictionary this page's JavaScript reads is
+   registered for every control-panel page by Plugin::_registerCpAsset(), so
+   the same strings are available on the Cookies and Settings pages, which
+   raise some of the same messages. #}
+{% endblock %}

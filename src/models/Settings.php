@@ -5,6 +5,7 @@ namespace sfsinfotech\craftcookieconsentflow\models;
 use Craft;
 use craft\base\Model;
 use craft\helpers\HtmlPurifier;
+use sfsinfotech\craftcookieconsentflow\services\ConsentModeService;
 
 /**
  * Cookie Consent Flow – settings model.
@@ -124,6 +125,7 @@ class Settings extends Model
             'description' => 'Required for the website to function properly. Cannot be disabled.',
             'default'     => true,
             'locked'      => true,
+            'gcmSignals'  => ['security_storage', 'functionality_storage'],
         ],
         [
             'key'         => 'analytics',
@@ -131,6 +133,7 @@ class Settings extends Model
             'description' => 'Help us understand how visitors interact with our website.',
             'default'     => false,
             'locked'      => false,
+            'gcmSignals'  => ['analytics_storage'],
         ],
         [
             'key'         => 'marketing',
@@ -138,6 +141,7 @@ class Settings extends Model
             'description' => 'Used to deliver personalised advertisements relevant to you.',
             'default'     => false,
             'locked'      => false,
+            'gcmSignals'  => ['ad_storage', 'ad_user_data', 'ad_personalization'],
         ],
         [
             'key'         => 'preferences',
@@ -145,6 +149,7 @@ class Settings extends Model
             'description' => 'Allow the website to remember choices you make (language, region, etc.).',
             'default'     => false,
             'locked'      => false,
+            'gcmSignals'  => ['personalization_storage'],
         ],
     ];
 
@@ -184,6 +189,62 @@ class Settings extends Model
      */
     public string $policyVersion = '1';
 
+    // Google Consent Mode v2
+    /**
+     * Master switch. When off, the plugin emits no `gtag('consent', …)`
+     * commands at all and Google tags are governed purely by the
+     * `data-cck-category` blocking convention.
+     */
+    public bool $consentModeEnabled = false;
+
+    /**
+     * 'advanced' — emit a conservative `consent default` (everything optional
+     * denied) before Google tags run, so tags may load and send cookieless
+     * pings, then `consent update` once the visitor decides.
+     * 'basic' — emit no default command; Google tags must themselves be
+     * tagged with `data-cck-category` and simply do not load before consent.
+     *
+     * @see ConsentModeService for the behavioural difference.
+     */
+    public string $consentModeType = 'advanced';
+
+    /**
+     * Whether the plugin injects the consent-default snippet into `<head>`
+     * automatically. Turn off to place it yourself with
+     * `{{ craft.cookieConsent.consentModeScript() }}` — useful when you need
+     * it above a hard-coded GTM snippet.
+     */
+    public bool $consentModeAutoInject = true;
+
+    /**
+     * Milliseconds Google waits for a `consent update` before acting on the
+     * default state. 0 omits `wait_for_update` entirely.
+     */
+    public int $consentModeWaitForUpdate = 500;
+
+    /** Passes click identifiers through URLs when ad_storage is denied. */
+    public bool $consentModeUrlPassthrough = true;
+
+    /** Redacts ad click identifiers in network requests when ad_storage is denied. */
+    public bool $consentModeAdsDataRedaction = true;
+
+    // Browser privacy signals
+    /**
+     * Honour `navigator.globalPrivacyControl`. GPC is legally recognised in
+     * several US state privacy laws; when present and true, the visitor is
+     * treated as having rejected every optional category without being shown
+     * the banner. Note this is the plugin applying the site's configured
+     * behaviour — it is not a statement about where GPC is binding.
+     */
+    public bool $respectGpc = true;
+
+    /**
+     * Honour the legacy `navigator.doNotTrack` header. Off by default: DNT
+     * has no general legal force and is widely enabled by default in some
+     * browsers, so treating it as a rejection is a site-owner's choice.
+     */
+    public bool $respectDnt = false;
+
     // Multi-site overrides
     /** @var array<int, array<string, mixed>> Keyed by Craft site ID. */
     public array $siteOverrides = [];
@@ -213,6 +274,8 @@ class Settings extends Model
         'fullWidth', 'shadow', 'fixedPosition',
         'categories', 'cookies',
         'geoEnabled', 'geoTargetCountries',
+        'consentModeEnabled', 'consentModeType', 'consentModeAutoInject',
+        'consentModeWaitForUpdate', 'consentModeUrlPassthrough', 'consentModeAdsDataRedaction',
     ];
 
     /**
@@ -303,6 +366,17 @@ class Settings extends Model
                 ['key' => 'geoTargetCountries', 'type' => 'multiselect', 'label' => 'Target Countries',
                     'instructions' => 'Countries where the banner should be shown. Leave blank to show everywhere.',
                     'options' => self::getCountryOptions()],
+            ],
+            'Google Consent Mode' => [
+                ['key' => 'consentModeEnabled', 'type' => 'lightswitch', 'label' => 'Enable Consent Mode v2'],
+                ['key' => 'consentModeType', 'type' => 'select', 'label' => 'Implementation', 'options' => [
+                    ['value' => 'advanced', 'label' => 'Advanced'],
+                    ['value' => 'basic', 'label' => 'Basic'],
+                ]],
+                ['key' => 'consentModeAutoInject', 'type' => 'lightswitch', 'label' => 'Auto-inject into <head>'],
+                ['key' => 'consentModeWaitForUpdate', 'type' => 'text', 'label' => 'wait_for_update (ms)'],
+                ['key' => 'consentModeUrlPassthrough', 'type' => 'lightswitch', 'label' => 'URL Passthrough'],
+                ['key' => 'consentModeAdsDataRedaction', 'type' => 'lightswitch', 'label' => 'Ads Data Redaction'],
             ],
         ];
     }
@@ -473,6 +547,48 @@ class Settings extends Model
     }
 
     /**
+     * Returns keys of categories that are pre-checked in the preferences
+     * panel. Optional categories default to *off* unless an admin explicitly
+     * opts them in, so this is only ever used to seed the UI — never to infer
+     * consent that a visitor hasn't given.
+     *
+     * @return string[]
+     */
+    public function getDefaultCategoryKeys(): array
+    {
+        return array_values(array_map(
+            fn($c) => $c['key'],
+            array_filter($this->categories, fn($c) => !empty($c['default']) || !empty($c['locked']))
+        ));
+    }
+
+    /**
+     * Returns the category → Google Consent Mode signal map, e.g.
+     * `['analytics' => ['analytics_storage'], …]`. Categories with no
+     * mapping are omitted. Nothing here is hard-coded per category key —
+     * the mapping is whatever the admin configured on each category.
+     *
+     * @return array<string, string[]>
+     */
+    public function getCategoryGcmSignals(): array
+    {
+        $map = [];
+
+        foreach ($this->categories as $category) {
+            $key     = $category['key'] ?? '';
+            $signals = $category['gcmSignals'] ?? [];
+
+            if ($key === '' || !is_array($signals) || $signals === []) {
+                continue;
+            }
+
+            $map[$key] = array_values(array_intersect($signals, ConsentModeService::SIGNALS));
+        }
+
+        return array_filter($map);
+    }
+
+    /**
      * Resolves the configured logo, or null if none is set / the asset was
      * since deleted (a stale id is treated the same as "no logo" rather than
      * erroring — see the $logoAssetId property doc).
@@ -521,51 +637,103 @@ class Settings extends Model
     }
 
     /**
+     * Returns a color that is safe to place inside an inline style block.
+     * Settings are editable by delegated CP users, so HTML escaping alone is
+     * insufficient here: a value containing `</style>` would leave CSS
+     * context entirely. Keep the accepted syntax deliberately small and fall
+     * back to the shipped default for anything malformed.
+     */
+    private function safeCssColor(string $value, string $fallback): string
+    {
+        $value = $this->normalizeColor($value);
+
+        if (preg_match('/^(#[0-9a-f]{3,8}|[a-z]+)$/i', $value)) {
+            return $value;
+        }
+
+        if (preg_match('/^(rgb|rgba|hsl|hsla)\([0-9.,%\s+\/-]+\)$/i', $value)) {
+            return $value;
+        }
+
+        return $fallback;
+    }
+
+    /** Safe subset used by the four configurable layout dimensions. */
+    private function safeCssLength(string $value, string $fallback): string
+    {
+        $value = trim($value);
+
+        return preg_match('/^(0|(?:\d+(?:\.\d+)?)(?:px|rem|em|%|vh|vw|vmin|vmax))$/i', $value)
+            ? $value
+            : $fallback;
+    }
+
+    /**
+     * A front-end-safe privacy-policy URL. Relative URLs are supported; only
+     * http(s) and mailto are accepted when a scheme is present.
+     */
+    public function getSafePrivacyPolicyUrl(): string
+    {
+        $url = trim($this->privacyPolicyUrl);
+        if ($url === '' || preg_match('/[\x00-\x20<>]/', $url)) {
+            return '';
+        }
+
+        $scheme = parse_url($url, PHP_URL_SCHEME);
+
+        return $scheme === null || in_array(strtolower((string) $scheme), ['http', 'https', 'mailto'], true)
+            ? $url
+            : '';
+    }
+
+    /**
      * Serialises all colour and layout settings as a CSS custom-properties block.
      * Rendered as an inline <style> in the banner template.
      */
     public function getCssVars(): string
     {
-        $nc = fn(string $v): string => $this->normalizeColor($v);
+        $defaults = new self();
+        $color = fn(string $value, string $field): string => $this->safeCssColor($value, $defaults->$field);
+        $length = fn(string $value, string $field): string => $this->safeCssLength($value, $defaults->$field);
 
         $shadow = $this->shadow
             ? '0 4px 24px rgba(0,0,0,0.12), 0 1px 6px rgba(0,0,0,0.08)'
             : 'none';
 
         $vars = [
-            '--cck-banner-bg'       => $nc($this->bannerBgColor),
-            '--cck-banner-border'   => $nc($this->bannerBorderColor),
-            '--cck-overlay'         => $nc($this->overlayColor),
-            '--cck-heading-color'   => $nc($this->headingColor),
-            '--cck-desc-color'      => $nc($this->descriptionColor),
-            '--cck-link-color'      => $nc($this->linkColor),
+            '--cck-banner-bg'       => $color($this->bannerBgColor, 'bannerBgColor'),
+            '--cck-banner-border'   => $color($this->bannerBorderColor, 'bannerBorderColor'),
+            '--cck-overlay'         => $color($this->overlayColor, 'overlayColor'),
+            '--cck-heading-color'   => $color($this->headingColor, 'headingColor'),
+            '--cck-desc-color'      => $color($this->descriptionColor, 'descriptionColor'),
+            '--cck-link-color'      => $color($this->linkColor, 'linkColor'),
 
-            '--cck-accept-bg'           => $nc($this->acceptBgColor),
-            '--cck-accept-text'         => $nc($this->acceptTextColor),
-            '--cck-accept-border'       => $nc($this->acceptBorderColor),
-            '--cck-accept-hover-bg'     => $nc($this->acceptHoverBgColor),
-            '--cck-accept-hover-text'   => $nc($this->acceptHoverTextColor),
+            '--cck-accept-bg'           => $color($this->acceptBgColor, 'acceptBgColor'),
+            '--cck-accept-text'         => $color($this->acceptTextColor, 'acceptTextColor'),
+            '--cck-accept-border'       => $color($this->acceptBorderColor, 'acceptBorderColor'),
+            '--cck-accept-hover-bg'     => $color($this->acceptHoverBgColor, 'acceptHoverBgColor'),
+            '--cck-accept-hover-text'   => $color($this->acceptHoverTextColor, 'acceptHoverTextColor'),
 
-            '--cck-reject-bg'           => $nc($this->rejectBgColor),
-            '--cck-reject-text'         => $nc($this->rejectTextColor),
-            '--cck-reject-border'       => $nc($this->rejectBorderColor),
-            '--cck-reject-hover-bg'     => $nc($this->rejectHoverBgColor),
-            '--cck-reject-hover-text'   => $nc($this->rejectHoverTextColor),
+            '--cck-reject-bg'           => $color($this->rejectBgColor, 'rejectBgColor'),
+            '--cck-reject-text'         => $color($this->rejectTextColor, 'rejectTextColor'),
+            '--cck-reject-border'       => $color($this->rejectBorderColor, 'rejectBorderColor'),
+            '--cck-reject-hover-bg'     => $color($this->rejectHoverBgColor, 'rejectHoverBgColor'),
+            '--cck-reject-hover-text'   => $color($this->rejectHoverTextColor, 'rejectHoverTextColor'),
 
-            '--cck-customize-bg'           => $nc($this->customizeBgColor),
-            '--cck-customize-text'         => $nc($this->customizeTextColor),
-            '--cck-customize-border'       => $nc($this->customizeBorderColor),
-            '--cck-customize-hover-bg'     => $nc($this->customizeHoverBgColor),
-            '--cck-customize-hover-text'   => $nc($this->customizeHoverTextColor),
+            '--cck-customize-bg'           => $color($this->customizeBgColor, 'customizeBgColor'),
+            '--cck-customize-text'         => $color($this->customizeTextColor, 'customizeTextColor'),
+            '--cck-customize-border'       => $color($this->customizeBorderColor, 'customizeBorderColor'),
+            '--cck-customize-hover-bg'     => $color($this->customizeHoverBgColor, 'customizeHoverBgColor'),
+            '--cck-customize-hover-text'   => $color($this->customizeHoverTextColor, 'customizeHoverTextColor'),
 
-            '--cck-save-bg'     => $nc($this->saveBgColor),
-            '--cck-save-text'   => $nc($this->saveTextColor),
-            '--cck-close-color' => $nc($this->closeIconColor),
+            '--cck-save-bg'     => $color($this->saveBgColor, 'saveBgColor'),
+            '--cck-save-text'   => $color($this->saveTextColor, 'saveTextColor'),
+            '--cck-close-color' => $color($this->closeIconColor, 'closeIconColor'),
 
-            '--cck-radius'    => $this->borderRadius,
-            '--cck-padding'   => $this->padding,
-            '--cck-max-width' => $this->fullWidth ? '100%' : $this->maxWidth,
-            '--cck-max-height'=> $this->maxHeight ?: '90vh',
+            '--cck-radius'    => $length($this->borderRadius, 'borderRadius'),
+            '--cck-padding'   => $length($this->padding, 'padding'),
+            '--cck-max-width' => $this->fullWidth ? '100%' : $length($this->maxWidth, 'maxWidth'),
+            '--cck-max-height'=> $length($this->maxHeight, 'maxHeight'),
             '--cck-shadow'    => $shadow,
         ];
 
@@ -581,7 +749,17 @@ class Settings extends Model
     public function rules(): array
     {
         return [
-            [['bannerEnabled', 'geoEnabled', 'logEnabled', 'fullWidth', 'shadow', 'fixedPosition'], 'boolean'],
+            [
+                [
+                    'bannerEnabled', 'geoEnabled', 'logEnabled', 'fullWidth', 'shadow', 'fixedPosition',
+                    'consentModeEnabled', 'consentModeAutoInject',
+                    'consentModeUrlPassthrough', 'consentModeAdsDataRedaction',
+                    'respectGpc', 'respectDnt',
+                ],
+                'boolean',
+            ],
+            [['consentModeType'], 'in', 'range' => ['advanced', 'basic']],
+            [['consentModeWaitForUpdate'], 'integer', 'min' => 0, 'max' => 10000],
             [['bannerLayout'], 'in', 'range' => ['bottom-bar', 'top-bar', 'center-popup', 'corner-popup']],
             [['cornerPosition'], 'in', 'range' => ['bottom-left', 'bottom-right']],
             [
@@ -598,7 +776,7 @@ class Settings extends Model
                     'customizeBgColor', 'customizeTextColor', 'customizeBorderColor',
                     'customizeHoverBgColor', 'customizeHoverTextColor',
                     'saveBgColor', 'saveTextColor', 'closeIconColor',
-                    'borderRadius', 'padding', 'maxWidth',
+                    'borderRadius', 'padding', 'maxWidth', 'maxHeight',
                 ],
                 'string',
             ],
