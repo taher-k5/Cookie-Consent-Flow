@@ -4,7 +4,6 @@ namespace sfsinfotech\craftcookieconsentflow;
 
 use Craft;
 use craft\base\Plugin as BasePlugin;
-use craft\events\RegisterCpNavItemsEvent;
 use craft\events\RegisterTemplateRootsEvent;
 use craft\events\RegisterUrlRulesEvent;
 use craft\events\RegisterComponentTypesEvent;
@@ -14,24 +13,29 @@ use craft\services\UserPermissions;
 use craft\web\twig\variables\CraftVariable;
 use craft\web\UrlManager;
 use craft\web\View;
+use sfsinfotech\craftcookieconsentflow\events\BeforeBannerRenderEvent;
 use sfsinfotech\craftcookieconsentflow\models\Settings;
+use sfsinfotech\craftcookieconsentflow\helpers\Permissions;
+use sfsinfotech\craftcookieconsentflow\services\ConsentModeService;
 use sfsinfotech\craftcookieconsentflow\services\ConsentService;
+use sfsinfotech\craftcookieconsentflow\services\StatisticsService;
 use sfsinfotech\craftcookieconsentflow\services\CookieDefinitionService;
 use sfsinfotech\craftcookieconsentflow\services\GeoService;
 use sfsinfotech\craftcookieconsentflow\services\SettingsService;
 use sfsinfotech\craftcookieconsentflow\variables\CookieConsentVariable;
 use sfsinfotech\craftcookieconsentflow\widgets\ConsentWidget;
 use sfsinfotech\craftcookieconsentflow\web\assets\cp\CpAsset;
-use sfsinfotech\craftcookieconsentflow\web\assets\banner\BannerAsset;
 use yii\base\Event;
 
 /**
  * Cookie Consent Flow plugin for Craft CMS 5.
  *
  * @property-read ConsentService          $consent
+ * @property-read ConsentModeService       $consentMode
  * @property-read GeoService               $geo
  * @property-read SettingsService          $cookieSettings
  * @property-read CookieDefinitionService  $cookieDefinitions
+ * @property-read StatisticsService        $statistics
  * @property-read Settings                 $settings
  * @method  Settings getSettings()
  * @method  static Plugin getInstance()
@@ -40,7 +44,10 @@ class Plugin extends BasePlugin
 {
     public static Plugin $plugin;
 
-    public string $schemaVersion = '1.6.0';
+    /** Whether a Twig call already rendered (or deliberately suppressed) the banner this request. */
+    private bool $_bannerHandled = false;
+
+    public string $schemaVersion = '1.7.0';
     public bool $hasCpSettings   = true;
     public bool $hasCpSection     = true;
 
@@ -69,7 +76,6 @@ class Plugin extends BasePlugin
         $this->_registerCpRoutes();
         $this->_registerVariable();
         $this->_registerWidget();
-        $this->_registerCpNavItem();
         $this->_registerPermissions();
 
         $request = Craft::$app->getRequest();
@@ -147,7 +153,7 @@ class Plugin extends BasePlugin
                 'url'   => 'cookie-consent-flow/cookies',
             ],
             'logs' => [
-                'label' => Craft::t('cookie-consent-flow', 'Consent Logs'),
+                'label' => Craft::t('cookie-consent-flow', 'Consent Records'),
                 'url'   => 'cookie-consent-flow/logs',
             ],
         ];
@@ -176,9 +182,11 @@ class Plugin extends BasePlugin
     {
         $this->setComponents([
             'consent'           => ConsentService::class,
+            'consentMode'       => ConsentModeService::class,
             'geo'               => GeoService::class,
             'cookieSettings'    => SettingsService::class,
             'cookieDefinitions' => CookieDefinitionService::class,
+            'statistics'        => StatisticsService::class,
         ]);
     }
 
@@ -221,6 +229,8 @@ class Plugin extends BasePlugin
                 $event->rules['POST cookie-consent-flow/settings/save-multi-site-override']  = 'cookie-consent-flow/settings/save-multi-site-override';
                 $event->rules['POST cookie-consent-flow/settings/reset-multi-site-override'] = 'cookie-consent-flow/settings/reset-multi-site-override';
                 $event->rules['POST cookie-consent-flow/settings/copy-multi-site-override']  = 'cookie-consent-flow/settings/copy-multi-site-override';
+                $event->rules['POST cookie-consent-flow/settings/invalidate-consent']        = 'cookie-consent-flow/settings/invalidate-consent';
+                $event->rules['cookie-consent-flow/logs/export']                             = 'cookie-consent-flow/logs/export';
 
             }
     );
@@ -250,12 +260,6 @@ class Plugin extends BasePlugin
         );
     }
 
-    private function _registerCpNavItem(): void
-    {
-        // Nav item is provided via getCpNavItem() above.
-        // Kept as a hook point for future dynamic registration if needed.
-    }
-
     /**
      * Registers custom permissions so settings/logs access can be granted
      * to specific non-admin users rather than everyone with control panel
@@ -268,15 +272,8 @@ class Plugin extends BasePlugin
             UserPermissions::EVENT_REGISTER_PERMISSIONS,
             function (RegisterUserPermissionsEvent $event): void {
                 $event->permissions[] = [
-                    'heading' => Craft::t('cookie-consent-flow', 'Cookie Consent Flow'),
-                    'permissions' => [
-                        'cookieConsentFlow:manageSettings' => [
-                            'label' => Craft::t('cookie-consent-flow', 'Manage banner & plugin settings'),
-                        ],
-                        'cookieConsentFlow:viewLogs' => [
-                            'label' => Craft::t('cookie-consent-flow', 'View consent logs'),
-                        ],
-                    ],
+                    'heading'     => Craft::t('cookie-consent-flow', 'Cookie Consent Flow'),
+                    'permissions' => Permissions::definition(),
                 ];
             }
         );
@@ -284,12 +281,84 @@ class Plugin extends BasePlugin
 
     private function _registerCpAsset(): void
     {
-        Craft::$app->getView()->registerAssetBundle(CpAsset::class);
+        $view = Craft::$app->getView();
+
+        $view->registerAssetBundle(CpAsset::class);
+
+        // The control-panel JavaScript re-labels badges, asks for confirmation
+        // before destructive actions and reports outcomes — all user-facing
+        // text that has to be translatable like the rest of the plugin.
+        // Registered for every CP page rather than in one template: the
+        // messages are raised from several pages (Multisite, Cookies,
+        // Settings), and a dictionary that only existed on one of them would
+        // leave the others falling back to English keys.
+        //
+        // Deferred to render time rather than translated here: this method
+        // runs while the plugin is initialising, which can be before Craft has
+        // settled the target language for the request, and a string translated
+        // then would be translated into the wrong one.
+        Event::on(
+            View::class,
+            View::EVENT_BEFORE_RENDER_PAGE_TEMPLATE,
+            function () use ($view): void {
+                $view->registerJs(
+                    'window.cckStrings = ' . \craft\helpers\Json::encode($this->_cpStrings()) . ';',
+                    View::POS_HEAD
+                );
+            }
+        );
     }
 
     /**
-     * Auto-inject the banner + its CSS/JS into every HTML frontend response,
-     * regardless of whether the template uses the {% body %} Twig tag.
+     * Translatable strings the control-panel JavaScript needs at runtime.
+     * Keyed by their English source text, which is what `cckT()` falls back to
+     * — so a missing entry degrades to English rather than to a blank button.
+     *
+     * @return array<string, string>
+     */
+    private function _cpStrings(): array
+    {
+        $t = static fn(string $message): string => Craft::t('cookie-consent-flow', $message);
+
+        return [
+            'Inherited'              => $t('Inherited'),
+            'Overridden'             => $t('Overridden'),
+            'Site Override'          => $t('Site Override'),
+            'Expand All Sections'    => $t('Expand All Sections'),
+            'Collapse All Sections'  => $t('Collapse All Sections'),
+            'Done.'                  => $t('Done.'),
+            'An error occurred.'     => $t('An error occurred.'),
+            'Remove every override for this site and return it to Global Settings?'
+                => $t('Remove every override for this site and return it to Global Settings?'),
+            'Replace this site’s overrides with a copy of the selected site’s? This cannot be undone.'
+                => $t('Replace this site’s overrides with a copy of the selected site’s? This cannot be undone.'),
+        ];
+    }
+
+    /**
+     * Injects the banner, its assets and (optionally) the Google Consent Mode
+     * snippet into every front-end HTML response, whether or not the site's
+     * template uses a Twig tag to do it.
+     *
+     * ## Why this is written to be cache-safe
+     *
+     * Everything injected here can end up in a full-page cache (Blitz, a
+     * reverse proxy, a CDN) and be served verbatim to every later visitor. So
+     * nothing injected here may depend on *who* is asking:
+     *
+     * - **No CSRF token is embedded.** A baked-in token goes stale the moment
+     *   the page is cached, and would then fail for everyone. The runtime
+     *   fetches a token itself, at the moment it needs one.
+     * - **No geo decision is baked in.** With geo-targeting on, the country is
+     *   resolved per visitor by the runtime against an uncacheable endpoint
+     *   (`consent/geo`), instead of the first visitor's country deciding what
+     *   every later visitor sees.
+     * - **No consent state is rendered.** The banner markup is always the
+     *   same and always starts hidden; the visitor's own browser storage is
+     *   what reveals or suppresses it.
+     *
+     * The result is that one visitor accepting analytics can never cause
+     * another visitor to be served a page that reflects that choice.
      */
     private function _registerFrontendBanner(): void
     {
@@ -299,7 +368,6 @@ class Plugin extends BasePlugin
                 /** @var \yii\web\Response $response */
                 $response = Craft::$app->getResponse();
 
-                // Only act on successful HTML responses that have a </body>
                 if (!$response->getIsOk()) {
                     return;
                 }
@@ -309,64 +377,144 @@ class Plugin extends BasePlugin
                     return;
                 }
 
-                $settings = $this->cookieSettings->getEffectiveSettings();
-
-                if (!$settings->bannerEnabled) {
-                    return;
-                }
-
-                if (!$this->geo->shouldShowBanner($settings)) {
-                    return;
-                }
-
-                // Render banner HTML (template already includes inline CSS vars)
-                $view        = Craft::$app->getView();
-                $currentMode = $view->getTemplateMode();
                 try {
-                    $view->setTemplateMode(View::TEMPLATE_MODE_SITE);
-                    $bannerHtml = $view->renderTemplate(
-                        'cookie-consent-flow/banner/_banner',
-                        ['settings' => $settings]
-                    );
+                    $settings = $this->cookieSettings->getEffectiveSettings();
                 } catch (\Throwable $e) {
-                    Craft::error('CookieConsentKit banner render failed: ' . $e->getMessage(), __METHOD__);
+                    // A settings-table problem must not take the whole site
+                    // down — the page the visitor asked for still renders,
+                    // just without a banner, and the cause is logged.
+                    Craft::error('Cookie Consent Flow could not load settings: ' . $e->getMessage(), __METHOD__);
+
                     return;
-                } finally {
-                    $view->setTemplateMode($currentMode);
                 }
 
-                // Publish banner asset directory and get the public base URL
-                $assetSrcPath = Craft::getAlias('@sfsinfotech/craftcookieconsentflow') . '/web/assets/banner';
-                [, $baseUrl]  = Craft::$app->getAssetManager()->publish($assetSrcPath);
-
-                // Build the JS config object. `siteId` namespaces client-side
-                // consent storage (localStorage/cookies) so a decision made
-                // on one Craft site is never silently treated as consent for
-                // another on a shared-origin multi-site install.
-                $configJson = \craft\helpers\Json::encode([
-                    'saveUrl'          => \craft\helpers\UrlHelper::actionUrl('cookie-consent-flow/consent/save'),
-                    'reportCookiesUrl' => \craft\helpers\UrlHelper::actionUrl('cookie-consent-flow/cookie-detection/report'),
-                    'csrfTokenName'    => Craft::$app->getConfig()->getGeneral()->csrfTokenName,
-                    'csrfToken'        => Craft::$app->getRequest()->getCsrfToken(),
-                    'allCategories'    => $settings->getCategoryKeys(),
-                    'lockedCategories' => $settings->getLockedCategoryKeys(),
-                    'siteId'           => Craft::$app->getSites()->getCurrentSite()->id,
-                    'consentExpiryDays'=> $settings->consentExpiryDays,
-                    'policyVersion'    => $settings->policyVersion,
-                ]);
-
-                // Build the snippet to inject before </body>
-                $inject  = "\n" . '<link rel="stylesheet" href="' . $baseUrl . '/cookie-banner.css">';
-                $inject .= "\n" . $bannerHtml;
-                $inject .= "\n" . '<script>window.cckConfig = ' . $configJson . ';</script>';
-                $inject .= "\n" . '<script src="' . $baseUrl . '/cookie-banner.js" defer></script>';
-                $inject .= "\n" . '</body>';
-
-                $pos = strrpos($content, '</body>');
-                if ($pos !== false) {
-                    $response->content = substr_replace($content, $inject, $pos, strlen('</body>'));
+                if ($settings->consentModeEnabled && $settings->consentModeAutoInject) {
+                    $content = $this->_injectConsentMode($content, $settings);
                 }
+
+                if ($settings->bannerEnabled && !$this->_bannerHandled) {
+                    $content = $this->_injectBanner($content, $settings);
+                }
+
+                $response->content = $content;
             }
         );
+    }
+
+    /**
+     * Places the Consent Mode snippet as early in `<head>` as possible — it
+     * must run before any Google tag, or the tag acts on an unset default.
+     * Falls back to prepending to the document when there is no `<head>`.
+     */
+    private function _injectConsentMode(string $content, Settings $settings): string
+    {
+        $snippet = $this->consentMode->renderScript($settings);
+
+        if ($snippet === '') {
+            return $content;
+        }
+
+        if (preg_match('/<head\b[^>]*>/i', $content, $match, PREG_OFFSET_CAPTURE)) {
+            $at = $match[0][1] + strlen($match[0][0]);
+
+            return substr_replace($content, "\n" . $snippet, $at, 0);
+        }
+
+        return $snippet . "\n" . $content;
+    }
+
+    /**
+     * Renders the banner and appends it, its stylesheet, its runtime config
+     * and its script immediately before `</body>`.
+     */
+    private function _injectBanner(string $content, Settings $settings): string
+    {
+        // Fired here as well as in renderBanner(), because auto-injection is
+        // the default path — an event documented as able to suppress the
+        // banner that only fired on the path almost nobody uses would be
+        // documentation of something that does not happen.
+        $event = new BeforeBannerRenderEvent(['settings' => $settings]);
+        $this->trigger(self::EVENT_BEFORE_BANNER_RENDER, $event);
+
+        if ($event->cancel) {
+            return $content;
+        }
+
+        $view        = Craft::$app->getView();
+        $currentMode = $view->getTemplateMode();
+
+        try {
+            $view->setTemplateMode(View::TEMPLATE_MODE_SITE);
+            $bannerHtml = $view->renderTemplate(
+                'cookie-consent-flow/banner/_banner',
+                ['settings' => $settings]
+            );
+        } catch (\Throwable $e) {
+            Craft::error('Cookie Consent Flow banner render failed: ' . $e->getMessage(), __METHOD__);
+
+            return $content;
+        } finally {
+            $view->setTemplateMode($currentMode);
+        }
+
+        $assetSrcPath = Craft::getAlias('@sfsinfotech/craftcookieconsentflow') . '/web/assets/banner';
+        [, $baseUrl]  = Craft::$app->getAssetManager()->publish($assetSrcPath);
+
+        $inject  = "\n" . '<link rel="stylesheet" href="' . $baseUrl . '/cookie-banner.css">';
+        $inject .= "\n" . $bannerHtml;
+        $inject .= "\n" . '<script>window.cckConfig = '
+            . \craft\helpers\Json::encode($this->buildRuntimeConfig($settings)) . ';</script>';
+        $inject .= "\n" . '<script src="' . $baseUrl . '/cookie-banner.js" defer></script>';
+        $inject .= "\n" . '</body>';
+
+        $pos = strrpos($content, '</body>');
+
+        return $pos !== false ? substr_replace($content, $inject, $pos, strlen('</body>')) : $content;
+    }
+
+    /**
+     * The configuration object handed to the front-end runtime.
+     *
+     * Shared by the auto-injection above and the `renderBanner()` Twig call,
+     * so the two paths can never drift apart. **Every value here is
+     * site-wide, never visitor-specific** — that is the property that makes
+     * the surrounding HTML safe to cache and serve to anyone. Anything that
+     * varies per visitor (a CSRF token, a resolved country, a stored
+     * decision) is fetched or read by the runtime at execution time instead.
+     *
+     * @return array<string, mixed>
+     */
+    public function buildRuntimeConfig(Settings $settings): array
+    {
+        return [
+            'saveUrl'           => \craft\helpers\UrlHelper::actionUrl('cookie-consent-flow/consent/save'),
+            'reportCookiesUrl'  => \craft\helpers\UrlHelper::actionUrl('cookie-consent-flow/cookie-detection/report'),
+            'geoUrl'            => \craft\helpers\UrlHelper::actionUrl('cookie-consent-flow/consent/geo'),
+            // Craft's own anonymous session endpoint. The runtime reads a
+            // fresh CSRF token from here rather than one baked into possibly
+            // cached HTML.
+            'csrfUrl'           => \craft\helpers\UrlHelper::actionUrl('users/session-info'),
+            'csrfTokenName'     => Craft::$app->getConfig()->getGeneral()->csrfTokenName,
+            'allCategories'     => $settings->getCategoryKeys(),
+            'lockedCategories'  => $settings->getLockedCategoryKeys(),
+            'defaultCategories' => $settings->getDefaultCategoryKeys(),
+            'siteId'            => Craft::$app->getSites()->getCurrentSite()->id,
+            'consentExpiryDays' => $settings->consentExpiryDays,
+            'policyVersion'     => $settings->policyVersion,
+            'geoEnabled'        => $settings->geoEnabled && !empty($settings->geoTargetCountries),
+            'respectGpc'        => $settings->respectGpc,
+            'respectDnt'        => $settings->respectDnt,
+            'consentMode'       => [
+                'enabled' => $settings->consentModeEnabled,
+                'type'    => $settings->consentModeType,
+                'signals' => $settings->getCategoryGcmSignals(),
+            ],
+        ];
+    }
+
+    /** Marks manual Twig rendering as authoritative for the current request. */
+    public function markBannerHandled(): void
+    {
+        $this->_bannerHandled = true;
     }
 }
