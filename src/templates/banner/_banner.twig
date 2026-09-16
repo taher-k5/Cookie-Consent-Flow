@@ -11,19 +11,47 @@
 {% set layoutClass = 'cck-layout--' ~ settings.bannerLayout %}
 {% set cornerClass = (settings.bannerLayout == 'corner-popup') ? ' cck-corner--' ~ settings.cornerPosition : '' %}
 
+{# The center-popup layout dims the page behind the banner, which makes it a
+   modal in appearance. It is therefore marked up as one below, and the runtime
+   moves and traps focus to match.
+
+   Except in the control panel's live preview (`isPreview`), which renders this
+   same template as an illustration inside a page the admin is still using. A
+   preview that claimed `aria-modal` would tell assistive technology that the
+   rest of the Dashboard is inert, so the preview stays a plain region — it has
+   no runtime, no focus management and nothing to trap focus for.
+
+   The overlay below is presentational only; the dialog carries the semantics. #}
+{% set isPreview = isPreview ?? false %}
+{% set isModalLayout = settings.bannerLayout == 'center-popup' and not isPreview %}
+
 {% if settings.bannerLayout == 'center-popup' %}
   <div
     class="cck-banner-overlay"
     id="cck-banner-overlay"
+    aria-hidden="true"
     hidden
   ></div>
 {% endif %}
+{#
+  role depends on the layout, because the layouts are genuinely different
+  things. A bar leaves the page fully usable, so it is a labelled region;
+  announcing it as a modal dialog would misdescribe it. The center popup dims
+  the page behind it, so it is a dialog and says so — page content behind it is
+  removed from the accessibility tree by aria-modal, and cookie-banner.js moves
+  focus in and traps it there. Escape still records nothing in either case:
+  dismissal without a choice would have to be stored as one.
+
+  No aria-live: the banner is present from page load and revealed by script,
+  and a live region would re-announce it over whatever the visitor was already
+  reading. The labelled region is discoverable by landmark navigation instead.
+#}
 <div
   id="cck-banner"
   class="cck-banner {{ layoutClass }}{{ cornerClass }}"
-  role="region"
-  aria-label="{{ settings.bannerHeading|e('html_attr') }}"
-  aria-live="polite"
+  role="{{ isModalLayout ? 'dialog' : 'region' }}"
+  {% if isModalLayout %}aria-modal="true"{% endif %}
+  aria-labelledby="cck-banner-heading"
   hidden
 >
   <div class="cck-banner__inner">
@@ -34,17 +62,21 @@
         <img src="{{ settings.logoUrl }}" alt="" class="cck-banner__logo">
       {% endif %}
 
-      {% if settings.bannerHeading %}
-        <h2 class="cck-banner__heading">{{ settings.bannerHeading }}</h2>
-      {% endif %}
+      {# Always rendered, hidden visually when empty, because it is what
+         labels the region above — an unlabelled landmark is worse than a
+         redundant one. #}
+      <h2 id="cck-banner-heading"
+          class="cck-banner__heading{% if not settings.bannerHeading %} cck-visually-hidden{% endif %}">
+        {{ settings.bannerHeading ?: "Cookie consent"|t('cookie-consent-flow') }}
+      </h2>
 
       {% if settings.bannerDescription %}
         <p class="cck-banner__description">{{ settings.safeDescription|raw }}</p>
       {% endif %}
 
-      {% if settings.privacyPolicyUrl %}
+      {% if settings.safePrivacyPolicyUrl %}
         <a
-          href="{{ settings.privacyPolicyUrl|e('html_attr') }}"
+          href="{{ settings.safePrivacyPolicyUrl|e('html_attr') }}"
           class="cck-banner__link"
           target="_blank"
           rel="noopener noreferrer"
@@ -54,19 +86,16 @@
 
     {# Action buttons #}
     <div class="cck-banner__actions" role="group" aria-label="{{ 'Cookie consent options'|t('cookie-consent-flow') }}">
-      <button
-        type="button"
-        class="cck-btn cck-btn--accept"
-        data-cck-action="accept-all"
-        aria-label="{{ settings.acceptButtonText|e('html_attr') }}"
-      >{{ settings.acceptButtonText }}</button>
+      {# No aria-label on these: each button's visible text already names it,
+         and an aria-label duplicating that text overrides what a voice-control
+         user would say, for no benefit. #}
+      <button type="button" class="cck-btn cck-btn--accept" data-cck-action="accept-all">
+        {{- settings.acceptButtonText -}}
+      </button>
 
-      <button
-        type="button"
-        class="cck-btn cck-btn--reject"
-        data-cck-action="reject-all"
-        aria-label="{{ settings.rejectButtonText|e('html_attr') }}"
-      >{{ settings.rejectButtonText }}</button>
+      <button type="button" class="cck-btn cck-btn--reject" data-cck-action="reject-all">
+        {{- settings.rejectButtonText -}}
+      </button>
 
       <button
         type="button"
@@ -74,7 +103,6 @@
         data-cck-action="open-preferences"
         aria-haspopup="dialog"
         aria-controls="cck-preferences"
-        aria-label="{{ settings.customizeButtonText|e('html_attr') }}"
       >{{ settings.customizeButtonText }}</button>
     </div>
 
@@ -131,7 +159,7 @@
     {% endif %}
 
     {# Category toggles #}
-    {% set cookiesByCategory = craft.cookieConsent.cookieDefinitionsByCategory %}
+    {% set cookiesByCategory = craft.cookieConsent.cookiesByCategory %}
     <div class="cck-categories" role="list">
       {% for category in settings.categories %}
         {% set categoryCookies = cookiesByCategory[category.key] ?? [] %}
@@ -143,22 +171,28 @@
             <div class="cck-category__info">
               <h3 class="cck-category__name">{{ category.label }}</h3>
               {% if category.description %}
-                <p class="cck-category__desc">{{ category.description }}</p>
+                <p class="cck-category__desc" id="cck-cat-desc-{{ category.key|e('html_attr') }}">
+                  {{- category.description -}}
+                </p>
               {% endif %}
             </div>
 
-            <label
-              class="cck-toggle{% if category.locked %} cck-toggle--disabled{% endif %}"
-              aria-label="{{ category.label }} — {{ category.locked ? 'always enabled'|t('cookie-consent-flow') : 'toggle'|t('cookie-consent-flow') }}"
-              title="{{ category.label }}"
-            >
+            {# The label wraps the input and carries the accessible name, so
+               the control announces as e.g. "Analytics, checkbox". A locked
+               category uses disabled (not just aria-disabled) so it is genuinely
+               not operable, and states why in text rather than only visually. #}
+            <label class="cck-toggle{% if category.locked %} cck-toggle--disabled{% endif %}">
               <input
                 type="checkbox"
                 data-category="{{ category.key|e('html_attr') }}"
                 {% if category.locked or category.default %}checked{% endif %}
-                {% if category.locked %}disabled aria-disabled="true"{% endif %}
+                {% if category.locked %}disabled{% endif %}
+                {% if category.description %}aria-describedby="cck-cat-desc-{{ category.key|e('html_attr') }}"{% endif %}
               >
               <span class="cck-toggle__track" aria-hidden="true"></span>
+              <span class="cck-visually-hidden">
+                {{- category.label }}{% if category.locked %} — {{ "always active"|t('cookie-consent-flow') }}{% endif -%}
+              </span>
             </label>
           </div>
 
@@ -201,12 +235,13 @@
         data-cck-action="reject-all"
       >{{ settings.rejectButtonText }}</button>
 
-      <button
-        type="button"
-        class="cck-btn cck-btn--save"
-        data-cck-action="save-preferences"
-        aria-label="{{ settings.savePreferencesText|e('html_attr') }}"
-      >{{ settings.savePreferencesText }}</button>
+      <button type="button" class="cck-btn cck-btn--save" data-cck-action="save-preferences">
+        {{- settings.savePreferencesText -}}
+      </button>
+
+      <button type="button" class="cck-btn cck-btn--accept" data-cck-action="accept-all">
+        {{- settings.acceptButtonText -}}
+      </button>
     </div>
 
   </div>{# /.cck-preferences__panel #}
