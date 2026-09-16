@@ -1,11 +1,27 @@
 {% extends "_layouts/cp" %}
 
-{% set title = "Consent Logs"|t('cookie-consent-flow') %}
+{% set title = "Consent Records"|t('cookie-consent-flow') %}
 {% set selectedSubnavItem = 'logs' %}
 
 {% import _self as self %}
 
 {% block content %}
+
+{% set actionLabels = {
+    'accept_all': "Accept All"|t('cookie-consent-flow'),
+    'reject_all': "Reject All"|t('cookie-consent-flow'),
+    'custom':     "Custom"|t('cookie-consent-flow'),
+} %}
+
+{# How the decision was reached, not what it was. A record sourced from a
+   browser privacy signal was never shown a banner, which matters when
+   reviewing what a visitor was actually presented with. #}
+{% set sourceLabels = {
+    'banner': "Banner"|t('cookie-consent-flow'),
+    'gpc':    "Global Privacy Control"|t('cookie-consent-flow'),
+    'dnt':    "Do Not Track"|t('cookie-consent-flow'),
+    'api':    "JavaScript API"|t('cookie-consent-flow'),
+} %}
 
 {# Build each link's query params by merging onto whichever of site/filter
    isn't being changed by that particular control, so switching one filter
@@ -14,7 +30,20 @@
    real URL change when picked, and round-trips through bookmarks/reloads
    the same way an actual site selection does. #}
 {% set siteParams = { site: currentSite ? currentSite.handle : 'all' } %}
-{% set filterParams = filter ? { filter: filter } : {} %}
+
+{# Every active filter, so pagination and the export link carry the exact
+   same scope as the table on screen. An export that silently covered a
+   different set of records than the page it was launched from would be
+   worse than having no export. #}
+{% set activeParams = siteParams|merge({
+    filter:        filters.action ?? null,
+    source:        filters.source ?? null,
+    category:      filters.category ?? null,
+    country:       filters.countryCode ?? null,
+    policyVersion: filters.policyVersion ?? null,
+    from:          filters.from ?? null,
+    to:            filters.to ?? null,
+})|filter(v => v is not null and v != '') %}
 
 <div class="ccf-log-filters flex" style="gap:12px;align-items:flex-end;margin-bottom:16px;">
     {% if allSites|length > 1 %}
@@ -23,12 +52,12 @@
             <div class="select">
                 <select id="ccf-filter-site" onchange="location.href=this.value">
                     <option
-                        value="{{ cpUrl('cookie-consent-flow/logs', filterParams|merge({ site: 'all' })) }}"
+                        value="{{ cpUrl('cookie-consent-flow/logs', activeParams|merge({ site: 'all' })) }}"
                         {% if currentSite is null %}selected{% endif %}
                     >{{ "All Sites"|t('cookie-consent-flow') }}</option>
                     {% for site in allSites %}
                         <option
-                            value="{{ cpUrl('cookie-consent-flow/logs', filterParams|merge({ site: site.handle })) }}"
+                            value="{{ cpUrl('cookie-consent-flow/logs', activeParams|merge({ site: site.handle })) }}"
                             {% if currentSite and site.id == currentSite.id %}selected{% endif %}
                         >{{ site.name }}</option>
                     {% endfor %}
@@ -37,27 +66,104 @@
         </div>
     {% endif %}
 
-    <div class="field">
-        <label for="ccf-filter-action">{{ "Action"|t('cookie-consent-flow') }}</label>
-        <div class="select">
-            <select id="ccf-filter-action" onchange="location.href=this.value">
-                <option value="{{ cpUrl('cookie-consent-flow/logs', siteParams) }}" {% if filter == '' %}selected{% endif %}>{{ "All"|t('cookie-consent-flow') }}</option>
-                <option value="{{ cpUrl('cookie-consent-flow/logs', siteParams|merge({ filter: 'accept_all' })) }}" {% if filter == 'accept_all' %}selected{% endif %}>{{ "Accept All"|t('cookie-consent-flow') }}</option>
-                <option value="{{ cpUrl('cookie-consent-flow/logs', siteParams|merge({ filter: 'reject_all' })) }}" {% if filter == 'reject_all' %}selected{% endif %}>{{ "Reject All"|t('cookie-consent-flow') }}</option>
-                <option value="{{ cpUrl('cookie-consent-flow/logs', siteParams|merge({ filter: 'custom' })) }}" {% if filter == 'custom' %}selected{% endif %}>{{ "Custom"|t('cookie-consent-flow') }}</option>
-            </select>
+    {# A real GET form, so date and text filters can be typed and submitted
+       together instead of each one needing its own navigation. The selects
+       above stay as instant-navigation controls because a single click is
+       the whole interaction there. #}
+    <form method="get" action="{{ cpUrl('cookie-consent-flow/logs') }}" class="flex" style="gap:12px;align-items:flex-end;flex-wrap:wrap;">
+        <input type="hidden" name="site" value="{{ currentSite ? currentSite.handle : 'all' }}">
+
+        <div class="field">
+            <label for="ccf-filter-action">{{ "Outcome"|t('cookie-consent-flow') }}</label>
+            <div class="select">
+                <select id="ccf-filter-action" name="filter">
+                    <option value="">{{ "All"|t('cookie-consent-flow') }}</option>
+                    {% for value in actions %}
+                        <option value="{{ value }}" {% if filter == value %}selected{% endif %}>
+                            {{- actionLabels[value] ?? value -}}
+                        </option>
+                    {% endfor %}
+                </select>
+            </div>
         </div>
-    </div>
+
+        <div class="field">
+            <label for="ccf-filter-source">{{ "Source"|t('cookie-consent-flow') }}</label>
+            <div class="select">
+                <select id="ccf-filter-source" name="source">
+                    <option value="">{{ "Any"|t('cookie-consent-flow') }}</option>
+                    {% for value in sources %}
+                        <option value="{{ value }}" {% if (filters.source ?? '') == value %}selected{% endif %}>
+                            {{- sourceLabels[value] ?? value -}}
+                        </option>
+                    {% endfor %}
+                </select>
+            </div>
+        </div>
+
+        <div class="field">
+            <label for="ccf-filter-category">{{ "Category"|t('cookie-consent-flow') }}</label>
+            <div class="select">
+                <select id="ccf-filter-category" name="category">
+                    <option value="">{{ "Any"|t('cookie-consent-flow') }}</option>
+                    {% for category in categories %}
+                        <option value="{{ category.key }}" {% if (filters.category ?? '') == category.key %}selected{% endif %}>
+                            {{- category.label ?: category.key -}}
+                        </option>
+                    {% endfor %}
+                </select>
+            </div>
+        </div>
+
+        <div class="field">
+            <label for="ccf-filter-from">{{ "From"|t('cookie-consent-flow') }}</label>
+            <input type="date" id="ccf-filter-from" name="from" class="text" value="{{ filters.from ?? '' }}">
+        </div>
+
+        <div class="field">
+            <label for="ccf-filter-to">{{ "To"|t('cookie-consent-flow') }}</label>
+            <input type="date" id="ccf-filter-to" name="to" class="text" value="{{ filters.to ?? '' }}">
+        </div>
+
+        <div class="field">
+            <label for="ccf-filter-country">{{ "Country"|t('cookie-consent-flow') }}</label>
+            <input type="text" id="ccf-filter-country" name="country" class="text" size="4"
+                   maxlength="2" placeholder="GB" value="{{ filters.countryCode ?? '' }}">
+        </div>
+
+        <div class="field">
+            <label for="ccf-filter-version">{{ "Policy version"|t('cookie-consent-flow') }}</label>
+            <input type="text" id="ccf-filter-version" name="policyVersion" class="text" size="10"
+                   value="{{ filters.policyVersion ?? '' }}">
+        </div>
+
+        <div class="field">
+            <button type="submit" class="btn submit">{{ "Filter"|t('cookie-consent-flow') }}</button>
+            {% if filters is not empty %}
+                <a href="{{ cpUrl('cookie-consent-flow/logs', siteParams) }}" class="btn">{{ "Clear"|t('cookie-consent-flow') }}</a>
+            {% endif %}
+        </div>
+    </form>
 </div>
+
+{% if canExport %}
+    <div class="flex" style="gap:8px;margin-bottom:16px;">
+        <a href="{{ cpUrl('cookie-consent-flow/logs/export', activeParams|merge({ format: 'csv' })) }}" class="btn icon download">
+            {{ "Export CSV"|t('cookie-consent-flow') }}
+        </a>
+        <a href="{{ cpUrl('cookie-consent-flow/logs/export', activeParams|merge({ format: 'json' })) }}" class="btn icon download">
+            {{ "Export JSON"|t('cookie-consent-flow') }}
+        </a>
+        <span class="light" style="align-self:center;">
+            {{ "Exports exactly the records matching the filters above."|t('cookie-consent-flow') }}
+        </span>
+    </div>
+{% endif %}
 
 {# Visible confirmation of the current scope — the closed <select> already
    shows the right label, but a persistent line here means the active
    site/action filter is legible without having to open either dropdown. #}
-{% set filterLabels = {
-    'accept_all': "Accept All"|t('cookie-consent-flow'),
-    'reject_all': "Reject All"|t('cookie-consent-flow'),
-    'custom':     "Custom"|t('cookie-consent-flow'),
-} %}
+{% set filterLabels = actionLabels %}
 <p class="light" style="margin:-4px 0 16px;">
     {{ "Showing"|t('cookie-consent-flow') }}:
     {% if allSites|length > 1 %}
@@ -78,18 +184,46 @@
                 {{ card.count }}
             </div>
 
-            {% if card.label != 'Total Records' %}
+            {% if not (card.isTotal ?? false) %}
                 <div class="ccf-stat-meta">
-                    {{ card.percent }}% of total consents
+                    {{ "{percent}% of matching records"|t('cookie-consent-flow', { percent: card.percent }) }}
                 </div>
             {% else %}
                 <div class="ccf-stat-meta">
-                    Total consent submissions
+                    {{ filters is empty ? "All consent submissions"|t('cookie-consent-flow') : "Matching consent submissions"|t('cookie-consent-flow') }}
                 </div>
             {% endif %}
         </div>
     {% endfor %}
 </div>
+
+<section class="ccf-outcome-chart" aria-labelledby="ccf-outcome-chart-title">
+    <div class="ccf-outcome-chart__heading">
+        <div>
+            <h2 id="ccf-outcome-chart-title">{{ "Consent outcomes"|t('cookie-consent-flow') }}</h2>
+            <p class="light">{{ "A quick comparison of the records in the current view."|t('cookie-consent-flow') }}</p>
+        </div>
+        <strong>{{ statsCards[3].count }} {{ "records"|t('cookie-consent-flow') }}</strong>
+    </div>
+
+    <div class="ccf-outcome-chart__bars">
+        {% for card in statsCards %}
+            {% if not (card.isTotal ?? false) %}
+            <div class="ccf-outcome-chart__row">
+                <span class="ccf-outcome-chart__label">{{ card.label }}</span>
+                <div class="ccf-outcome-chart__track" role="img"
+                     aria-label="{{ '{label}: {count} records, {percent}%'|t('cookie-consent-flow', {
+                         label: card.label, count: card.count, percent: card.percent
+                     }) }}">
+                    <span class="ccf-outcome-chart__fill ccf-outcome-chart__fill--{{ card.color }}"
+                          style="width:{{ card.percent }}%"></span>
+                </div>
+                <strong class="ccf-outcome-chart__value">{{ card.count }} <span>{{ card.percent }}%</span></strong>
+            </div>
+            {% endif %}
+        {% endfor %}
+    </div>
+</section>
 
 {# ── Empty state ─────────────────────────────────────────────────────── #}
 {% if records is empty %}
@@ -107,8 +241,10 @@
                 {% if allSites|length > 1 %}
                     <th>{{ "Site"|t('cookie-consent-flow') }}</th>
                 {% endif %}
+                <th>{{ "Date"|t('cookie-consent-flow') }}</th>
                 <th>{{ "Visitor UUID"|t('cookie-consent-flow') }}</th>
-                <th>{{ "Action"|t('cookie-consent-flow') }}</th>
+                <th>{{ "Outcome"|t('cookie-consent-flow') }}</th>
+                <th>{{ "Source"|t('cookie-consent-flow') }}</th>
                 <th>{{ "Categories"|t('cookie-consent-flow') }}</th>
                 <th>{{ "Country"|t('cookie-consent-flow') }}</th>
                 <th></th>
@@ -125,16 +261,11 @@
                     {% set catLabels = catLabels|merge([cat|capitalize]) %}
                 {% endfor %}
 
-                {% if record.action == 'accept_all' %}
-                    {% set badgeClass = 'green' %}
-                    {% set actionLabel = 'Accept All' %}
-                {% elseif record.action == 'reject_all' %}
-                    {% set badgeClass = 'red' %}
-                    {% set actionLabel = 'Reject All' %}
-                {% else %}
-                    {% set badgeClass = 'blue' %}
-                    {% set actionLabel = 'Custom' %}
-                {% endif %}
+                {% set badgeClass = {
+                    'accept_all': 'green',
+                    'reject_all': 'red',
+                }[record.action] ?? 'blue' %}
+                {% set actionLabel = actionLabels[record.action] ?? record.action %}
 
                 <tr>
                     {% if allSites|length > 1 %}
@@ -143,13 +274,21 @@
                         </td>
                     {% endif %}
                     <td>
-                        {{ record.visitorUuid }}
+                        {{ record.dateCreated|datetime('short') }}
+                    </td>
+
+                    <td>
+                        <code>{{ record.visitorUuid }}</code>
                     </td>
 
                     <td>
                         <span class="ccf-action-badge ccf-{{ badgeClass }}">
                             {{ actionLabel }}
                         </span>
+                    </td>
+
+                    <td>
+                        {{ sourceLabels[record.source] ?? record.source ?? '—' }}
                     </td>
 
                     <td>
@@ -168,7 +307,7 @@
 
                     <td>
                         <a href="{{ cpUrl('cookie-consent-flow/logs/view/' ~ record.id) }}" class="btn small">
-                            View
+                            {{ "View"|t('cookie-consent-flow') }}
                         </a>
                     </td>
                 </tr>
@@ -182,7 +321,7 @@
 {% if totalPages > 1 %}
 <nav class="flex center" style="margin-top:24px;gap:8px;">
     {% if page > 1 %}
-        <a href="{{ cpUrl('cookie-consent-flow/logs', siteParams|merge(filterParams)|merge({ page: page - 1 })) }}"
+        <a href="{{ cpUrl('cookie-consent-flow/logs', activeParams|merge({ page: page - 1 })) }}"
            class="btn">← {{ "Previous"|t('app') }}</a>
     {% endif %}
 
@@ -194,7 +333,7 @@
     </span>
 
     {% if page < totalPages %}
-        <a href="{{ cpUrl('cookie-consent-flow/logs', siteParams|merge(filterParams)|merge({ page: page + 1 })) }}"
+        <a href="{{ cpUrl('cookie-consent-flow/logs', activeParams|merge({ page: page + 1 })) }}"
            class="btn">{{ "Next"|t('app') }} →</a>
     {% endif %}
 </nav>

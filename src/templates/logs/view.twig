@@ -27,8 +27,35 @@
         </tr>
 
         <tr>
-            <th>IP Hash</th>
-            <td>{{ record.ipHash }}</td>
+            <th>{{ "Source"|t('cookie-consent-flow') }}</th>
+            <td>
+                {{ {
+                    'banner': "Banner"|t('cookie-consent-flow'),
+                    'gpc':    "Global Privacy Control"|t('cookie-consent-flow'),
+                    'dnt':    "Do Not Track"|t('cookie-consent-flow'),
+                    'api':    "JavaScript API"|t('cookie-consent-flow'),
+                }[record.source] ?? record.source ?? '—' }}
+            </td>
+        </tr>
+
+        <tr>
+            <th>{{ "Policy version"|t('cookie-consent-flow') }}</th>
+            <td>{{ record.policyVersion ?: '—' }}</td>
+        </tr>
+
+        <tr>
+            <th>{{ "IP Hash"|t('cookie-consent-flow') }}</th>
+            <td>
+                <code>{{ record.ipHash }}</code>
+                {# Worth stating plainly, because the field name invites the
+                   opposite assumption: the salt is random per record, so this
+                   hash cannot be reversed to an IP and cannot be compared
+                   against another record's. It is deliberately not a way to
+                   group or identify a visitor. #}
+                <p class="light">
+                    {{ "Salted per record — cannot be reversed to an IP address, and cannot be matched against other records."|t('cookie-consent-flow') }}
+                </p>
+            </td>
         </tr>
 
         <tr>
