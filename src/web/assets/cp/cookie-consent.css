@@ -967,11 +967,29 @@
     background:#f8fafc;
 }
 
-/* Horizontal scrolling table */
+/* Horizontal scrolling table, in the same card shell as the toolbar and
+   the outcome chart so all three line up down the page. */
 .ccf-table-wrapper{
     overflow-x:auto;
     overflow-y:hidden;
     width:100%;
+    background: var(--white, #fff);
+    border: 1px solid var(--hairline-color, #e5e7eb);
+    border-radius: 10px;
+}
+
+.ccf-table-wrapper .ccf-log-table th:first-child,
+.ccf-table-wrapper .ccf-log-table td:first-child{
+    padding-left:16px;
+}
+
+.ccf-table-wrapper .ccf-log-table th:last-child,
+.ccf-table-wrapper .ccf-log-table td:last-child{
+    padding-right:16px;
+}
+
+.ccf-table-wrapper .ccf-log-table tbody tr:last-child td{
+    border-bottom:0;
 }
 
 /* Minimum width so columns never compress */
@@ -1313,4 +1331,99 @@
   margin: 0 0 10px;
   color: var(--warning-color, #cf6d1c);
   font-weight: 500;
+}
+
+/* ── Consent records toolbar ───────────────────────────────────────────
+   One flex row holding every control, so nothing nests inside a second
+   flex context and steals width from its siblings. Each field grows from
+   the same basis, which keeps the row evenly filled at any width and lets
+   it wrap into tidy rows instead of overflowing. */
+.ccf-log-filters {
+    margin-bottom: 18px;
+    padding: 14px 16px;
+    background: var(--white, #fff);
+    border: 1px solid var(--hairline-color, #e5e7eb);
+    border-radius: 10px;
+}
+
+.ccf-log-filters .ccf-filter-form {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-end;
+    gap: 12px;
+}
+
+.ccf-filter-field {
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+    flex: 1 1 140px;
+    min-width: 120px;
+    max-width: 220px;
+}
+
+/* Dates need the room a native picker's own controls take; the two-letter
+   country code never does. */
+.ccf-filter-field--date {
+    flex-basis: 170px;
+    max-width: 190px;
+}
+
+.ccf-filter-field--tiny {
+    flex: 0 0 84px;
+    min-width: 84px;
+}
+
+.ccf-filter-field > label {
+    font-size: 11px;
+    font-weight: 600;
+    line-height: 1.2;
+    color: var(--medium-text-color, #6b7280);
+    text-transform: uppercase;
+    letter-spacing: .04em;
+    white-space: nowrap;
+}
+
+.ccf-filter-field .select,
+.ccf-filter-field .select select,
+.ccf-filter-field .text {
+    width: 100%;
+    margin: 0;
+}
+
+.ccf-filter-field--tiny .text {
+    text-transform: uppercase;
+}
+
+/* Buttons sit on the control line, not the label line. */
+.ccf-filter-actions,
+.ccf-filter-export {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex: 0 0 auto;
+}
+
+/* Pushed to the end of the row so exporting never reads as one more
+   filter, and dropped back inline once the row wraps. */
+.ccf-filter-export {
+    margin-left: auto;
+}
+
+.ccf-filter-export__note {
+    max-width: 240px;
+    margin: 0;
+    padding: 6px 14px 4px;
+    font-size: 12px;
+    line-height: 1.4;
+}
+
+@media (max-width: 900px) {
+    .ccf-filter-field {
+        max-width: none;
+    }
+
+    .ccf-filter-export {
+        margin-left: 0;
+    }
 }

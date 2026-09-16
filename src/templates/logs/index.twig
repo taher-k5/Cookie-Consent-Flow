@@ -45,35 +45,35 @@
     to:            filters.to ?? null,
 })|filter(v => v is not null and v != '') %}
 
-<div class="ccf-log-filters flex" style="gap:12px;align-items:flex-end;margin-bottom:16px;">
-    {% if allSites|length > 1 %}
-        <div class="field">
-            <label for="ccf-filter-site">{{ "Site"|t('cookie-consent-flow') }}</label>
-            <div class="select">
-                <select id="ccf-filter-site" onchange="location.href=this.value">
-                    <option
-                        value="{{ cpUrl('cookie-consent-flow/logs', activeParams|merge({ site: 'all' })) }}"
-                        {% if currentSite is null %}selected{% endif %}
-                    >{{ "All Sites"|t('cookie-consent-flow') }}</option>
-                    {% for site in allSites %}
-                        <option
-                            value="{{ cpUrl('cookie-consent-flow/logs', activeParams|merge({ site: site.handle })) }}"
-                            {% if currentSite and site.id == currentSite.id %}selected{% endif %}
-                        >{{ site.name }}</option>
-                    {% endfor %}
-                </select>
-            </div>
-        </div>
-    {% endif %}
-
+<div class="ccf-log-filters">
     {# A real GET form, so date and text filters can be typed and submitted
-       together instead of each one needing its own navigation. The selects
-       above stay as instant-navigation controls because a single click is
-       the whole interaction there. #}
-    <form method="get" action="{{ cpUrl('cookie-consent-flow/logs') }}" class="flex" style="gap:12px;align-items:flex-end;flex-wrap:wrap;">
+       together instead of each one needing its own navigation. The site
+       select rides along inside it purely for layout: it has no `name`, so
+       it is never submitted, and a single click is the whole interaction. #}
+    <form method="get" action="{{ cpUrl('cookie-consent-flow/logs') }}" class="ccf-filter-form">
         <input type="hidden" name="site" value="{{ currentSite ? currentSite.handle : 'all' }}">
 
-        <div class="field">
+        {% if allSites|length > 1 %}
+            <div class="ccf-filter-field ccf-filter-field--site">
+                <label for="ccf-filter-site">{{ "Site"|t('cookie-consent-flow') }}</label>
+                <div class="select">
+                    <select id="ccf-filter-site" onchange="location.href=this.value">
+                        <option
+                            value="{{ cpUrl('cookie-consent-flow/logs', activeParams|merge({ site: 'all' })) }}"
+                            {% if currentSite is null %}selected{% endif %}
+                        >{{ "All Sites"|t('cookie-consent-flow') }}</option>
+                        {% for site in allSites %}
+                            <option
+                                value="{{ cpUrl('cookie-consent-flow/logs', activeParams|merge({ site: site.handle })) }}"
+                                {% if currentSite and site.id == currentSite.id %}selected{% endif %}
+                            >{{ site.name }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+            </div>
+        {% endif %}
+
+        <div class="ccf-filter-field">
             <label for="ccf-filter-action">{{ "Outcome"|t('cookie-consent-flow') }}</label>
             <div class="select">
                 <select id="ccf-filter-action" name="filter">
@@ -87,7 +87,7 @@
             </div>
         </div>
 
-        <div class="field">
+        <div class="ccf-filter-field">
             <label for="ccf-filter-source">{{ "Source"|t('cookie-consent-flow') }}</label>
             <div class="select">
                 <select id="ccf-filter-source" name="source">
@@ -101,7 +101,7 @@
             </div>
         </div>
 
-        <div class="field">
+        <div class="ccf-filter-field">
             <label for="ccf-filter-category">{{ "Category"|t('cookie-consent-flow') }}</label>
             <div class="select">
                 <select id="ccf-filter-category" name="category">
@@ -115,50 +115,63 @@
             </div>
         </div>
 
-        <div class="field">
+        <div class="ccf-filter-field ccf-filter-field--date">
             <label for="ccf-filter-from">{{ "From"|t('cookie-consent-flow') }}</label>
             <input type="date" id="ccf-filter-from" name="from" class="text" value="{{ filters.from ?? '' }}">
         </div>
 
-        <div class="field">
+        <div class="ccf-filter-field ccf-filter-field--date">
             <label for="ccf-filter-to">{{ "To"|t('cookie-consent-flow') }}</label>
             <input type="date" id="ccf-filter-to" name="to" class="text" value="{{ filters.to ?? '' }}">
         </div>
 
-        <div class="field">
+        <div class="ccf-filter-field ccf-filter-field--tiny">
             <label for="ccf-filter-country">{{ "Country"|t('cookie-consent-flow') }}</label>
-            <input type="text" id="ccf-filter-country" name="country" class="text" size="4"
+            <input type="text" id="ccf-filter-country" name="country" class="text"
                    maxlength="2" placeholder="GB" value="{{ filters.countryCode ?? '' }}">
         </div>
 
-        <div class="field">
+        <div class="ccf-filter-field ccf-filter-field--small">
             <label for="ccf-filter-version">{{ "Policy version"|t('cookie-consent-flow') }}</label>
-            <input type="text" id="ccf-filter-version" name="policyVersion" class="text" size="10"
+            <input type="text" id="ccf-filter-version" name="policyVersion" class="text"
                    value="{{ filters.policyVersion ?? '' }}">
         </div>
 
-        <div class="field">
+        <div class="ccf-filter-actions">
             <button type="submit" class="btn submit">{{ "Filter"|t('cookie-consent-flow') }}</button>
             {% if filters is not empty %}
                 <a href="{{ cpUrl('cookie-consent-flow/logs', siteParams) }}" class="btn">{{ "Clear"|t('cookie-consent-flow') }}</a>
             {% endif %}
         </div>
+
+        {# One export control instead of two competing buttons: the format is
+           a choice inside the action, and both links carry the filters that
+           are currently on screen. #}
+        {% if canExport %}
+            <div class="ccf-filter-export">
+                <button type="button" class="btn menubtn icon download">{{ "Export"|t('cookie-consent-flow') }}</button>
+                <div class="menu">
+                    <ul>
+                        <li>
+                            <a href="{{ cpUrl('cookie-consent-flow/logs/export', activeParams|merge({ format: 'csv' })) }}">
+                                {{ "Export CSV"|t('cookie-consent-flow') }}
+                            </a>
+                        </li>
+                        <li>
+                            <a href="{{ cpUrl('cookie-consent-flow/logs/export', activeParams|merge({ format: 'json' })) }}">
+                                {{ "Export JSON"|t('cookie-consent-flow') }}
+                            </a>
+                        </li>
+                    </ul>
+                    <hr>
+                    <p class="ccf-filter-export__note light">
+                        {{ "Exports exactly the records matching the filters above."|t('cookie-consent-flow') }}
+                    </p>
+                </div>
+            </div>
+        {% endif %}
     </form>
 </div>
-
-{% if canExport %}
-    <div class="flex" style="gap:8px;margin-bottom:16px;">
-        <a href="{{ cpUrl('cookie-consent-flow/logs/export', activeParams|merge({ format: 'csv' })) }}" class="btn icon download">
-            {{ "Export CSV"|t('cookie-consent-flow') }}
-        </a>
-        <a href="{{ cpUrl('cookie-consent-flow/logs/export', activeParams|merge({ format: 'json' })) }}" class="btn icon download">
-            {{ "Export JSON"|t('cookie-consent-flow') }}
-        </a>
-        <span class="light" style="align-self:center;">
-            {{ "Exports exactly the records matching the filters above."|t('cookie-consent-flow') }}
-        </span>
-    </div>
-{% endif %}
 
 {# Visible confirmation of the current scope — the closed <select> already
    shows the right label, but a persistent line here means the active
@@ -172,30 +185,6 @@
     {% endif %}
     <strong>{{ filterLabels[filter] ?? "All actions"|t('cookie-consent-flow') }}</strong>
 </p>
-
-<div class="ccf-stats-grid">
-    {% for card in statsCards %}
-        <div class="ccf-stat-card">
-            <div class="ccf-stat-title">
-                {{ card.label }}
-            </div>
-
-            <div class="ccf-stat-main">
-                {{ card.count }}
-            </div>
-
-            {% if not (card.isTotal ?? false) %}
-                <div class="ccf-stat-meta">
-                    {{ "{percent}% of matching records"|t('cookie-consent-flow', { percent: card.percent }) }}
-                </div>
-            {% else %}
-                <div class="ccf-stat-meta">
-                    {{ filters is empty ? "All consent submissions"|t('cookie-consent-flow') : "Matching consent submissions"|t('cookie-consent-flow') }}
-                </div>
-            {% endif %}
-        </div>
-    {% endfor %}
-</div>
 
 <section class="ccf-outcome-chart" aria-labelledby="ccf-outcome-chart-title">
     <div class="ccf-outcome-chart__heading">
@@ -218,7 +207,7 @@
                     <span class="ccf-outcome-chart__fill ccf-outcome-chart__fill--{{ card.color }}"
                           style="width:{{ card.percent }}%"></span>
                 </div>
-                <strong class="ccf-outcome-chart__value">{{ card.count }} <span>{{ card.percent }}%</span></strong>
+                <strong class="ccf-outcome-chart__value">{{ card.count }} | <span>{{ card.percent }}%</span></strong>
             </div>
             {% endif %}
         {% endfor %}
@@ -234,7 +223,7 @@
 {% else %}
 
 {# ── Records table ───────────────────────────────────────────────────── #}
-<div class="tableview tablepane ccf-table-wrapper">
+<div class="ccf-table-wrapper">
     <table class="data ccf-log-table">
         <thead>
             <tr>

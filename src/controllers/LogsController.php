@@ -68,8 +68,8 @@ class LogsController extends Controller
 
         [$records, $total] = $plugin->consent->getLogs($site?->id, $filters, $page, self::PAGE_SIZE);
 
-        // With filters active, the summary and chart describe the same result
-        // set as the table. Unfiltered counts use the cached aggregate.
+        // With filters active, the chart describes the same result set as the
+        // table. Unfiltered counts use the cached aggregate.
         $stats = $filters === []
             ? $plugin->statistics->getActionCounts($site?->id)
             : $plugin->consent->getStats($site?->id, $filters);

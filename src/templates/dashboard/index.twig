@@ -38,35 +38,6 @@
                     {% endfor %}
                 </div>
 
-                {% if overview.categories is not empty %}
-                    <h3>{{ "Acceptance by category"|t('cookie-consent-flow') }}</h3>
-                    <table class="data fullwidth cck-category-stats">
-                        <thead>
-                            <tr>
-                                <th scope="col">{{ "Category"|t('cookie-consent-flow') }}</th>
-                                <th scope="col">{{ "Accepted"|t('cookie-consent-flow') }}</th>
-                                <th scope="col">{{ "Rate"|t('cookie-consent-flow') }}</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            {% for key, stat in overview.categories %}
-                                <tr>
-                                    <th scope="row">{{ stat.label }}</th>
-                                    <td>{{ stat.count }}</td>
-                                    <td>
-                                        {# A meter, not a bare bar: it carries its
-                                           own accessible value, so the figure is
-                                           available without reading the pixels. #}
-                                        <meter min="0" max="100" value="{{ stat.percent }}"
-                                               title="{{ stat.percent }}%">{{ stat.percent }}%</meter>
-                                        <span>{{ stat.percent }}%</span>
-                                    </td>
-                                </tr>
-                            {% endfor %}
-                        </tbody>
-                    </table>
-                {% endif %}
-
                 <p>
                     <a href="{{ cpUrl('cookie-consent-flow/logs', { site: currentSite.handle }) }}" class="btn">
                         {{ "View consent records"|t('cookie-consent-flow') }}

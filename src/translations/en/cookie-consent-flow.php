@@ -119,6 +119,7 @@ return [
     'To' => 'To',
     'Filter' => 'Filter',
     'Clear' => 'Clear',
+    'Export' => 'Export',
     'Export CSV' => 'Export CSV',
     'Export JSON' => 'Export JSON',
     'No consent records found.' => 'No consent records found.',
