@@ -168,21 +168,18 @@ final class SchemaConsistencyTest extends TestCase
     }
 
     /**
-     * Build phase: Install.php is the only migration. Any incremental one
-     * added later must at least be a loadable Craft migration.
+     * Build phase: Install.php is the only migration, and the whole schema.
+     * An incremental migration may only appear together with the first
+     * published release (see CLAUDE.md), at which point this test changes.
      */
-    public function testInstallIsTheCanonicalMigration(): void
+    public function testInstallIsTheOnlyMigration(): void
     {
         self::assertTrue(is_subclass_of(Install::class, \craft\db\Migration::class));
         self::assertTrue(method_exists(Install::class, 'reconcile'), 'the idempotent schema entry point');
 
-        foreach (glob(dirname(__DIR__, 2) . '/src/migrations/m*_*.php') ?: [] as $file) {
-            $class = 'sfsinfotech\\craftcookieconsentflow\\migrations\\' . basename($file, '.php');
+        $files = array_map('basename', glob(dirname(__DIR__, 2) . '/src/migrations/*.php') ?: []);
 
-            self::assertTrue(class_exists($class), "{$class} must autoload");
-            self::assertTrue(is_subclass_of($class, \craft\db\Migration::class));
-            self::assertMatchesRegularExpression('/^m\d{6}_\d{6}_[a-z0-9_]+$/', basename($file, '.php'), 'Craft migration naming');
-        }
+        self::assertSame(['Install.php'], $files, 'no release-only migration during the build phase');
     }
 
     /** The retired Fixed / Sticky column is neither created nor read. */

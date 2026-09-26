@@ -45,9 +45,12 @@ class CookieDetectionController extends Controller
             return $this->asJson(['success' => false, 'error' => 'invalid_csrf'])->setStatusCode(400);
         }
 
-        // Far tighter than the consent endpoint: a browser reports its cookie
-        // names at most once a day per name, so any real client needs a
-        // handful of calls, not a stream of them.
+        // 10 requests per minute per client (see Throttle::check(): per
+        // visitor with a real trustedHosts, otherwise per claimed client
+        // within a cap of 10 × PEER_MULTIPLIER per socket address), each
+        // carrying at most 100 names. Far tighter than the consent endpoint,
+        // because the runtime reports each name at most once a day, so a
+        // real browser needs a handful of calls, not a stream of them.
         if (!Throttle::check('cookie-report', 10)) {
             return $this->asJson(['success' => false, 'error' => 'rate_limited'])->setStatusCode(429);
         }
@@ -75,8 +78,16 @@ class CookieDetectionController extends Controller
     }
 
     /**
-     * A reportable cookie name: an RFC 6265 `token` (letters, digits and
-     * ``!#$%&'+-.^_`|~``), 1–255 characters.
+     * A reportable cookie name: 1–255 characters from the RFC 6265 `token`
+     * set, minus `*`. Exactly these, and nothing else:
+     *
+     *     A–Z a–z 0–9 ! # $ % & ' + - . ^ _ ` | ~
+     *
+     * Refused: `*` (see below); the RFC's separators — `( ) < > @ , ; : \ " /
+     * [ ] ? = { }` — of which the backslash is one, so no real cookie name
+     * contains it; space, tab and every other control character, including
+     * DEL; and any non-ASCII byte. The `D` modifier stops `$` matching before
+     * a trailing newline. `CookieDetectionControllerTest` checks every byte.
      *
      * The previous pattern (`[\w.\-*]`) dropped legitimate names — Adobe's
      * `AMCV_…%40AdobeOrg`, anything with `|`, `~`, `!` — while accepting `*`.

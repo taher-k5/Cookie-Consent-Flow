@@ -370,7 +370,20 @@ class Settings extends Model
     {
         static $options = null;
 
-        return $options ??= Craft::$app->getAddresses()->getCountryList();
+        if ($options !== null) {
+            return $options;
+        }
+
+        $addresses = Craft::$app->getAddresses();
+
+        // getCountryList() (which also lets a project customise the list
+        // through EVENT_DEFINE_ADDRESS_COUNTRIES) arrived in Craft 5.5.0;
+        // this plugin supports ^5.0, and on 5.0–5.4 calling it was a fatal
+        // error on the Banner and Multisite pages. The repository it wraps
+        // exists in every Craft 5 release.
+        return $options = method_exists($addresses, 'getCountryList')
+            ? $addresses->getCountryList()
+            : $addresses->getCountryRepository()->getList(Craft::$app->language);
     }
 
     public static function getOverrideFieldGroups(): array
