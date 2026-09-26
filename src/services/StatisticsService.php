@@ -68,7 +68,7 @@ class StatisticsService extends Component
 
             return $stats + [
                 'categories' => $categories,
-                'trend'      => $plugin->consent->getDailyTrend($siteId, $trendDays),
+                'trend'      => $plugin->consent->getDailyTrend($siteId, $trendDays, $filters),
             ];
         });
     }

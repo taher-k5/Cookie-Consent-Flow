@@ -49,8 +49,12 @@ class CookiesController extends Controller
         $plugin = Plugin::getInstance();
         $raw    = Craft::$app->getRequest()->getBodyParam('cookies', []);
 
-        if (!$plugin->cookieDefinitions->saveAll($plugin->cookieSettings->getGlobalSettingsId(), $raw)) {
-            Craft::$app->getSession()->setError(Craft::t('cookie-consent-flow', "Couldn't save cookies."));
+        if (!is_array($raw) || !$plugin->cookieDefinitions->saveAll($plugin->cookieSettings->getGlobalSettingsId(), $raw)) {
+            $errors = is_array($raw) ? $plugin->cookieDefinitions->getValidationErrors() : [];
+
+            Craft::$app->getSession()->setError(trim(
+                Craft::t('cookie-consent-flow', "Couldn't save cookies.") . ' ' . implode(' ', $errors)
+            ));
 
             return $this->renderTemplate('cookie-consent-flow/cookies/index', $this->_templateVars());
         }
@@ -93,7 +97,7 @@ class CookiesController extends Controller
         return [
             'settings'     => $settings,
             'cookies'      => $plugin->cookieDefinitions->getAll($settingsId),
-            'undocumented' => $plugin->cookieDefinitions->getUndocumented(),
+            'undocumented' => $plugin->cookieDefinitions->getUndocumentedDetails(),
             // Disclosures left behind by a renamed or deleted category. They
             // are not shown to visitors, so an admin has to be told they exist
             // rather than discovering it from a gap in the preferences modal.

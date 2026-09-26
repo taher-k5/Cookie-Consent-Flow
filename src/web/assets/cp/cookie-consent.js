@@ -2,11 +2,14 @@
  * Cookie Consent Flow — Control Panel JavaScript.
  *
  * Handles:
- *  - Settings tab navigation
  *  - Show/hide corner-position field based on layout selection
- *  - Dynamic colour swatches next to colour inputs
- *  - Category row add / remove
- *  - Category index renumbering after remove
+ *  - Icon button groups standing in for layout selects
+ *  - Category row add / remove and index renumbering
+ *  - Navigation selects (site switchers), without inline handlers
+ *  - The Multisite, Cookies and Settings page interactions below
+ *
+ * Tabs are Craft's own (the pages pass `tabs` to the CP layout), so no tab
+ * handling lives here.
  */
 (function () {
   'use strict';
@@ -14,34 +17,25 @@
   document.addEventListener('DOMContentLoaded', function () {
 
     /* ------------------------------------------------------------------
-       Tab navigation (Craft CP tab links anchor to #tab-* divs)
+       Navigation selects — `<select data-cck-navigate>` whose option
+       values are URLs (the dashboard's and records page's site switchers).
+       These used inline `onchange="location.href=this.value"`, which a
+       strict Content-Security-Policy (no 'unsafe-inline') blocks outright,
+       leaving the switcher dead. One listener here replaces them.
     ------------------------------------------------------------------ */
-    var tabLinks  = document.querySelectorAll('#tabs a[href^="#tab-"]');
-    var tabPanels = document.querySelectorAll('#cck-settings > div[id^="tab-"]');
+    document.querySelectorAll('select[data-cck-navigate]').forEach(function (select) {
+      select.addEventListener('change', function () {
+        var url = select.value;
 
-    function showTab(targetId) {
-      tabPanels.forEach(function (panel) {
-        panel.classList.toggle('hidden', panel.id !== targetId.replace('#', ''));
-      });
-    }
-
-    tabLinks.forEach(function (link) {
-      link.addEventListener('click', function (e) {
-        e.preventDefault();
-        showTab(link.getAttribute('href'));
-        history.replaceState(null, '', link.getAttribute('href'));
-        tabLinks.forEach(function (l) { l.classList.remove('sel'); });
-        link.classList.add('sel');
+        // Only same-origin, http(s) targets: the options are server-rendered
+        // CP URLs, and nothing else should be reachable through this.
+        try {
+          var target = new URL(url, window.location.href);
+          if (target.origin !== window.location.origin) return;
+          window.location.href = target.href;
+        } catch (e) {}
       });
     });
-
-    // Activate tab from hash on load
-    if (window.location.hash && document.getElementById(window.location.hash.replace('#', ''))) {
-      var activeLink = document.querySelector('#tabs a[href="' + window.location.hash + '"]');
-      if (activeLink) activeLink.click();
-    } else if (tabLinks.length) {
-      tabLinks[0].classList.add('sel');
-    }
 
     /* ------------------------------------------------------------------
        Corner-position field visibility
@@ -84,41 +78,6 @@
         });
       });
     });
-
-    /* ------------------------------------------------------------------
-       Colour swatches — adds a small coloured square inside each
-       colour text-input so the admin can see the current value at a glance.
-    ------------------------------------------------------------------ */
-    function initColorSwatches() {
-      document.querySelectorAll('.cck-color-input').forEach(function (input) {
-        // Wrap in position:relative container if not already
-        var wrap = input.parentElement;
-        if (!wrap.classList.contains('cck-field-wrap')) {
-          var newWrap = document.createElement('div');
-          newWrap.className = 'cck-field-wrap';
-          input.parentNode.insertBefore(newWrap, input);
-          newWrap.appendChild(input);
-          wrap = newWrap;
-        }
-
-        var swatch = wrap.querySelector('.cck-color-swatch');
-        if (!swatch) {
-          swatch = document.createElement('span');
-          swatch.className = 'cck-color-swatch';
-          wrap.appendChild(swatch);
-        }
-
-        function update() {
-          swatch.style.background = input.value || 'transparent';
-        }
-
-        update();
-        input.addEventListener('input', update);
-        input.addEventListener('change', update);
-      });
-    }
-
-    initColorSwatches();
 
     /* ------------------------------------------------------------------
        Category rows — add / remove
@@ -165,7 +124,6 @@
           var newRow = tmp.firstElementChild;
           categoriesList.appendChild(newRow);
           bindRemove(newRow);
-          initColorSwatches();
           // Focus first input in new row
           var firstInput = newRow.querySelector('input[type="text"]');
           if (firstInput) firstInput.focus();

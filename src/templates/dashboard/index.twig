@@ -57,7 +57,7 @@
             <div class="field cck-preview-site-switcher">
                 <label for="cck-preview-site">{{ "Previewing site"|t('cookie-consent-flow') }}</label>
                 <div class="select">
-                    <select id="cck-preview-site" onchange="location.href=this.value">
+                    <select id="cck-preview-site" data-cck-navigate>
                         {% for site in allSites %}
                             <option
                                 value="{{ cpUrl('cookie-consent-flow', { site: site.handle }) }}"

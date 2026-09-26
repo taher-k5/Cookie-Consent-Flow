@@ -37,7 +37,20 @@ class DashboardController extends Controller
         $this->requireCpRequest();
 
         $plugin = Plugin::getInstance();
-        $site   = ConsentHelper::resolveSiteFromParam(Craft::$app->getRequest()->getParam('site'));
+        $param  = Craft::$app->getRequest()->getParam('site');
+        $site   = ConsentHelper::resolveSiteFromParam(is_string($param) || is_int($param) ? $param : null);
+
+        // Only a site this user may see; with none requested, their first.
+        $accessible = Permissions::accessibleSites();
+        if (!Permissions::canAccessSite((int) $site->id)) {
+            if ($param !== null && $param !== '') {
+                Permissions::requireSite((int) $site->id);
+            }
+            if ($accessible === []) {
+                throw new \yii\web\ForbiddenHttpException('User is not permitted to access any site.');
+            }
+            $site = $accessible[0];
+        }
 
         $settings = $plugin->cookieSettings->getEffectiveSettings($site->id);
 
@@ -53,11 +66,11 @@ class DashboardController extends Controller
             'plugin'      => $plugin,
             'settings'    => $settings,
             'currentSite' => $site,
-            'allSites'    => Craft::$app->getSites()->getAllSites(),
+            'allSites'    => $accessible,
             // Cached aggregate (see StatisticsService) rather than a fresh
             // scan — this page is reloaded constantly while an admin is
             // tuning the banner right next to it.
-            'overview'    => $plugin->statistics->getOverview($site->id),
+            'overview'    => $plugin->statistics->getActionCounts($site->id),
             'canViewLogs' => Permissions::canAny(Permissions::VIEW_LOGS),
         ]);
     }

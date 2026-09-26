@@ -64,7 +64,9 @@ class LogsController extends Controller
         $site    = $this->_resolveSite($request->getParam('site'));
         $filters = $this->_resolveFilters($request);
 
-        $page = max(1, (int) $request->getParam('page', 1));
+        // Bounded so an absurd page number cannot overflow the OFFSET into a
+        // float that the query builder silently drops (showing page 1).
+        $page = min(max(1, (int) $request->getParam('page', 1)), 1000000);
 
         [$records, $total] = $plugin->consent->getLogs($site?->id, $filters, $page, self::PAGE_SIZE);
 
@@ -88,7 +90,21 @@ class LogsController extends Controller
                 : round(($card['count'] / $totalRecords) * 100, 1);
         }
 
+        // Per-category acceptance and the daily trend, over exactly the set of
+        // records on screen (the same filters as the table and the chart).
+        $categoryLabels = [];
+        foreach ($plugin->cookieSettings->getEffectiveSettings($site?->id)->categories as $category) {
+            $categoryLabels[$category['key']] = $category['label'] ?? $category['key'];
+        }
+
+        $categoryStats = [];
+        foreach ($plugin->consent->getCategoryStats($site?->id, array_keys($categoryLabels), $filters) as $key => $data) {
+            $categoryStats[] = $data + ['key' => $key, 'label' => $categoryLabels[$key]];
+        }
+
         return $this->renderTemplate('cookie-consent-flow/logs/index', [
+            'categoryStats' => $categoryStats,
+            'trend'         => $plugin->consent->getDailyTrend($site?->id, 30, $filters),
             'plugin'      => $plugin,
             'records'     => $records,
             'total'       => $total,
@@ -97,7 +113,7 @@ class LogsController extends Controller
             'perPage'     => self::PAGE_SIZE,
             'statsCards'  => $statsCards,
             'currentSite' => $site,
-            'allSites'    => Craft::$app->getSites()->getAllSites(),
+            'allSites'    => Permissions::accessibleSites(),
             'filters'     => $filters,
             // Retained for templates/links written against the old variable name.
             'filter'      => $filters['action'] ?? '',
@@ -118,9 +134,41 @@ class LogsController extends Controller
             throw new NotFoundHttpException('Consent record not found.');
         }
 
+        // The record's site must be one this user may see. A record of a
+        // deleted site has no site permission to check, so it is visible to
+        // admins only.
+        if (Craft::$app->getSites()->getSiteById((int) $record->siteId, true) === null) {
+            if (!(Craft::$app->getUser()->getIdentity()?->admin ?? false)) {
+                throw new \yii\web\ForbiddenHttpException('User is not permitted to access this record.');
+            }
+        } else {
+            Permissions::requireSite((int) $record->siteId);
+        }
+
+        // "Back" returns to the list the admin came from — same site, same
+        // filters, same page — rather than to an unfiltered first page.
+        $request    = Craft::$app->getRequest();
+        $backParams = [];
+
+        foreach (['site', 'filter', 'source', 'category', 'policyVersion', 'country', 'from', 'to', 'page'] as $key) {
+            $value = $request->getQueryParam($key);
+
+            if (is_string($value) && $value !== '') {
+                $backParams[$key] = $value;
+            }
+        }
+
+        $settings   = Plugin::getInstance()->cookieSettings->getEffectiveSettings((int) $record->siteId);
+        $labels     = [];
+        foreach ($settings->categories as $category) {
+            $labels[$category['key']] = $category['label'] ?? $category['key'];
+        }
+
         return $this->renderTemplate('cookie-consent-flow/logs/view', [
-            'plugin' => Plugin::getInstance(),
-            'record' => $record,
+            'plugin'         => Plugin::getInstance(),
+            'record'         => $record,
+            'backUrl'        => \craft\helpers\UrlHelper::cpUrl('cookie-consent-flow/logs', $backParams),
+            'categoryLabels' => $labels,
         ]);
     }
 
@@ -128,8 +176,9 @@ class LogsController extends Controller
      * Downloads the filtered consent records as CSV or JSON.
      *
      * Uses exactly the same filters as the page it was launched from (see
-     * ConsentService::buildQuery()), streamed in batches so the response size
-     * doesn't dictate memory use.
+     * ConsentService::buildQuery()). Rows are read in unbuffered batches and
+     * capped at EXPORT_LIMIT in SQL, so memory is bounded by the export limit
+     * rather than by the size of the table.
      */
     public function actionExport(): Response
     {
@@ -159,20 +208,26 @@ class LogsController extends Controller
     /**
      * Materialises the export rows.
      *
-     * The category filter is re-applied here as an exact membership test: the
-     * SQL side can only approximate it with a LIKE against the JSON column
-     * (see ConsentService::buildQuery()), which narrows the scan but would
-     * wrongly include a key that is a substring of another. The export must be
-     * exactly what it claims to be, so the definitive check happens in PHP.
+     * The SQL category condition is already exact (the quoted key, compared
+     * case-sensitively on both drivers — ConsentService::categoryCondition());
+     * membership is checked again on the decoded array as a defence against
+     * a malformed stored value, since an export must be exactly what it
+     * claims to be.
      *
      * @param  array<string, mixed> $filters
      * @return array<int, array<string, mixed>>
      */
     private function _collectRows(?int $siteId, array $filters): array
     {
+        // Capped in SQL, one past the limit so truncation can still be
+        // reported, and read through Craft's unbuffered batch helper: Yii's
+        // own batch() on MySQL buffers the whole result set client-side
+        // before handing over the first batch, so a large table ran the
+        // request out of memory before a single row was exported.
         $query = Plugin::getInstance()->consent
             ->buildQuery($siteId, $filters)
-            ->orderBy(['dateCreated' => SORT_DESC])
+            ->orderBy(['dateCreated' => SORT_DESC, 'id' => SORT_DESC])
+            ->limit(self::EXPORT_LIMIT + 1)
             ->asArray();
 
         $siteNames = [];
@@ -183,7 +238,7 @@ class LogsController extends Controller
         $category = $filters['category'] ?? null;
         $rows     = [];
 
-        foreach ($query->batch(500) as $batch) {
+        foreach (\craft\helpers\Db::batch($query, 500) as $batch) {
             foreach ($batch as $record) {
                 $categories = Json::decodeIfJson($record['categories']);
                 $categories = is_array($categories) ? $categories : [];
@@ -219,10 +274,10 @@ class LogsController extends Controller
     /**
      * The exported columns.
      *
-     * `ipHash` and `userAgent` are deliberately excluded. The hash is salted
-     * per record and so proves nothing and correlates nothing — exporting it
-     * would move opaque data around for no benefit — and the user-agent string
-     * is the most identifying field in the table. Neither is needed to
+     * `ipHash` and `userAgent` are deliberately excluded. The hash is a keyed
+     * pseudonym of the visitor's network, useful only for matching inside
+     * this install, and the user-agent string is the most identifying field
+     * in the table. Neither is needed to
      * evidence that a given visitor consented to a given set of categories at
      * a given time, which is what an export is for.
      *
@@ -364,11 +419,25 @@ class LogsController extends Controller
      * "All Sites" (null) — the page's default. A concrete value is resolved
      * to a real site, falling back to the primary site for a stale link.
      */
+    /**
+     * The site the records view is scoped to, or null for "all sites" — which
+     * means all the sites this user may see (see _resolveFilters()). A named
+     * site the user may not see is a 403, not a silent fallback.
+     */
     private function _resolveSite(mixed $param): ?\craft\models\Site
     {
-        return ($param !== null && $param !== '' && $param !== 'all')
-            ? ConsentHelper::resolveSiteFromParam($param)
-            : null;
+        if (!is_string($param) && !is_int($param)) {
+            return null;
+        }
+
+        if ($param === '' || $param === 'all') {
+            return null;
+        }
+
+        $site = ConsentHelper::resolveSiteFromParam($param);
+        Permissions::requireSite((int) $site->id);
+
+        return $site;
     }
 
     /**
@@ -385,26 +454,38 @@ class LogsController extends Controller
     {
         $filters = [];
 
-        $action = (string) $request->getParam('filter', '');
+        $str    = static fn(mixed $v): string => is_string($v) ? $v : '';
+        $action = $str($request->getParam('filter', ''));
         if (in_array($action, ConsentService::ACTIONS, true)) {
             $filters['action'] = $action;
         }
 
-        $source = (string) $request->getParam('source', '');
+        $source = $str($request->getParam('source', ''));
         if (in_array($source, ConsentService::SOURCES, true)) {
             $filters['source'] = $source;
         }
 
         foreach (['policyVersion', 'category', 'from', 'to'] as $key) {
-            $value = trim((string) $request->getParam($key, ''));
+            $value = trim($str($request->getParam($key, '')));
             if ($value !== '') {
                 $filters[$key] = $value;
             }
         }
 
-        $country = strtoupper(trim((string) $request->getParam('country', '')));
-        if (preg_match('/^[A-Z]{2}$/', $country)) {
+        $country = $request->getParam('country', '');
+        $country = is_string($country) ? strtoupper(trim($country)) : '';
+        if (preg_match('/^[A-Z]{2}$/D', $country)) {
             $filters['countryCode'] = $country;
+        }
+
+        // "All sites" for a non-admin on a multisite install means the sites
+        // they may see — which also leaves out records of deleted sites,
+        // whose access no site permission can grant.
+        $site = $request->getParam('site');
+        if (($site === null || $site === '' || $site === 'all')
+            && count(Craft::$app->getSites()->getAllSites()) > 1
+            && !(Craft::$app->getUser()->getIdentity()?->admin ?? false)) {
+            $filters['siteIds'] = Permissions::accessibleSiteIds();
         }
 
         return $filters;

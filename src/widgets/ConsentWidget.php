@@ -49,6 +49,11 @@ class ConsentWidget extends Widget
         // explicitly rather than relying on a default.
         $siteId = Craft::$app->getSites()->getCurrentSite()->id;
 
+        // The CP's current site is not necessarily one this user may see.
+        if (!Permissions::canAccessSite((int) $siteId)) {
+            return null;
+        }
+
         // Via the cached statistics layer: a dashboard widget renders on every
         // CP home-page load, which is the worst possible place to put an
         // uncached aggregate over a growing table.

@@ -47,9 +47,18 @@
             {{ "These cookie names were actually seen in a visitor's browser (names only — never values) but aren't documented below yet. \"Document\" adds a row pre-filled with the name; \"Dismiss\" hides it here if it doesn't need visitor-facing disclosure (e.g. a first-party technical cookie)."|t('cookie-consent-flow') }}
         </p>
         <ul class="cck-detected-list" id="cck-detected-list">
-            {% for name in undocumented %}
+            {% for detected in undocumented %}
+                {% set name = detected.name %}
                 <li class="cck-detected-list__item" data-name="{{ name|e('html_attr') }}">
                     <code class="cck-detected-list__name">{{ name }}</code>
+                    {% if detected.lastSeen %}
+                        {# Stored in UTC; shown in the admin's timezone. #}
+                        <span class="light cck-detected-list__seen">
+                            {{ "Last seen {date}"|t('cookie-consent-flow', {
+                                date: date(detected.lastSeen ~ ' UTC')|datetime('short')
+                            }) }}
+                        </span>
+                    {% endif %}
                     <div class="cck-detected-list__actions">
                         <button type="button" class="btn small cck-document-detected" data-name="{{ name|e('html_attr') }}">
                             {{ "Document"|t('cookie-consent-flow') }}
@@ -83,7 +92,9 @@
         {{ "Pre-filled entries for common third-party cookies (Google Analytics, Meta Pixel, etc.) — verify duration/purpose against the provider's current docs before relying on it."|t('cookie-consent-flow') }}
     </p>
 </div>
-<script type="application/json" id="cck-library-data">{{ library|json_encode|raw }}</script>
+{# Encoded like every other inline JSON block (see ConsentHelper::jsonForHtml()):
+   no value can end the element or open a comment. #}
+<script type="application/json" id="cck-library-data">{{ library|json_encode(constant('JSON_HEX_TAG') b-or constant('JSON_HEX_AMP') b-or constant('JSON_HEX_APOS') b-or constant('JSON_HEX_QUOT'))|raw }}</script>
 
 <div class="cck-cookies-group">
     <div class="cck-cookies-list">

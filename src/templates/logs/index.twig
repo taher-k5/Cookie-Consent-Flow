@@ -57,7 +57,7 @@
             <div class="ccf-filter-field ccf-filter-field--site">
                 <label for="ccf-filter-site">{{ "Site"|t('cookie-consent-flow') }}</label>
                 <div class="select">
-                    <select id="ccf-filter-site" onchange="location.href=this.value">
+                    <select id="ccf-filter-site" data-cck-navigate>
                         <option
                             value="{{ cpUrl('cookie-consent-flow/logs', activeParams|merge({ site: 'all' })) }}"
                             {% if currentSite is null %}selected{% endif %}
@@ -214,6 +214,63 @@
     </div>
 </section>
 
+{% if statsCards[3].count > 0 %}
+<section class="ccf-outcome-chart" aria-labelledby="ccf-category-chart-title">
+    <div class="ccf-outcome-chart__heading">
+        <div>
+            <h2 id="ccf-category-chart-title">{{ "Acceptance by category"|t('cookie-consent-flow') }}</h2>
+            <p class="light">{{ "Share of the records in the current view that include each category."|t('cookie-consent-flow') }}</p>
+        </div>
+    </div>
+
+    <div class="ccf-outcome-chart__bars">
+        {% for stat in categoryStats %}
+            <div class="ccf-outcome-chart__row">
+                <span class="ccf-outcome-chart__label">{{ stat.label }}</span>
+                <div class="ccf-outcome-chart__track" role="img"
+                     aria-label="{{ '{label}: {count} records, {percent}%'|t('cookie-consent-flow', {
+                         label: stat.label, count: stat.count, percent: stat.percent
+                     }) }}">
+                    <span class="ccf-outcome-chart__fill ccf-outcome-chart__fill--blue"
+                          style="width:{{ stat.percent }}%"></span>
+                </div>
+                <strong class="ccf-outcome-chart__value">{{ stat.count }} | <span>{{ stat.percent }}%</span></strong>
+            </div>
+        {% endfor %}
+    </div>
+</section>
+
+<section class="ccf-outcome-chart" aria-labelledby="ccf-trend-title">
+    <div class="ccf-outcome-chart__heading">
+        <div>
+            <h2 id="ccf-trend-title">{{ "Daily records (last 30 days)"|t('cookie-consent-flow') }}</h2>
+            <p class="light">{{ "Days with at least one record in the current view, in UTC."|t('cookie-consent-flow') }}</p>
+        </div>
+    </div>
+
+    {% if trend is empty %}
+        <p class="light">{{ "No records in the last 30 days."|t('cookie-consent-flow') }}</p>
+    {% else %}
+        <table class="data ccf-trend-table">
+            <thead>
+                <tr>
+                    <th scope="col">{{ "Date"|t('cookie-consent-flow') }}</th>
+                    <th scope="col">{{ "Records"|t('cookie-consent-flow') }}</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for day in trend %}
+                    <tr>
+                        <th scope="row">{{ day.date }}</th>
+                        <td>{{ day.count }}</td>
+                    </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    {% endif %}
+</section>
+{% endif %}
+
 {# ── Empty state ─────────────────────────────────────────────────────── #}
 {% if records is empty %}
     <div class="zilch">
@@ -295,7 +352,7 @@
                     </td>
 
                     <td>
-                        <a href="{{ cpUrl('cookie-consent-flow/logs/view/' ~ record.id) }}" class="btn small">
+                        <a href="{{ cpUrl('cookie-consent-flow/logs/view/' ~ record.id, activeParams|merge({ page: page })) }}" class="btn small">
                             {{ "View"|t('cookie-consent-flow') }}
                         </a>
                     </td>
