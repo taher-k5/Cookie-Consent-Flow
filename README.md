@@ -266,9 +266,9 @@ With consent logging on (the default), each decision is stored with:
 Raw IP addresses and cookie values are never stored. Exports leave out the IP
 hash and the user agent.
 
-**Consent Records** shows outcome totals, acceptance rates for each category
-and a daily trend, and can filter by site, outcome, source, category, country,
-policy version and date range. You can export the filtered records as CSV or
+**Consent Records** shows outcome totals and acceptance rates for each
+category, and can filter by site, outcome, source, category, country, policy
+version and date range. You can export the filtered records as CSV or
 JSON, up to 100,000 records per export.
 
 Set a retention period (365 days by default, and `0` keeps records forever)

@@ -355,10 +355,6 @@ return [
     'No trusted country source is configured, so every visitor’s country is unknown and the banner is shown to everyone. Set {key} in {file} to the header your CDN or proxy writes the country into (for example CF-IPCountry on Cloudflare), and only a header that proxy always overwrites.' => 'No trusted country source is configured, so every visitor’s country is unknown and the banner is shown to everyone. Set {key} in {file} to the header your CDN or proxy writes the country into (for example CF-IPCountry on Cloudflare), and only a header that proxy always overwrites.',
 
     'Acceptance by category' => 'Acceptance by category',
-    'Daily records (last 30 days)' => 'Daily records (last 30 days)',
-    'Days with at least one record in the current view, in UTC.' => 'Days with at least one record in the current view, in UTC.',
-    'No records in the last 30 days.' => 'No records in the last 30 days.',
-    'Records' => 'Records',
     'Share of the records in the current view that include each category.' => 'Share of the records in the current view that include each category.',
     'Use an http(s) or mailto URL, or a relative path.' => 'Use an http(s) or mailto URL, or a relative path.',
     'Use letters, numbers, dots, dashes, underscores and colons only.' => 'Use letters, numbers, dots, dashes, underscores and colons only.',

@@ -239,36 +239,6 @@
         {% endfor %}
     </div>
 </section>
-
-<section class="ccf-outcome-chart" aria-labelledby="ccf-trend-title">
-    <div class="ccf-outcome-chart__heading">
-        <div>
-            <h2 id="ccf-trend-title">{{ "Daily records (last 30 days)"|t('cookie-consent-flow') }}</h2>
-            <p class="light">{{ "Days with at least one record in the current view, in UTC."|t('cookie-consent-flow') }}</p>
-        </div>
-    </div>
-
-    {% if trend is empty %}
-        <p class="light">{{ "No records in the last 30 days."|t('cookie-consent-flow') }}</p>
-    {% else %}
-        <table class="data ccf-trend-table">
-            <thead>
-                <tr>
-                    <th scope="col">{{ "Date"|t('cookie-consent-flow') }}</th>
-                    <th scope="col">{{ "Records"|t('cookie-consent-flow') }}</th>
-                </tr>
-            </thead>
-            <tbody>
-                {% for day in trend %}
-                    <tr>
-                        <th scope="row">{{ day.date }}</th>
-                        <td>{{ day.count }}</td>
-                    </tr>
-                {% endfor %}
-            </tbody>
-        </table>
-    {% endif %}
-</section>
 {% endif %}
 
 {# ── Empty state ─────────────────────────────────────────────────────── #}

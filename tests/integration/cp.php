@@ -378,12 +378,12 @@ $check('final: a script: privacy URL is refused on save, naming the field', func
     expect(reload()->privacyPolicyUrl !== 'javascript:1/alert(document.cookie)', 'stored');
 });
 
-$check('final: Consent Records shows acceptance by category and the daily trend', function () use ($admin) {
+$check('final: Consent Records shows acceptance by category, and no daily trend', function () use ($admin) {
     sfsinfotech\craftcookieconsentflow\Plugin::getInstance()->consent->saveConsent('custom', ['necessary', 'analytics']);
     $html = page($admin, 'cookie-consent-flow/logs&site=all');
 
     expect(str_contains($html, 'Acceptance by category'), 'category rates missing');
-    expect(str_contains($html, 'Daily records (last 30 days)') && str_contains($html, 'ccf-trend-table'), 'daily trend missing');
+    expect(!str_contains($html, 'Daily records') && !str_contains($html, 'ccf-trend-table'), 'daily trend still shown');
 });
 
 // ---------------------------------------------------------------------------

@@ -90,8 +90,8 @@ class LogsController extends Controller
                 : round(($card['count'] / $totalRecords) * 100, 1);
         }
 
-        // Per-category acceptance and the daily trend, over exactly the set of
-        // records on screen (the same filters as the table and the chart).
+        // Per-category acceptance, over exactly the set of records on screen
+        // (the same filters as the table and the chart).
         $categoryLabels = [];
         foreach ($plugin->cookieSettings->getEffectiveSettings($site?->id)->categories as $category) {
             $categoryLabels[$category['key']] = $category['label'] ?? $category['key'];
@@ -104,7 +104,6 @@ class LogsController extends Controller
 
         return $this->renderTemplate('cookie-consent-flow/logs/index', [
             'categoryStats' => $categoryStats,
-            'trend'         => $plugin->consent->getDailyTrend($site?->id, 30, $filters),
             'plugin'      => $plugin,
             'records'     => $records,
             'total'       => $total,
