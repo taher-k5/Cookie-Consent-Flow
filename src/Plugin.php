@@ -8,14 +8,19 @@ use craft\events\RegisterTemplateRootsEvent;
 use craft\events\RegisterUrlRulesEvent;
 use craft\events\RegisterComponentTypesEvent;
 use craft\events\RegisterUserPermissionsEvent;
+use craft\events\DeleteSiteEvent;
 use craft\services\Dashboard;
+use craft\services\Gc;
+use craft\services\Sites;
 use craft\services\UserPermissions;
 use craft\web\twig\variables\CraftVariable;
 use craft\web\UrlManager;
 use craft\web\View;
 use sfsinfotech\craftcookieconsentflow\events\BeforeBannerRenderEvent;
 use sfsinfotech\craftcookieconsentflow\models\Settings;
+use sfsinfotech\craftcookieconsentflow\helpers\ConsentHelper;
 use sfsinfotech\craftcookieconsentflow\helpers\Permissions;
+use sfsinfotech\craftcookieconsentflow\helpers\PluginConfig;
 use sfsinfotech\craftcookieconsentflow\services\ConsentModeService;
 use sfsinfotech\craftcookieconsentflow\services\ConsentService;
 use sfsinfotech\craftcookieconsentflow\services\StatisticsService;
@@ -49,11 +54,20 @@ class Plugin extends BasePlugin
 
     /**
      * Craft compares this against the version stored at install time to decide
-     * whether migrations are pending. It starts at 1.0.0 with the first
-     * release: `Install.php` is the whole schema history, so there is nothing
-     * earlier to number. Bump it with every schema change from now on.
+     * whether migrations are pending, and refuses to apply project config
+     * whose recorded plugin schema differs from it.
+     *
+     * It must never go down. Development builds of this plugin were installed
+     * at 1.6.0 (the `main` branch) and 1.7.0, and a version below what a
+     * project config records makes Craft refuse `project-config/apply`. 1.8.0
+     * is above every version that was ever installed.
+     *
+     * During the build phase the schema lives entirely in `Install.php`, with
+     * no incremental migrations: a development install picks up schema
+     * changes by reinstalling the plugin. From the first published release,
+     * every schema change bumps this and ships its own migration.
      */
-    public string $schemaVersion = '1.0.0';
+    public string $schemaVersion = '1.8.0';
     public bool $hasCpSettings   = true;
     public bool $hasCpSection     = true;
 
@@ -77,12 +91,13 @@ class Plugin extends BasePlugin
             ? 'sfsinfotech\\craftcookieconsentflow\\console\\controllers'
             : 'sfsinfotech\\craftcookieconsentflow\\controllers';
 
-        $this->_registerServices();
         $this->_registerTemplateRoots();
         $this->_registerCpRoutes();
         $this->_registerVariable();
         $this->_registerWidget();
         $this->_registerPermissions();
+        $this->_registerSiteCleanup();
+        $this->_registerGarbageCollection();
 
         $request = Craft::$app->getRequest();
 
@@ -138,6 +153,16 @@ class Plugin extends BasePlugin
     }
 
     // CP Nav
+
+    /**
+     * The plugin's CP navigation, limited to what the current user can open.
+     *
+     * Every item used to be listed for everyone with control-panel access,
+     * and the controllers' 403 was the only thing standing between a user and
+     * a page they had no permission for. Each item now carries the same
+     * permission its controller enforces, and a user holding none of them
+     * does not see the section at all.
+     */
     public function getCpNavItem(): ?array
     {
         $item = parent::getCpNavItem();
@@ -145,55 +170,101 @@ class Plugin extends BasePlugin
         $item['label'] = Craft::t('cookie-consent-flow', 'Cookie Consent');
         $item['icon']  = '@sfsinfotech/craftcookieconsentflow/icon-mask.svg';
 
-        $item['subnav'] = [
-            'dashboard' => [
-                'label' => Craft::t('cookie-consent-flow', 'Dashboard'),
-                'url'   => 'cookie-consent-flow',
-            ],
-            'banner' => [
-                'label' => Craft::t('cookie-consent-flow', 'Banner'),
-                'url'   => 'cookie-consent-flow/banner',
-            ],
-            'cookies' => [
-                'label' => Craft::t('cookie-consent-flow', 'Cookies'),
-                'url'   => 'cookie-consent-flow/cookies',
-            ],
-            'logs' => [
-                'label' => Craft::t('cookie-consent-flow', 'Consent Records'),
-                'url'   => 'cookie-consent-flow/logs',
-            ],
-        ];
+        $subnav = self::subnavFor(
+            Permissions::canAny(Permissions::MANAGE_SETTINGS),
+            Permissions::canAny(Permissions::VIEW_LOGS),
+            count(Craft::$app->getSites()->getAllSites()) > 1
+        );
 
-        // Only surface the Multi Site Override page on genuinely multi-site
-        // installs, to keep the nav uncluttered for the common single-site case.
-        // Added before 'settings' below (rather than appended after it) so it
-        // sits just to the left of Settings in the tab order.
-        if (count(Craft::$app->getSites()->getAllSites()) > 1) {
-            $item['subnav']['multi-site-override'] = [
-                'label' => Craft::t('cookie-consent-flow', 'Multisite'),
-                'url'   => 'cookie-consent-flow/settings/multi-site-override',
-            ];
+        if ($subnav === []) {
+            return null;
         }
 
-        $item['subnav']['settings'] = [
-            'label' => Craft::t('cookie-consent-flow', 'Settings'),
-            'url'   => 'cookie-consent-flow/settings',
-        ];
+        $item['subnav'] = $subnav;
+
+        // The section's own link goes to the first page this user can open —
+        // the dashboard for anyone who can see it.
+        $item['url'] = reset($subnav)['url'];
 
         return $item;
     }
 
-    // Private helpers
-    private function _registerServices(): void
+    /**
+     * The subnav a user with these permissions can use, in display order.
+     * Pure, so the permission rules can be verified without a user session.
+     *
+     * - Dashboard: either permission (it shows configuration and statistics).
+     * - Banner, Cookies, Multisite, Settings: manage configuration.
+     * - Consent Records: view records.
+     *
+     * @return array<string, array{label: string, url: string}>
+     */
+    public static function subnavFor(bool $canManage, bool $canViewLogs, bool $multiSite): array
     {
-        $this->setComponents([
-            'consent'           => ConsentService::class,
-            'consentMode'       => ConsentModeService::class,
-            'geo'               => GeoService::class,
-            'cookieSettings'    => SettingsService::class,
-            'cookieDefinitions' => CookieDefinitionService::class,
-            'statistics'        => StatisticsService::class,
-        ]);
+        $t = static fn(string $message): string => Craft::t('cookie-consent-flow', $message);
+
+        $items = [];
+
+        if ($canManage || $canViewLogs) {
+            $items['dashboard'] = ['label' => $t('Dashboard'), 'url' => 'cookie-consent-flow'];
+        }
+
+        if ($canManage) {
+            $items['banner']  = ['label' => $t('Banner'), 'url' => 'cookie-consent-flow/banner'];
+            $items['cookies'] = ['label' => $t('Cookies'), 'url' => 'cookie-consent-flow/cookies'];
+        }
+
+        if ($canViewLogs) {
+            $items['logs'] = ['label' => $t('Consent Records'), 'url' => 'cookie-consent-flow/logs'];
+        }
+
+        // Only on genuinely multi-site installs, to keep the nav uncluttered
+        // for the common single-site case, and just to the left of Settings.
+        if ($canManage && $multiSite) {
+            $items['multi-site-override'] = [
+                'label' => $t('Multisite'),
+                'url'   => 'cookie-consent-flow/settings/multi-site-override',
+            ];
+        }
+
+        if ($canManage) {
+            $items['settings'] = ['label' => $t('Settings'), 'url' => 'cookie-consent-flow/settings'];
+        }
+
+        return $items;
+    }
+
+    // Private helpers
+    /**
+     * The plugin's components, declared where Craft merges configuration.
+     *
+     * Craft builds the plugin from this array merged with the project's
+     * `pluginConfigs['cookie-consent-flow']`, so a site can reconfigure a
+     * component — most usefully the geo providers:
+     *
+     * ```php
+     * // config/app.php
+     * 'components' => ['plugins' => ['pluginConfigs' => ['cookie-consent-flow' => [
+     *     'components' => ['geo' => ['providers' => [MyGeoProvider::class]]],
+     * ]]]],
+     * ```
+     *
+     * They used to be registered with setComponents() in init(), which runs
+     * after that merge and replaced every override with the defaults — so
+     * the documented way to add a geo provider silently did nothing.
+     */
+    public static function config(): array
+    {
+        return [
+            'components' => [
+                'consent'           => ['class' => ConsentService::class],
+                'consentMode'       => ['class' => ConsentModeService::class],
+                'geo'               => ['class' => GeoService::class],
+                'cookieSettings'    => ['class' => SettingsService::class],
+                'cookieDefinitions' => ['class' => CookieDefinitionService::class],
+                'statistics'        => ['class' => StatisticsService::class],
+            ],
+        ];
     }
 
     private function _registerTemplateRoots(): void
@@ -285,6 +356,73 @@ class Plugin extends BasePlugin
         );
     }
 
+    /**
+     * Removes a deleted site's configuration and detected-cookie inventory.
+     *
+     * Settings rows, their categories and cookie disclosures (by cascade), and
+     * detected cookie names all belong to one site and mean nothing once it
+     * is gone; left behind they were orphans nobody could see or remove.
+     *
+     * Consent **records** for the site are deliberately kept. They are
+     * evidence of what visitors agreed to while the site existed, which is
+     * exactly when that evidence may still be asked for; they remain visible
+     * under Consent Records (labelled as a deleted site), exportable, and are
+     * removed by retention like any other record.
+     */
+    private function _registerSiteCleanup(): void
+    {
+        Event::on(
+            Sites::class,
+            Sites::EVENT_AFTER_DELETE_SITE,
+            function (DeleteSiteEvent $event): void {
+                $siteId = (int) $event->site->id;
+
+                try {
+                    $this->cookieSettings->deleteSiteData($siteId);
+                } catch (\Throwable $e) {
+                    Craft::error(
+                        "Cookie Consent Flow could not remove data for deleted site #{$siteId}: " . $e->getMessage(),
+                        __METHOD__
+                    );
+                }
+            }
+        );
+    }
+
+    /**
+     * Purges consent records past retention during Craft's garbage
+     * collection, when `automaticRetention` is enabled in
+     * `config/cookie-consent-flow.php`.
+     *
+     * Opt-in because it deletes evidence: an install that has only ever run
+     * the retention command by hand keeps exactly that behaviour until
+     * someone decides otherwise. When enabled it runs wherever Craft's GC
+     * runs — `php craft gc`, and probabilistically on web requests — in
+     * batches, so it never holds one long lock on a large table.
+     */
+    private function _registerGarbageCollection(): void
+    {
+        Event::on(
+            Gc::class,
+            Gc::EVENT_RUN,
+            function (): void {
+                if (!PluginConfig::automaticRetention()) {
+                    return;
+                }
+
+                try {
+                    $deleted = $this->consent->purgeOldLogs();
+
+                    if ($deleted > 0) {
+                        Craft::info("Cookie Consent Flow retention removed {$deleted} consent record(s).", __METHOD__);
+                    }
+                } catch (\Throwable $e) {
+                    Craft::error('Cookie Consent Flow automatic retention failed: ' . $e->getMessage(), __METHOD__);
+                }
+            }
+        );
+    }
+
     private function _registerCpAsset(): void
     {
         $view = Craft::$app->getView();
@@ -308,7 +446,7 @@ class Plugin extends BasePlugin
             View::EVENT_BEFORE_RENDER_PAGE_TEMPLATE,
             function () use ($view): void {
                 $view->registerJs(
-                    'window.cckStrings = ' . \craft\helpers\Json::encode($this->_cpStrings()) . ';',
+                    'window.cckStrings = ' . ConsentHelper::jsonForHtml($this->_cpStrings()) . ';',
                     View::POS_HEAD
                 );
             }
@@ -374,14 +512,11 @@ class Plugin extends BasePlugin
                 /** @var \yii\web\Response $response */
                 $response = Craft::$app->getResponse();
 
-                if (!$response->getIsOk()) {
+                if (!self::isInjectableResponse($response)) {
                     return;
                 }
 
                 $content = $response->content;
-                if (!is_string($content) || self::findBodyClose($content) === null) {
-                    return;
-                }
 
                 try {
                     $settings = $this->cookieSettings->getEffectiveSettings();
@@ -405,6 +540,52 @@ class Plugin extends BasePlugin
                 $response->content = $content;
             }
         );
+    }
+
+    /**
+     * Whether a prepared response is an HTML page the banner may be spliced
+     * into.
+     *
+     * The hook used to check only for a successful status and a `</body>`
+     * string, so a JSON response (Element API, GraphQL, a controller's
+     * `asJson()`), an RSS or XML template, or any other text response that
+     * happened to contain rich-text HTML had the banner, its stylesheet and
+     * scripts written into the middle of it — corrupting the payload for
+     * every consumer. Now every one of these must hold:
+     *
+     * - the status is 200 (redirects, errors and 204s carry no page);
+     * - the body is a non-empty string, not a stream or file download;
+     * - the `Content-Type` is HTML (`text/html` or `application/xhtml+xml`),
+     *   or, when no type has been set, the response format is HTML;
+     * - the document has a closing body tag to insert before.
+     */
+    public static function isInjectableResponse(\yii\web\Response $response): bool
+    {
+        if ($response->getStatusCode() !== 200) {
+            return false;
+        }
+
+        if ($response->stream !== null) {
+            return false;
+        }
+
+        $content = $response->content;
+
+        if (!is_string($content) || $content === '') {
+            return false;
+        }
+
+        $contentType = strtolower(trim(explode(';', (string) $response->getHeaders()->get('content-type', ''))[0]));
+
+        if ($contentType !== '') {
+            if (!in_array($contentType, ['text/html', 'application/xhtml+xml'], true)) {
+                return false;
+            }
+        } elseif (!in_array($response->format, [\yii\web\Response::FORMAT_HTML, 'template'], true)) {
+            return false;
+        }
+
+        return self::findBodyClose($content) !== null;
     }
 
     /**
@@ -450,10 +631,24 @@ class Plugin extends BasePlugin
             return $content;
         }
 
-        if (preg_match('/<head\b[^>]*>/i', $content, $match, PREG_OFFSET_CAPTURE)) {
-            $at = $match[0][1] + strlen($match[0][0]);
+        return self::insertIntoHead($content, $snippet);
+    }
 
-            return substr_replace($content, "\n" . $snippet, $at, 0);
+    /**
+     * Inserts markup as early in the document as is valid: right after
+     * `<head …>`, else after `<html …>`, else after the doctype. It used to be
+     * prepended to the whole document when there was no `<head>` tag (which
+     * HTML5 allows), putting a script before `<!DOCTYPE html>` — which sends
+     * the browser into quirks mode for the entire page.
+     */
+    public static function insertIntoHead(string $content, string $snippet): string
+    {
+        foreach (['/<head\b[^>]*>/i', '/<html\b[^>]*>/i', '/<!doctype\b[^>]*>/i'] as $pattern) {
+            if (preg_match($pattern, $content, $match, PREG_OFFSET_CAPTURE)) {
+                $at = $match[0][1] + strlen($match[0][0]);
+
+                return substr_replace($content, "\n" . $snippet, $at, 0);
+            }
         }
 
         return $snippet . "\n" . $content;
@@ -493,9 +688,6 @@ class Plugin extends BasePlugin
             $view->setTemplateMode($currentMode);
         }
 
-        $assetSrcPath = Craft::getAlias('@sfsinfotech/craftcookieconsentflow') . '/web/assets/banner';
-        [, $baseUrl]  = Craft::$app->getAssetManager()->publish($assetSrcPath);
-
         // Re-located here rather than reused from the guard: the Consent Mode
         // snippet may already have been spliced into <head> above, which moves
         // every offset after it.
@@ -505,18 +697,98 @@ class Plugin extends BasePlugin
             return $content;
         }
 
+        // A page that already includes the runtime — the preferences and
+        // reset helpers used to register its asset bundle, and a site's own
+        // template or layout still might — must not get a second copy: two
+        // copies meant two sets of click handlers, so every decision was
+        // committed and recorded twice. Read from the rendered document
+        // rather than from the view, whose bundle list has been cleared by
+        // the time the response is prepared, and which would not know about
+        // a tag written into a layout by hand.
+        $withScript     = !self::runtimeAlreadyIncluded($content);
+        $withStylesheet = !self::stylesheetAlreadyIncluded($content);
+
+        $baseUrl = '';
+        if ($withScript || $withStylesheet) {
+            $assetSrcPath = Craft::getAlias('@sfsinfotech/craftcookieconsentflow') . '/web/assets/banner';
+            [, $baseUrl]  = Craft::$app->getAssetManager()->publish($assetSrcPath);
+        }
+
         [$pos, $length] = $body;
 
-        $inject  = "\n" . '<link rel="stylesheet" href="' . $baseUrl . '/cookie-banner.css">';
-        $inject .= "\n" . $bannerHtml;
-        $inject .= "\n" . '<script>window.cckConfig = '
-            . \craft\helpers\Json::encode($this->buildRuntimeConfig($settings)) . ';</script>';
-        $inject .= "\n" . '<script src="' . $baseUrl . '/cookie-banner.js" defer></script>';
-        // The document's own closing tag is put back verbatim, so a page that
-        // wrote `</BODY>` still reads as it did before the banner arrived.
-        $inject .= "\n" . substr($content, $pos, $length);
+        $inject = self::renderInjection(
+            $bannerHtml,
+            $this->buildRuntimeConfig($settings),
+            $withStylesheet ? $baseUrl . '/cookie-banner.css' : null,
+            $withScript ? $baseUrl . '/cookie-banner.js' : null
+        )
+            // The document's own closing tag is put back verbatim, so a page
+            // that wrote `</BODY>` still reads as it did before the banner
+            // arrived.
+            . "\n" . substr($content, $pos, $length);
 
         return substr_replace($content, $inject, $pos, $length);
+    }
+
+    /**
+     * The markup spliced in before `</body>`: stylesheet, banner, runtime
+     * configuration and runtime script. The stylesheet and script are each
+     * omitted when their URL is null — i.e. when the page already includes
+     * them.
+     *
+     * The configuration is an inert `type="application/json"` block rather
+     * than an inline script assigning a global: it is never executed, so it
+     * needs no CSP nonce, and it is encoded with {@see ConsentHelper::jsonForHtml()}
+     * so no configured value can end the element or switch the parser into
+     * the double-escaped script state.
+     *
+     * @param array<string, mixed> $config
+     */
+    public static function renderInjection(string $bannerHtml, array $config, ?string $stylesheetUrl, ?string $scriptUrl): string
+    {
+        $inject = '';
+
+        if ($stylesheetUrl !== null) {
+            $inject .= "\n" . '<link rel="stylesheet" href="' . htmlspecialchars($stylesheetUrl, ENT_QUOTES) . '" data-cck-runtime>';
+        }
+
+        $inject .= "\n" . $bannerHtml;
+        $inject .= "\n" . self::renderConfigBlock($config);
+
+        if ($scriptUrl !== null) {
+            $inject .= "\n" . '<script src="' . htmlspecialchars($scriptUrl, ENT_QUOTES) . '" defer data-cck-runtime></script>';
+        }
+
+        return $inject;
+    }
+
+    /**
+     * Whether a rendered document already loads the consent runtime script.
+     */
+    public static function runtimeAlreadyIncluded(string $content): bool
+    {
+        // Recognised by the marker the plugin puts on its own tags (the asset
+        // bundle and auto-injection both set it), not by file name: any theme
+        // script that happened to be called cookie-banner.js used to count as
+        // the runtime, so the real one was never added and the banner never
+        // appeared — leaving visitors no way to consent.
+        return (bool) preg_match('#<script\b[^>]*\bdata-cck-runtime\b#i', $content);
+    }
+
+    /** Whether a rendered document already links the banner stylesheet. */
+    public static function stylesheetAlreadyIncluded(string $content): bool
+    {
+        return (bool) preg_match('#<link\b[^>]*\bdata-cck-runtime\b#i', $content);
+    }
+
+    /**
+     * The runtime configuration as the inert data block the runtime reads.
+     *
+     * @param array<string, mixed> $config
+     */
+    public static function renderConfigBlock(array $config): string
+    {
+        return '<script type="application/json" id="cck-config">' . ConsentHelper::jsonForHtml($config) . '</script>';
     }
 
     /**
@@ -551,6 +823,8 @@ class Plugin extends BasePlugin
             'geoEnabled'        => $settings->geoEnabled && !empty($settings->geoTargetCountries),
             'respectGpc'        => $settings->respectGpc,
             'respectDnt'        => $settings->respectDnt,
+            // Applied by the runtime through the CSSOM; see Settings::getCssVarMap().
+            'cssVars'           => $settings->getCssVarMap(),
             'consentMode'       => [
                 'enabled' => $settings->consentModeEnabled,
                 'type'    => $settings->consentModeType,

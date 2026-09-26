@@ -16,8 +16,8 @@ class BeforeBannerRenderEvent extends Event
     public Settings $settings;
 
     /**
-     * Set to true to cancel banner rendering.
-     * The renderBanner() Twig method will return an empty string.
+     * Set to true to cancel banner rendering: auto-injection adds nothing to
+     * the page, and the renderBanner() Twig method returns an empty string.
      */
     public bool $cancel = false;
 }

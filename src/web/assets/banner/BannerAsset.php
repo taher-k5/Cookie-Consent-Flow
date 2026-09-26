@@ -30,6 +30,11 @@ class BannerAsset extends AssetBundle
             'cookie-banner.js',
         ];
 
+        // The marker auto-injection looks for to know the page already has
+        // the runtime (see Plugin::runtimeAlreadyIncluded()).
+        $this->jsOptions  = ['data-cck-runtime' => true];
+        $this->cssOptions = ['data-cck-runtime' => true];
+
         parent::init();
     }
 }

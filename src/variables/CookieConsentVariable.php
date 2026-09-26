@@ -64,14 +64,17 @@ class CookieConsentVariable
             return $this->_empty();
         }
 
-        $view = Craft::$app->getView();
-        $view->registerAssetBundle(BannerAsset::class);
-        $view->registerJs(
-            'window.cckConfig = ' . \craft\helpers\Json::encode($plugin->buildRuntimeConfig($settings)) . ';',
-            View::POS_HEAD
-        );
+        Craft::$app->getView()->registerAssetBundle(BannerAsset::class);
 
-        return new Markup($this->_renderSiteTemplate('banner/_banner', ['settings' => $settings]), 'utf-8');
+        // The configuration travels with the markup as the same inert JSON
+        // block auto-injection uses, rather than a `window.cckConfig`
+        // assignment registered into <head>: it needs no CSP nonce, and the
+        // runtime finds it by id wherever the template placed the banner.
+        return new Markup(
+            $this->_renderSiteTemplate('banner/_banner', ['settings' => $settings])
+                . "\n" . Plugin::renderConfigBlock($plugin->buildRuntimeConfig($settings)),
+            'utf-8'
+        );
     }
 
     /**
@@ -87,13 +90,17 @@ class CookieConsentVariable
      * the visitor's stored decision on their own device, at runtime.
      *
      * Usage: `{{ craft.cookieConsent.consentModeScript() }}`
+     *
+     * Under a Content Security Policy that allows inline scripts only by
+     * nonce, turn auto-injection off and pass the request's nonce:
+     * `{{ craft.cookieConsent.consentModeScript(cspNonce) }}`.
      */
-    public function consentModeScript(): Markup
+    public function consentModeScript(?string $nonce = null): Markup
     {
         $plugin   = Plugin::getInstance();
         $settings = $plugin->cookieSettings->getEffectiveSettings();
 
-        return new Markup($plugin->consentMode->renderScript($settings), 'utf-8');
+        return new Markup($plugin->consentMode->renderScript($settings, true, $nonce), 'utf-8');
     }
 
     /**
@@ -105,7 +112,18 @@ class CookieConsentVariable
     public function renderPreferencesButton(?string $label = null, array $attributes = []): Markup
     {
         $settings = Plugin::getInstance()->cookieSettings->getEffectiveSettings();
-        Craft::$app->getView()->registerAssetBundle(BannerAsset::class);
+
+        // No runtime of its own. The banner — auto-injected, or rendered with
+        // renderBanner() — always brings exactly one copy of the runtime,
+        // and this button is only a `data-cck-action` control that runtime's
+        // delegated click handler acts on. It used to register the asset
+        // bundle as well, which put a second copy of the runtime on every
+        // page that had one of these in its footer: two sets of handlers,
+        // and two consent records per decision. With the banner disabled
+        // there is no runtime to act on the button, so none is rendered.
+        if (!$settings->bannerEnabled) {
+            return $this->_empty();
+        }
 
         return $this->_button(
             $label ?? $settings->customizeButtonText,
@@ -122,7 +140,10 @@ class CookieConsentVariable
      */
     public function resetConsentButton(?string $label = null, array $attributes = []): Markup
     {
-        Craft::$app->getView()->registerAssetBundle(BannerAsset::class);
+        // See renderPreferencesButton(): a control, not a second runtime.
+        if (!Plugin::getInstance()->cookieSettings->getEffectiveSettings()->bannerEnabled) {
+            return $this->_empty();
+        }
 
         return $this->_button(
             $label ?? Craft::t('cookie-consent-flow', 'Reset Cookie Preferences'),
