@@ -1,93 +1,125 @@
 # Cookie Consent Flow
 
-Cookie consent and compliance management for Craft CMS 5.
+Cookie Consent Flow adds a cookie consent banner and preference centre to
+Craft CMS sites. Visitors choose which optional cookie categories they allow,
+optional scripts and embeds stay blocked until they agree, and each decision
+can be recorded in the control panel.
 
-> This plugin supplies consent tooling. Correct configuration, accurate cookie
-> disclosure, and legal review remain the site owner's responsibility. No claim
-> of compliance in any particular jurisdiction is made.
+> Cookie Consent Flow provides consent tooling. Configuring it correctly,
+> documenting your cookies accurately and getting legal review remain the site
+> owner's responsibility. The plugin makes no claim of compliance with any
+> particular law.
 
-## What it does
+## Features
 
-Cookie Consent Flow asks your visitors what they consent to, remembers their
-answer, and stops optional scripts and embeds from loading until they have
-agreed. It records each decision as evidence, and tells Google's tags what the
-visitor chose.
-
-## Key features
-
-- Responsive consent banner and preference centre
-- Script and iframe blocking by category
-- Per-cookie disclosure for your cookie policy
-- Google Consent Mode v2
+- Consent banner in four layouts (bottom bar, top bar, centre popup, corner
+  popup), with configurable text, colours, spacing and logo
+- Preference centre where visitors choose category by category
+- Consent categories you create and manage, including locked
+  (always-on) categories
+- Blocks scripts and iframes until their category is accepted
+- Cookie list for each category, shown in the preference centre and available
+  as a cookie table for your cookie policy page
+- Cookie detection that shows which cookie names are in use but not yet
+  documented
+- Google Consent Mode v2 (Basic and Advanced)
 - Global Privacy Control and Do Not Track support
-- Geo targeting by country
-- Consent records with filtering, statistics and CSV/JSON export
-- Multisite settings, categories and cookie lists
-- Consent expiry and policy versioning
-- Safe for static page caches and CDNs
+- Country-based banner targeting
+- Consent expiry, and a way to ask every visitor again when your policy
+  changes
+- Consent records with filters, statistics, CSV/JSON export and a retention
+  period
+- A dashboard, a Consent Overview dashboard widget and user permissions in
+  the control panel
+- Multisite support: global settings with optional per-site overrides
+- Works with static page caching: the injected HTML is the same for every
+  visitor
+- Keyboard-accessible banner and preference centre
+- Twig and JavaScript APIs
 
-## Why use it
+## Requirements
 
-Most consent plugins assume every page is rendered fresh for every visitor.
-This one does not: the HTML it injects is identical for everyone, so it stays
-correct behind Blitz, a reverse proxy or a CDN. Everything specific to a
-visitor — their decision, their country, their CSRF token — is resolved in
-their own browser at runtime.
-
-It is also honest about what it records. A decision appears in the consent log
-only when a visitor actually made one.
+- Craft CMS `^5.0`
+- PHP `>=8.2.0`
 
 ## Installation
-
-Requires Craft CMS 5.0+ and PHP 8.2+.
 
 ```bash
 composer require sfs-infotech/craft-cookie-consent-flow
 php craft plugin/install cookie-consent-flow
 ```
 
-## Basic setup
+You can also install it from **Settings → Plugins** in the control panel after
+running `composer require`.
 
-1. Open **Cookie Consent → Banner** and set your privacy-policy URL.
-2. Review **Settings → Cookie Categories**.
-3. Open **Cookies** and document each cookie you use.
-4. Tag your optional scripts and iframes with `data-cck-category`.
-5. Add a permanent preferences link to your footer:
-   `{{ craft.cookieConsent.renderPreferencesButton() }}`
+## Getting started
 
-The banner is injected automatically before `</body>`. The defaults work
-without further configuration.
+1. Go to **Cookie Consent → Banner** and set your privacy policy URL.
+2. Check the default categories under **Cookie Consent → Settings → Cookie
+   Categories**.
+3. Document the cookies your site uses under **Cookie Consent → Cookies**.
+4. Mark up your optional scripts and iframes (see
+   [Blocking scripts and iframes](#blocking-scripts-and-iframes)).
+5. Add a link visitors can use to change their choice later, for example in
+   your footer:
 
-## Cookie categories
+   ```twig
+   {{ craft.cookieConsent.renderPreferencesButton() }}
+   ```
 
-Categories are what visitors actually agree to, and you define them. Four ship
-by default — Essential, Analytics, Marketing and Preferences — and you can
-rename, reorder, add or remove them.
+The banner is added to every HTML page automatically, just before `</body>`.
 
-Each category has a key (used in your markup), a label, a description, and two
-switches:
+## Configuration
 
-- **Locked** — always on, and the visitor cannot decline it. Use this for
-  strictly necessary cookies only.
-- **Default on** — pre-ticked in the preference centre. Optional categories are
-  off unless you deliberately turn this on.
+Editors manage all settings in the control panel under **Cookie Consent**:
 
-## Banner and preference centre
+| Page | What you configure |
+| --- | --- |
+| **Banner** | Layout, content, colours, and geo-targeting |
+| **Cookies** | The cookies listed for each category, and detected cookies |
+| **Settings** | Categories, consent logging and retention, Google Consent Mode, privacy signals, consent expiry, and **Invalidate Existing Consent** |
+| **Multisite** | Per-site overrides (shown only on multisite installs) |
+| **Consent Records** | Consent history, statistics and exports |
 
-The banner appears as a bottom bar, top bar, centre popup or corner popup, and
-always falls back to a bottom bar on small screens. Content, colours, spacing
-and logo are configurable.
+A few deployment settings go in `config/cookie-consent-flow.php` instead.
+Multi-environment arrays work as they do in other Craft config files.
 
-The preference centre lets visitors choose category by category, and lists the
-cookies you have documented under each one. It is a proper modal dialog:
-focus moves into it, stays trapped while it is open, and returns to whatever
-opened it. Escape closes it without recording anything — dismissing a question
-is not an answer.
+```php
+<?php
 
-## Script and iframe blocking
+return [
+    'geoCountryHeader'   => null,  // Header your CDN/proxy puts the visitor's country in
+    'automaticRetention' => false, // Delete expired records during Craft garbage collection
+    'retentionBatchSize' => 1000,  // Records deleted per batch
+];
+```
 
-Give the tag `type="text/plain"` and move its URL to `data-cck-src`. Browsers
-never execute a `text/plain` script, so nothing loads until the visitor agrees.
+Any other key in this file is reported in the Craft log.
+
+## Consent categories
+
+Four categories are created by default: **Essential** (`necessary`),
+**Analytics**, **Marketing** and **Preferences**. You can rename, reorder,
+add and remove them.
+
+Each category has a key, a label, a description and two options:
+
+- **Locked**: always on, and visitors cannot turn it off. Use this only for
+  strictly necessary cookies.
+- **Default on**: pre-selected in the preference centre. Saving the preference
+  centre unchanged then records consent to it, and in many jurisdictions
+  (including the EU) a pre-ticked box is not valid consent, so leave this off
+  for optional categories unless your legal review says otherwise.
+
+When a visitor accepts, rejects or saves their choice, it is stored in their
+browser and restored on later visits. They are asked again when their consent
+expires (180 days by default, and `0` turns expiry off) or when you use
+**Invalidate Existing Consent**.
+
+## Blocking scripts and iframes
+
+Set `type="text/plain"` on the script, move its URL to `data-cck-src`, and
+name the category it belongs to:
 
 ```html
 <script type="text/plain" data-cck-category="analytics"
@@ -98,192 +130,186 @@ never execute a `text/plain` script, so nothing loads until the visitor agrees.
         title="Video"></iframe>
 ```
 
-Inline scripts work the same way — keep the code in the tag and omit
-`data-cck-src`. Use comma- or space-separated keys if any of several
-categories should activate the element.
-
-`data-cck-category` must match a category key you have configured. A script
-you do not tag cannot be blocked by the plugin.
-
-Withdrawing consent stops future loading; it cannot unload a script that has
-already run on the current page. It takes full effect on the next navigation.
+- Inline scripts work too: keep the code in the tag and leave out
+  `data-cck-src`.
+- `data-cck-category` must match a category key. If you list more than one
+  key, separated by commas or spaces, the element loads when any of those
+  categories is accepted.
+- Activated scripts run in document order, and keep their `nonce` attribute.
+- `data-cck-src` must be an `http(s)` or relative URL.
+- Content in a locked category loads straight away.
+- Scripts without this markup are not blocked.
+- Markup added to the page later (AJAX, Sprig, infinite scroll) is activated
+  when you call `CookieConsent.refreshGatedContent()`.
+- Withdrawing consent stops scripts loading from then on and unloads iframes
+  of the withdrawn categories. It cannot unload a script that has already run
+  on the current page.
 
 ## Privacy signals
 
-Both signals are browser-level statements of preference. When you enable one,
-the plugin applies it as a rejection of every optional category and does not
-show the banner — the visitor has already answered. The decision is recorded
-like any other, with its source marked `gpc` or `dnt`.
+Under **Settings → Privacy Signals**:
 
-### Global Privacy Control (GPC)
+- **Global Privacy Control (GPC)**: on by default.
+- **Do Not Track (DNT)**: off by default.
 
-GPC is a modern signal that several US state privacy laws recognise. **On by
-default.** When a visitor's browser sends it, optional categories are rejected
-according to your configured policy and the banner stays hidden.
+When a signal you have enabled is present and the visitor has no stored
+decision, every optional category is rejected, no banner is shown, and the
+decision is recorded with the source `gpc` or `dnt`. A decision the visitor
+made earlier stays in effect until it expires, they change it, or you use
+**Invalidate Existing Consent**.
 
-Turn it off under **Settings → Privacy Signals** if your site needs to ask
-every visitor explicitly.
+## Cookie detection
 
-### Do Not Track (DNT)
+Once a visitor has made a decision, or is outside your geo-targeting
+countries, the banner script reports the names of the cookies in their
+browser, at most once a day per name. It never sends cookie values, and names
+are not linked to a visitor. Names are case-sensitive and limited to the
+characters cookie names may contain (`*` is not accepted, because it is the
+wildcard in documented names such as `_ga_*`). Up to 2,000 names are kept per
+site. Names you have not documented appear under **Cookies →
+Detected, not yet documented**, where you can add or dismiss them. Detection
+only sees cookies set in the browsers of visitors who use your site, so it may
+not find every cookie.
 
-DNT is the older, effectively deprecated signal. It has no general legal force
-and some browsers enabled it by default, which makes reading it as a considered
-choice unsafe. It is therefore **off by default** and treated separately from
-GPC.
+**Add from Library** fills in details for common, well-known cookies.
 
-Enable it under **Settings → Privacy Signals** if you want to honour it. When
-enabled it behaves exactly like GPC.
+To show your documented cookies on a page:
 
-## Google Consent Mode v2
+```twig
+{{ craft.cookieConsent.cookieTable() }}
+```
 
-Cookie Consent Flow collects consent. Consent Mode communicates the resulting
-state to Google's tags. Enable it under **Settings → Integrations** and map
-signals to your categories.
+## Google Consent Mode
 
-**Consent Mode is not a replacement for script blocking.** It tells Google's
-SDK not to use storage; it does not stop anything from loading, and it has no
-effect at all on non-Google scripts. Keep using `data-cck-category`.
+Enable it under **Settings → Integrations**, then choose which Consent Mode
+signals each category grants. The available signals are `ad_storage`,
+`ad_user_data`, `ad_personalization`, `analytics_storage`,
+`functionality_storage`, `personalization_storage` and `security_storage`.
 
-### Basic
+- **Advanced** (default): a default with every optional signal denied is
+  sent before Google tags run, followed by an update once the visitor decides.
+  `security_storage` is granted in the default, and the signals of locked
+  categories are granted straight away, because those categories cannot be
+  declined.
+- **Basic**: no default is sent, so gate the Google tag itself with
+  `data-cck-category`.
 
-No default command is sent and no Google tag is expected to load before
-consent. You gate the Google tag with `data-cck-category` like anything else.
-
-### Advanced
-
-A conservative default is sent before any Google tag runs, with every optional
-signal denied. Tags may then load and send cookieless pings, and a consent
-update follows once the visitor decides.
-
-### Signals
-
-The four that usually matter:
-
-| Signal | Granted when the visitor accepts |
-| --- | --- |
-| `analytics_storage` | your analytics category |
-| `ad_storage` | your advertising category |
-| `ad_user_data` | sending user data to Google for ads |
-| `ad_personalization` | personalised advertising |
-
-`functionality_storage`, `personalization_storage` and `security_storage` are
-also available. Nothing is hard-coded — you decide which signals each category
-grants. `security_storage` is granted by default, because denying it breaks
-Google's own security features.
-
-### Options
-
-- **wait_for_update** — milliseconds Google waits for a decision before acting
-  on the default state. Default 500; 0 omits it.
-- **URL passthrough** — passes click identifiers through URLs when `ad_storage`
-  is denied.
-- **Ads data redaction** — redacts ad click identifiers in network requests
-  when `ad_storage` is denied.
-- **Auto-inject** — places the snippet at the top of `<head>` for you. Turn it
-  off only if your Google tag must appear earlier, and place it yourself:
+Other options are `wait_for_update` (default `500` ms, and `0` leaves it out),
+URL passthrough and ads data redaction (both on by default). The script is
+added to `<head>` automatically. If you turn that off, place it yourself,
+optionally with your Content Security Policy nonce:
 
 ```twig
 {{ craft.cookieConsent.consentModeScript() }}
+{{ craft.cookieConsent.consentModeScript(cspNonce) }}
 ```
 
-## Geo targeting
+Every Consent Mode update also pushes a `cookie_consent_update` event to
+`dataLayer`. Resetting consent sends every optional signal back to `denied`.
 
-Show the consent experience only to visitors in the countries you choose.
+Consent Mode tells Google's tags what the visitor chose. It does not stop
+scripts loading, so keep using `data-cck-category`.
 
-A visitor **inside** a target country sees the banner, and nothing optional
-runs until they decide.
+## Geo-targeting
 
-A visitor **outside** the target countries is one you have decided you do not
-need to ask. The banner is not shown, and optional content runs according to
-that policy. Importantly, no decision is stored on their device and **no
-consent record is created** — they never made a choice, so nothing is written
-down as though they had. If you later narrow the target countries, those
-visitors simply start being asked.
+Under **Banner → Geo-targeting** you can show the banner only to visitors in
+the countries you choose. Visitors outside those countries see no banner and
+optional content runs. No decision is stored and no consent record is
+created for them.
 
-If you want no banner *and* nothing optional running, leave geo targeting off
-and gate that content yourself.
+The visitor's country comes from a request header set by your CDN or proxy.
+**No header is trusted until you name it** in
+`config/cookie-consent-flow.php`:
 
-Country detection reads a validated two-letter header from your CDN or proxy
-(Cloudflare, Fastly, CloudFront and the common conventions). An unknown country
-shows the banner — failing open is the safe direction. The decision is made per
-visitor against an uncacheable endpoint, so it is never baked into cached HTML.
-For a real GeoIP lookup, implement `GeoProviderInterface` and add it to
-`GeoService`.
+```php
+return [
+    'geoCountryHeader' => 'CF-IPCountry', // Cloudflare
+];
+```
 
-## Consent logging
+Only name a header your proxy always sets itself. If the country is unknown,
+the banner is shown. The answer is remembered for the browser tab.
 
-Every decision is recorded with a random per-site visitor ID, the accepted
-categories, the outcome, the source, the policy version, the site, the time,
-the country, a salted IP hash and a truncated user agent. Raw IP addresses and
-cookie values are never stored.
+Developers can add another country source by implementing
+`GeoProviderInterface` and registering it in `config/app.php`:
 
-Set a retention period under **Settings** and schedule the cleanup daily:
+```php
+'components' => [
+    'plugins' => [
+        'pluginConfigs' => [
+            'cookie-consent-flow' => [
+                'components' => [
+                    'geo' => ['providers' => [\modules\MyGeoProvider::class]],
+                ],
+            ],
+        ],
+    ],
+],
+```
+
+## Consent records
+
+With consent logging on (the default), each decision is stored with:
+
+- a random visitor ID, kept in a first-party cookie
+- the accepted categories, the outcome (`accept_all`, `reject_all` or `custom`)
+  and the source (`banner`, `gpc`, `dnt` or `api`)
+- the policy version shown to the visitor, the site and the time
+- the country, if it is known
+- a keyed hash of the visitor's IP network (the address truncated to /24 for
+  IPv4 or /48 for IPv6)
+- the user agent, truncated to 500 characters
+
+Raw IP addresses and cookie values are never stored. Exports leave out the IP
+hash and the user agent.
+
+**Consent Records** shows outcome totals, acceptance rates for each category
+and a daily trend, and can filter by site, outcome, source, category, country,
+policy version and date range. You can export the filtered records as CSV or
+JSON, up to 100,000 records per export.
+
+Set a retention period (365 days by default, and `0` keeps records forever)
+under **Settings → Consent Logging**, then delete older records with:
 
 ```bash
 php craft cookie-consent-flow/retention/clear --dry-run=1
 php craft cookie-consent-flow/retention/clear --force=1
 ```
 
-`--days=N` overrides the configured period, `--site=handle` limits the run, and
-a retention value of `0` keeps records indefinitely.
-
-Use **Invalidate Existing Consent** in Settings when your policy changes
-materially. It bumps the policy version so every visitor is asked again;
-existing records are kept, because they remain accurate evidence of what was
-agreed under the previous policy.
+The command also accepts `--days=N` and `--site=handle`. You can also set
+`automaticRetention` to `true` to have Craft's garbage collection delete them.
 
 ## Multisite
 
-Global settings are the default and each site stores only what it overrides.
-Turn a section back to **Use Global Settings** to drop its overrides.
+Global settings apply to every site. On the **Multisite** page, each site can
+override banner content, colours and layout, categories, cookie lists,
+geo-targeting and Google Consent Mode. You can copy the global settings to a
+site or go back to them at any time.
 
-Settings, categories, cookie lists, browser storage, visitor identifiers and
-consent records are all site-aware, so a decision on one site is never read as
-consent on another.
+Consent choices, visitor IDs and consent records are kept separate for each
+site, so consent given on one site does not count on another. When a site is
+deleted, its overrides, cookie lists and detected cookies are removed; its
+consent records are kept and are removed by retention.
 
-## Cookie disclosures
+## Permissions
 
-Document each cookie's name, provider, purpose and duration under **Cookies**.
-These appear in the preference centre under their category, and you can render
-them on a cookie-policy page:
+- **Manage cookie consent configuration**
+- **View consent records**
+  - **Export consent records**
 
-```twig
-{{ craft.cookieConsent.cookieTable() }}
-```
+Being able to view records does not include exporting them. The control panel
+navigation shows only the pages a user can access. On multisite installs,
+records, exports, the dashboard and site overrides are also limited to the
+sites the user has access to in Craft; global settings apply to every site.
 
-The plugin also reports the cookie names it observes in visitors' browsers
-(names only, never values, never tied to a visitor) so you can spot anything
-undocumented. A starter library of well-known cookies is included to save
-typing.
-
-## Statistics and exports
-
-**Consent Records** shows outcome totals, per-category acceptance rates and a
-daily trend, and lets you filter by site, outcome, source, category, country,
-policy version and date range.
-
-Exports in CSV or JSON cover exactly the filtered set on screen, and say so
-explicitly if they hit the 100,000-record limit. Exporting is a separate
-permission from viewing.
-
-## Twig and front-end usage
+## Twig and JavaScript
 
 ```twig
 {{ craft.cookieConsent.renderPreferencesButton() }}
 {{ craft.cookieConsent.resetConsentButton() }}
-{{ craft.cookieConsent.cookieTable() }}
-
-{% for cookie in craft.cookieConsent.cookies('analytics') %}
-  {{ cookie.name }} — {{ cookie.purpose }}
-{% endfor %}
+{{ craft.cookieConsent.cookieTable('analytics') }}
+{% for cookie in craft.cookieConsent.cookies('analytics') %}…{% endfor %}
 ```
-
-`craft.cookieConsent.settings`, `.categories`, `.cookiesByCategory`,
-`.isBannerEnabled` and `.countryCode` are also available.
-
-Do not branch cached HTML on a visitor's state — that bakes one visitor's
-answer into the page everyone else is served. Gate content in the browser
-instead, with `data-cck-category` or the events below.
 
 ```js
 CookieConsent.hasConsent('analytics');
@@ -291,71 +317,93 @@ CookieConsent.getConsentState();
 CookieConsent.openPreferences();
 CookieConsent.updateConsent({ analytics: true, marketing: false });
 CookieConsent.resetConsent();
+CookieConsent.onReady(function (decision) { /* null if undecided */ });
 
 document.addEventListener('cookieConsent:changed', function (event) {
   console.log(event.detail);
 });
 ```
 
-Events are `ready`, `loaded`, `shown`, `suppressed`, `preferences`, `changed`,
-`accepted`, `rejected`, `custom`, `reset` and `syncFailed`, each prefixed with
-`cookieConsent:`. They are dispatched on `document` and bubble, so a listener
-on either `document` or `window` receives them.
+The events are `ready`, `loaded`, `shown`, `suppressed`, `preferences`,
+`changed`, `accepted`, `rejected`, `custom`, `reset` and `syncFailed`, each
+prefixed with `cookieConsent:`.
 
-## Developer integration
+Pages may be cached, so don't use a visitor's consent state to change
+server-rendered HTML. Check consent in the browser instead.
 
-PHP services are available from `Plugin::getInstance()` as `consent`,
-`cookieSettings`, `cookieDefinitions`, `consentMode`, `geo` and `statistics`.
-The plugin fires `EVENT_BEFORE_BANNER_RENDER` (cancellable) and
-`EVENT_AFTER_CONSENT_SAVE` (notification only).
+Buttons you add yourself work with `data-cck-action`, set to `accept-all`,
+`reject-all`, `open-preferences`, `close-preferences`, `save-preferences` or
+`reset-consent`.
 
-Three permissions can be delegated: manage configuration, view consent records,
-and export consent records. Viewing does not imply exporting.
+Resetting consent removes the decision from the browser and asks again. The
+visitor ID cookie is `httpOnly` and stays, so later records remain linked to
+earlier ones, and cookies set by other scripts are not deleted.
 
-If your site sits behind a CDN or load balancer, add it to Craft's
-[`trustedHosts`](https://craftcms.com/docs/5.x/reference/config/general.html).
-Without it Craft cannot tell one visitor behind that proxy from another, and
-they share a rate-limit bucket.
+PHP developers can listen for `EVENT_BEFORE_BANNER_RENDER` (cancellable) and
+`EVENT_AFTER_CONSENT_SAVE`, which fires after a consent record has been
+saved.
 
-## Testing
+## Cookies and storage used by the plugin
 
-```bash
-composer test       # PHPUnit
-composer test-js    # front-end runtime harness (requires node)
-composer check-all  # both
-```
+| Name | Where | Purpose |
+| --- | --- | --- |
+| `cck_consent_{siteId}` | localStorage, or a first-party cookie (365 days) if localStorage can't be written | The visitor's decision |
+| `cck_consent_{siteId}_pending` | localStorage | A decision not yet recorded on the server |
+| `cck_reported_{siteId}` | localStorage | Cookie names reported in the last day |
+| `cck_geo_{siteId}_{policyVersion}` | sessionStorage | The geo-targeting answer for the tab |
+| `cck_visitor_{siteId}` | `httpOnly` cookie (1 year) | Visitor ID, set only when a record is written |
 
-`composer test-js` runs the consent runtime inside a small dependency-free stub
-browser (`tests/js/`), covering the behaviour that fails silently rather than
-loudly: whether gated content activates, whether any request happens before the
-visitor is asked, which failed syncs are retried, and whether a reset can be
-undone by a request already in flight.
+Recording a decision also starts a Craft session (`CraftSessionId` and the
+CSRF cookie). Nothing is stored before the visitor decides.
 
-Before launch, check in a real browser that rejecting prevents every optional
-network request, that accepting activates only the selected categories, and
-that geo rules behave behind your actual proxy. Disable any other
-cookie-consent plugin first — several inject their own banner and write their
-own `gtag('consent', …)` commands, which makes the results meaningless.
+## Caching and proxies
+
+The injected HTML is the same for every visitor. Exclude these URLs from your
+page cache:
+
+- `actions/cookie-consent-flow/consent/save`
+- `actions/cookie-consent-flow/consent/geo`
+- `actions/cookie-consent-flow/consent/status`
+- `actions/cookie-consent-flow/cookie-detection/report`
+- `actions/users/session-info`
+
+These endpoints are rate limited per visitor. Behind a CDN or load balancer,
+list its IP ranges in Craft's `trustedHosts` so each visitor is identified
+exactly; without it, visitors are told apart by the forwarded address within
+a larger limit for each proxy address, and a forged header cannot escape that
+limit. If the cache is unavailable, requests are allowed and an error is
+logged.
 
 ## Troubleshooting
 
-- **Banner missing** — confirm it is enabled and the response contains a
-  `</body>` tag.
-- **Script runs too early** — it needs both `type="text/plain"` and
+- **The banner doesn't appear.** Check that the banner is enabled, and that
+  the page is an HTML response with a `</body>` tag.
+- **A script runs before consent.** It needs both `type="text/plain"` and
   `data-cck-category`.
-- **Iframe loads too early** — move its URL from `src` to `data-cck-src`.
-- **Consent is not logged** — check that logging is enabled, then the browser's
-  network response, the Craft log, and your retention setting.
-- **Banner always shows with geo on** — verify your proxy forwards a supported
-  two-letter country header. Unknown locations show the banner by design.
-- **Cached page cannot save consent** — exclude the plugin's anonymous action
-  endpoints from your page cache.
+- **An iframe loads before consent.** Move its URL from `src` to
+  `data-cck-src`.
+- **The banner shows everywhere with geo-targeting on.** Set
+  `geoCountryHeader` and check that your proxy sends that header.
+- **Visitors get "429 Too Many Requests" errors.** If your site is behind a
+  CDN or load balancer, list its IP ranges in Craft's `trustedHosts` setting.
+  Otherwise each proxy address has one combined limit for everyone behind it.
+- **Cached pages can't save consent.** Exclude the URLs listed under
+  [Caching and proxies](#caching-and-proxies) from your page cache.
+- **Decisions aren't recorded.** Check that consent logging is enabled, then
+  look in the Craft log.
 
-## Support and requirements
+## Uninstalling
 
-- Craft CMS 5.0+, PHP 8.2+, MySQL 8+ or PostgreSQL 13+
-- Issues: https://github.com/sfsinfotech/cookie-consent-flow/issues
-- Email: hello@softwareforsolution.com
+Uninstalling deletes the plugin's tables, **including all consent records**.
+This cannot be undone, so export your records first if you may need them.
+
+## Support
+
+Email: hello@softwareforsolution.com
+
+## Changelog
+
+See [CHANGELOG.md](CHANGELOG.md).
 
 ## License
 
