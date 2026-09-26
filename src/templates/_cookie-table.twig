@@ -18,25 +18,35 @@
   {% for categoryKey, cookies in grouped %}
     {% set caption = labels[categoryKey] ?? categoryKey %}
 
-    <table class="cck-cookie-table">
+    {# Explicit ARIA table roles: on narrow screens the table is restyled as
+       stacked blocks (display: block), which in several browsers drops the
+       implicit table semantics and leaves screen readers with unlabelled
+       values. The roles keep the header/cell association either way, and
+       data-label gives sighted users the same labels once the column
+       headings are hidden. #}
+    {% set nameLabel     = "Name"|t('cookie-consent-flow') %}
+    {% set providerLabel = "Provider"|t('cookie-consent-flow') %}
+    {% set purposeLabel  = "Purpose"|t('cookie-consent-flow') %}
+    {% set durationLabel = "Duration"|t('cookie-consent-flow') %}
+    <table class="cck-cookie-table" role="table">
       {# A caption rather than a heading: it associates the category with the
          table for screen readers, which a sibling <h*> would not. #}
       <caption class="cck-cookie-table__caption">{{ caption }}</caption>
-      <thead>
-        <tr>
-          <th scope="col">{{ "Name"|t('cookie-consent-flow') }}</th>
-          <th scope="col">{{ "Provider"|t('cookie-consent-flow') }}</th>
-          <th scope="col">{{ "Purpose"|t('cookie-consent-flow') }}</th>
-          <th scope="col">{{ "Duration"|t('cookie-consent-flow') }}</th>
+      <thead role="rowgroup">
+        <tr role="row">
+          <th scope="col" role="columnheader">{{ nameLabel }}</th>
+          <th scope="col" role="columnheader">{{ providerLabel }}</th>
+          <th scope="col" role="columnheader">{{ purposeLabel }}</th>
+          <th scope="col" role="columnheader">{{ durationLabel }}</th>
         </tr>
       </thead>
-      <tbody>
+      <tbody role="rowgroup">
         {% for cookie in cookies %}
-          <tr>
-            <th scope="row"><code>{{ cookie.name }}</code></th>
-            <td>{{ cookie.provider ?: '—' }}</td>
-            <td>{{ cookie.purpose ?: '—' }}</td>
-            <td>{{ cookie.duration ?: '—' }}</td>
+          <tr role="row">
+            <th scope="row" role="rowheader"><code>{{ cookie.name }}</code></th>
+            <td role="cell" data-label="{{ providerLabel }}">{{ cookie.provider ?: '—' }}</td>
+            <td role="cell" data-label="{{ purposeLabel }}">{{ cookie.purpose ?: '—' }}</td>
+            <td role="cell" data-label="{{ durationLabel }}">{{ cookie.duration ?: '—' }}</td>
           </tr>
         {% endfor %}
       </tbody>

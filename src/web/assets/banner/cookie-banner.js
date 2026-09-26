@@ -20,6 +20,23 @@
   'use strict';
 
   /* ------------------------------------------------------------------
+     Single instance
+
+     The file can reach a page more than once: auto-injection adds it, a
+     template may register the asset bundle as well, and a site may copy the
+     tag into a layout by hand. Every copy used to install its own document
+     listeners and run its own init(), so one click on "Accept" committed
+     twice and posted two consent records. The first copy to run owns the
+     page; any later copy leaves it alone.
+
+     Keyed on a marker rather than on `window.CookieConsent` alone, so a site
+     that defines its own placeholder under that name before the runtime
+     arrives is replaced as before rather than mistaken for a running copy.
+  ------------------------------------------------------------------ */
+
+  if (window.CookieConsent && window.CookieConsent._isCckRuntime === true) return;
+
+  /* ------------------------------------------------------------------
      Storage
   ------------------------------------------------------------------ */
 
@@ -46,6 +63,19 @@
    * data, a sandboxed iframe). None of those may break the page, so every
    * failure degrades to "no stored decision", which shows the banner — the
    * safe direction to fail in, since it asks rather than assumes.
+   *
+   * Reads and writes have to agree about where a value lives. They did not:
+   * a write fell back to the cookie whenever `setItem()` threw (a full quota,
+   * say), but a read only consulted the cookie when `getItem()` threw. With
+   * reading working and writing failing, every decision went into a cookie
+   * nothing read back, so the banner returned on every page and every click
+   * logged another record — while the head snippet, which does read the
+   * cookie, replayed that same decision to Google. So:
+   *
+   * - a read takes localStorage's value when there is one, and the cookie
+   *   otherwise, whichever of the two failed;
+   * - a successful localStorage write removes any cookie copy, so a stale
+   *   fallback can never outlive the value that replaced it.
    */
   var Store = {
     set: function (key, value) {
@@ -57,10 +87,11 @@
       }
       try {
         window.localStorage.setItem(key, str);
-        return true;
       } catch (e) {
         return Store._setCookie(key, str, 365);
       }
+      if (Store._getCookie(key) !== null) Store._deleteCookie(key);
+      return true;
     },
 
     get: function (key) {
@@ -68,8 +99,9 @@
       try {
         raw = window.localStorage.getItem(key);
       } catch (e) {
-        raw = Store._getCookie(key);
+        raw = null;
       }
+      if (raw === null || raw === undefined || raw === '') raw = Store._getCookie(key);
       if (raw === null || raw === undefined || raw === '') return null;
       try {
         return JSON.parse(raw);
@@ -84,6 +116,25 @@
     remove: function (key) {
       try { window.localStorage.removeItem(key); } catch (e) {}
       Store._deleteCookie(key);
+    },
+
+    /** localStorage only, with no cookie fallback — for bookkeeping, not decisions. */
+    getLocal: function (key) {
+      try {
+        var raw = window.localStorage.getItem(key);
+        return raw ? JSON.parse(raw) : null;
+      } catch (e) {
+        return null;
+      }
+    },
+
+    setLocal: function (key, value) {
+      try {
+        window.localStorage.setItem(key, JSON.stringify(value));
+        return true;
+      } catch (e) {
+        return false;
+      }
     },
 
     _setCookie: function (name, value, days) {
@@ -136,6 +187,24 @@
     return out;
   }
 
+  /**
+   * Whether a decision made at `timestamp` is still within `expiryDays`.
+   *
+   * With expiry on, a missing, zero or non-numeric timestamp is not "no
+   * expiry": it is a decision whose age cannot be known, and is re-asked. A
+   * timestamp more than a day in the future (a clock set ahead, or a
+   * hand-edited value) would otherwise never age at all. Expiry 0 disables
+   * the check.
+   */
+  function isFresh(timestamp, expiryDays) {
+    if (!expiryDays) return true;
+    if (typeof timestamp !== 'number' || !(timestamp > 0)) return false;
+
+    var now = Date.now();
+
+    return timestamp <= now + DAY_MS && now - timestamp <= expiryDays * DAY_MS;
+  }
+
   /** Shallow copy, so a queued payload can carry bookkeeping of its own. */
   function assign(target, source) {
     for (var key in source) {
@@ -179,6 +248,22 @@
     return false;
   }
 
+  /**
+   * The nearest `[data-cck-action]` element at or above `node`. Walks the
+   * tree itself where `Element.closest` is missing (older Safari, IE), where
+   * the old guard returned null and every banner button silently did nothing.
+   */
+  function closestAction(node) {
+    if (!node) return null;
+    if (typeof node.closest === 'function') return node.closest('[data-cck-action]');
+
+    for (; node && node.getAttribute; node = node.parentNode) {
+      if (node.getAttribute('data-cck-action') !== null) return node;
+    }
+
+    return null;
+  }
+
   /* ------------------------------------------------------------------
      Focus management
 
@@ -190,14 +275,35 @@
      deterministically on close.
   ------------------------------------------------------------------ */
 
+  // Everything a browser puts in the tab order by default. `summary` matters
+  // here: each category's "Cookies used" disclosure is one, and when it was
+  // missing from this list the trap treated it as "outside" and sent the next
+  // Tab back to the first control — so no later category, and neither Save
+  // nor Accept, could be reached by Tab at all.
   var FOCUSABLE =
     'button:not([disabled]), input:not([disabled]), select:not([disabled]), ' +
-    'textarea:not([disabled]), a[href], [tabindex]:not([tabindex="-1"])';
+    'textarea:not([disabled]), a[href], area[href], summary, iframe, ' +
+    'audio[controls], video[controls], [contenteditable]:not([contenteditable="false"]), ' +
+    '[tabindex]:not([tabindex="-1"])';
 
   var FocusTrap = {
     _element: null,
     _handler: null,
 
+    /**
+     * Holds keyboard focus inside `el` while it is a modal dialog.
+     *
+     * The listener is on the document, not the dialog: a click on the dimmed
+     * overlay (or anywhere outside) moves focus to <body>, and a listener on
+     * the dialog then never saw the next Tab, which walked into the page
+     * behind an `aria-modal` dialog. From outside, Tab and Shift+Tab bring
+     * focus back to the dialog's first or last control.
+     *
+     * Inside the dialog only the edges are handled — Shift+Tab on the first
+     * control (or on the dialog's own wrapper, where focus starts), Tab on
+     * the last. Every other Tab is the browser's, so anything focusable the
+     * list above does not know about still behaves normally.
+     */
     activate: function (el) {
       FocusTrap.release();
 
@@ -205,29 +311,65 @@
       FocusTrap._handler = function (e) {
         if (e.key !== 'Tab') return;
 
-        var focusable = toArray(el.querySelectorAll(FOCUSABLE)).filter(function (node) {
-          return node.offsetParent !== null || node === document.activeElement;
-        });
-        if (!focusable.length) return;
+        var focusable = FocusTrap._focusable(el);
+
+        // Nothing inside can take focus: keep it where it is rather than let
+        // Tab carry it to the page behind a modal.
+        if (!focusable.length) {
+          e.preventDefault();
+          return;
+        }
 
         var first = focusable[0];
         var last = focusable[focusable.length - 1];
+        var active = document.activeElement;
+        var inside = !!active && active !== document.body && el.contains(active);
 
-        if (e.shiftKey && document.activeElement === first) {
+        if (!inside) {
+          e.preventDefault();
+          (e.shiftKey ? last : first).focus();
+          return;
+        }
+
+        // The wrapper focus starts on (tabindex="-1", so a screen reader
+        // announces the dialog first) is inside but is not a control.
+        var onWrapper = active === el || (active.getAttribute && active.getAttribute('tabindex') === '-1' &&
+          focusable.indexOf(active) === -1);
+
+        if (e.shiftKey && (active === first || onWrapper)) {
           e.preventDefault();
           last.focus();
-        } else if (!e.shiftKey && document.activeElement === last) {
+        } else if (!e.shiftKey && active === last) {
           e.preventDefault();
           first.focus();
         }
       };
 
-      el.addEventListener('keydown', FocusTrap._handler);
+      document.addEventListener('keydown', FocusTrap._handler, true);
+    },
+
+    /**
+     * The controls a keyboard user can actually reach inside a dialog:
+     * enabled, and not inside anything hidden. `offsetParent` is null for an
+     * element that is not rendered, which covers `display: none` ancestors;
+     * the `hidden` walk covers content hidden by attribute in environments
+     * where layout is not computed.
+     */
+    _focusable: function (el) {
+      return toArray(el.querySelectorAll(FOCUSABLE)).filter(function (node) {
+        if (node.disabled) return false;
+
+        for (var parent = node; parent && parent !== el; parent = parent.parentNode) {
+          if (parent.hidden) return false;
+        }
+
+        return node.offsetParent !== null || node === document.activeElement;
+      });
     },
 
     release: function () {
-      if (FocusTrap._element && FocusTrap._handler) {
-        FocusTrap._element.removeEventListener('keydown', FocusTrap._handler);
+      if (FocusTrap._handler) {
+        document.removeEventListener('keydown', FocusTrap._handler, true);
       }
       FocusTrap._element = null;
       FocusTrap._handler = null;
@@ -276,21 +418,121 @@
     return false;
   }
 
-  function activateGatedScripts(categories) {
-    toArray(document.querySelectorAll('script[type="text/plain"][data-cck-category]')).forEach(function (node) {
-      if (!isAllowed(node, categories)) return;
+  /**
+   * Activated scripts run in document order, as the same tags would have
+   * without gating.
+   *
+   * A script created with createElement() is async by default, so an external
+   * library and the inline snippet that configures it used to race, and the
+   * snippet could run before the library existed. Now:
+   *
+   * - external scripts are created with `async = false`, which makes the
+   *   browser execute them in insertion order while still downloading them
+   *   in parallel — unless the placeholder itself asked for `async`, in which
+   *   case the author has said order does not matter;
+   * - an inline script waits until every ordered external script inserted
+   *   before it has loaded (or failed), because an inline script runs the
+   *   moment it is inserted and would otherwise overtake them.
+   *
+   * Placeholders are claimed when queued, so a second activation pass while
+   * the queue is still draining cannot activate the same tag twice.
+   */
+  var ScriptQueue = {
+    _items: [],
+    _pending: 0,
+
+    add: function (node) {
+      node.setAttribute('data-cck-queued', 'true');
+      ScriptQueue._items.push(node);
+      ScriptQueue._drain();
+    },
+
+    _drain: function () {
+      while (ScriptQueue._items.length) {
+        var node = ScriptQueue._items[0];
+        var external = !!node.getAttribute('data-cck-src');
+
+        if (!external && ScriptQueue._pending > 0) return;
+
+        ScriptQueue._items.shift();
+        ScriptQueue._insert(node, external);
+      }
+    },
+
+    _insert: function (node, external) {
+      // A placeholder removed from the page (a re-rendered component, say)
+      // while queued has nowhere to go. It used to count as pending anyway,
+      // never loaded, and so held back every gated inline script after it
+      // for the rest of the page view.
+      if (!node.parentNode) return;
+
+      if (external && !isSafeSrc(node.getAttribute('data-cck-src'))) {
+        node.setAttribute('data-cck-refused', 'unsafe-src');
+        return;
+      }
 
       var script = document.createElement('script');
 
       toArray(node.attributes).forEach(function (attr) {
-        if (attr.name === 'type' || attr.name === 'data-cck-category') return;
+        // `nonce` is copied from the property below: browsers blank the
+        // attribute once the document has parsed, so the attribute copy
+        // would carry an empty nonce and a nonce-based CSP would block the
+        // activated script.
+        if (attr.name === 'type' || attr.name === 'data-cck-category' ||
+            attr.name === 'data-cck-queued' || attr.name === 'nonce') return;
         script.setAttribute(attr.name === 'data-cck-src' ? 'src' : attr.name, attr.value);
       });
 
-      if (!script.src) script.text = node.textContent;
+      var nonce = node.nonce || node.getAttribute('nonce');
+      if (nonce) script.nonce = nonce;
 
-      if (node.parentNode) node.parentNode.replaceChild(script, node);
+      if (external) {
+        var ordered = node.getAttribute('async') === null;
+
+        script.async = !ordered;
+
+        if (ordered) {
+          ScriptQueue._pending++;
+
+          var done = function () {
+            script.removeEventListener('load', done);
+            script.removeEventListener('error', done);
+            ScriptQueue._pending = Math.max(0, ScriptQueue._pending - 1);
+            ScriptQueue._drain();
+          };
+
+          script.addEventListener('load', done);
+          script.addEventListener('error', done);
+        }
+      } else {
+        script.text = node.textContent;
+      }
+
+      node.parentNode.replaceChild(script, node);
+    }
+  };
+
+  function activateGatedScripts(categories) {
+    toArray(
+      document.querySelectorAll('script[type="text/plain"][data-cck-category]:not([data-cck-queued])')
+    ).forEach(function (node) {
+      if (!isAllowed(node, categories)) return;
+
+      ScriptQueue.add(node);
     });
+  }
+
+  /**
+   * Whether a `data-cck-src` is a URL a gated tag may load: http(s), or
+   * relative. `javascript:` and `data:` would run code the moment an iframe
+   * or script is given them, which no gated embed needs.
+   */
+  function isSafeSrc(url) {
+    if (typeof url !== 'string' || url === '') return false;
+
+    var head = url.split(/[\/?#]/)[0];
+
+    return head.indexOf(':') === -1 || /^https?:$/i.test(head);
   }
 
   function activateGatedFrames(categories) {
@@ -298,13 +540,31 @@
       document.querySelectorAll('iframe[data-cck-category][data-cck-src]:not([data-cck-activated])')
     ).forEach(function (node) {
       if (!isAllowed(node, categories)) return;
+      if (!isSafeSrc(node.getAttribute('data-cck-src'))) return;
       node.setAttribute('src', node.getAttribute('data-cck-src'));
       node.setAttribute('data-cck-activated', 'true');
     });
   }
 
+  /**
+   * Unloads activated iframes whose category is no longer accepted.
+   *
+   * A script that has run cannot be unloaded, but an iframe can: withdrawing
+   * consent used to leave an embed that was activated under it loaded and
+   * running for the rest of the page view. It is pointed at about:blank and
+   * becomes a placeholder again, so a later acceptance activates it anew.
+   */
+  function deactivateGatedFrames(categories) {
+    toArray(document.querySelectorAll('iframe[data-cck-category][data-cck-activated]')).forEach(function (node) {
+      if (isAllowed(node, categories)) return;
+      node.setAttribute('src', 'about:blank');
+      node.removeAttribute('data-cck-activated');
+    });
+  }
+
   function activateGatedContent(categories) {
     categories = categories || [];
+    deactivateGatedFrames(categories);
     activateGatedScripts(categories);
     activateGatedFrames(categories);
   }
@@ -325,6 +585,8 @@
   };
 
   var CookieConsent = {
+    /** Identifies a running copy of this file; see the guard at the top. */
+    _isCckRuntime: true,
     _config: {},
     _previousFocus: null,
     /** What had focus before a modal (center-popup) banner took it. */
@@ -332,7 +594,17 @@
     _storageKey: LEGACY_STORAGE_KEY,
     _visitorKey: LEGACY_VISITOR_KEY,
     _csrfToken: null,
+    /** The in-flight token request, shared by every caller that needs one. */
+    _csrfPromise: null,
     _ready: false,
+
+    /**
+     * Whether `cookieConsent:ready` has fired, and what it carried. Kept so a
+     * listener that attaches afterwards can still be told — see onReady().
+     */
+    _readyFired: false,
+    _readyDetail: null,
+    _readyCallbacks: [],
 
     /**
      * Whether this page view is running under the site's geo policy rather
@@ -357,12 +629,45 @@
        Initialisation
     --------------------------------------------------------------- */
 
+    /**
+     * ## Lifecycle
+     *
+     * `cookieConsent:ready` fires exactly once per page view, as soon as the
+     * page's consent state is settled enough to act on:
+     *
+     * - a valid stored decision → after it has been applied, with that
+     *   decision as `detail` (preceded by `loaded`);
+     * - a GPC or DNT signal → after the rejection it implies has been
+     *   committed, with that decision as `detail` (it used to never fire at
+     *   all on this path);
+     * - no decision → with `detail: null`, before the banner is shown.
+     *
+     * Because a listener attached after that moment has missed the event,
+     * `CookieConsent.onReady(callback)` calls back immediately with the same
+     * detail when the page is already ready, and on the event otherwise.
+     */
     init: function () {
       if (this._ready) return;
+
+      var config = this._readConfig();
+
+      // The runtime was loaded before its configuration: the asset bundle's
+      // tag can precede the configuration block in the document. Starting now
+      // would run with no URLs, no categories and un-namespaced storage keys,
+      // so wait for the document to finish parsing, by which point the
+      // configuration has been reached.
+      if (!config && document.readyState === 'loading') {
+        var self = this;
+        document.addEventListener('DOMContentLoaded', function () { self.init(); });
+
+        return;
+      }
+
       this._ready = true;
 
-      this._config = window.cckConfig || {};
+      this._config = config || {};
       this._resolveStorageKeys();
+      this._applyCssVars();
 
       // Bound unconditionally, including when consent already exists: a
       // persistent "manage preferences" or "reset" control rendered anywhere
@@ -382,16 +687,111 @@
         this._reportDetectedCookies();
 
         this._emit('loaded', stored);
-        this._emit('ready', stored);
+        this._markReady(stored);
         return;
       }
 
       // No valid stored decision. A browser privacy signal may answer for the
       // visitor before we ask them anything.
-      if (this._applyPrivacySignal()) return;
+      var signalled = this._applyPrivacySignal();
+      if (signalled) {
+        this._markReady(signalled);
+        return;
+      }
 
-      this._emit('ready', null);
+      // Locked categories are strictly necessary: they are on in every
+      // decision and the visitor cannot decline them, so content tagged with
+      // one runs now rather than waiting on a question whose answer cannot
+      // change it. Only their own signals are granted; every optional signal
+      // stays on the denied default until the visitor answers.
+      var locked = this._lockedCategories();
+      if (locked.length) {
+        activateGatedContent(locked);
+        this._pushConsentMode(locked, true);
+      }
+
+      this._markReady(null);
       this._maybeShowBanner();
+    },
+
+    /**
+     * The runtime configuration: the inert JSON block the plugin renders
+     * (`<script type="application/json" id="cck-config">`), or the
+     * `window.cckConfig` global that earlier versions and custom templates
+     * set. Null when neither is present yet.
+     *
+     * A JSON block is not executed, so it needs no CSP nonce and cannot be
+     * blocked by a strict script-src policy.
+     */
+    _readConfig: function () {
+      var node = document.getElementById('cck-config');
+
+      if (node) {
+        try {
+          var parsed = JSON.parse(node.textContent || '');
+          if (parsed && typeof parsed === 'object') return parsed;
+        } catch (e) {}
+      }
+
+      return window.cckConfig && typeof window.cckConfig === 'object' ? window.cckConfig : null;
+    },
+
+    /**
+     * Sets the banner's configured colours and dimensions as CSS custom
+     * properties on the document element. Done through the CSSOM rather than
+     * an inline <style>, which a Content Security Policy without
+     * 'unsafe-inline' in style-src would block — leaving every configured
+     * colour at its default. Values are allow-listed on the server.
+     */
+    _applyCssVars: function () {
+      var vars = this._config.cssVars;
+      var root = document.documentElement;
+
+      if (!vars || typeof vars !== 'object' || !root || !root.style || typeof root.style.setProperty !== 'function') return;
+
+      for (var name in vars) {
+        if (Object.prototype.hasOwnProperty.call(vars, name) && /^--cck-[a-z-]+$/.test(name) && typeof vars[name] === 'string') {
+          root.style.setProperty(name, vars[name]);
+        }
+      }
+    },
+
+    /** Fires `ready` once and releases anything waiting in onReady(). */
+    _markReady: function (detail) {
+      if (this._readyFired) return;
+
+      this._readyFired = true;
+      this._readyDetail = detail;
+
+      this._emit('ready', detail);
+
+      var callbacks = this._readyCallbacks;
+      this._readyCallbacks = [];
+
+      for (var i = 0; i < callbacks.length; i++) {
+        try { callbacks[i](detail); } catch (e) {}
+      }
+    },
+
+    /**
+     * Runs `callback(detail)` once the page's consent state is settled —
+     * immediately if it already is. Safe to call from a script that runs
+     * before or after this file.
+     */
+    onReady: function (callback) {
+      if (typeof callback !== 'function') return;
+
+      if (this._readyFired) {
+        try { callback(this._readyDetail); } catch (e) {}
+        return;
+      }
+
+      this._readyCallbacks.push(callback);
+    },
+
+    /** Whether `cookieConsent:ready` has fired on this page. */
+    isReady: function () {
+      return this._readyFired;
     },
 
     /**
@@ -410,13 +810,12 @@
       this._storageKey = LEGACY_STORAGE_KEY + '_' + siteId;
       this._visitorKey = LEGACY_VISITOR_KEY + '_' + siteId;
 
-      if (Store.get(this._storageKey) === null) {
-        var legacy = Store.get(LEGACY_STORAGE_KEY);
-        if (legacy !== null) {
-          Store.set(this._storageKey, legacy);
-          Store.remove(LEGACY_STORAGE_KEY);
-        }
-      }
+      // The un-namespaced key from pre-multisite development builds is not
+      // adopted. On a shared-origin multisite install it was taken by
+      // whichever site the visitor happened to load first — so a decision
+      // made on one site became consent on another. It is removed instead;
+      // nothing was ever published that wrote it.
+      Store.remove(LEGACY_STORAGE_KEY);
     },
 
     /* ---------------------------------------------------------------
@@ -450,16 +849,19 @@
 
       if (cfg.policyVersion && migrated.policyVersion !== cfg.policyVersion) return null;
 
-      if (cfg.consentExpiryDays && migrated.timestamp &&
-          Date.now() - migrated.timestamp > cfg.consentExpiryDays * DAY_MS) {
-        return null;
-      }
+      if (!isFresh(migrated.timestamp, cfg.consentExpiryDays)) return null;
 
-      var known = cfg.allCategories || [];
-      var locked = cfg.lockedCategories || [];
+      // Unknown keys are dropped against the site's categories — from the
+      // configuration, or the rendered preference centre when the
+      // configuration is missing. With neither there is nothing to check a
+      // stored key against, so nothing stored is trusted.
+      var known = this._allCategories();
+      var locked = this._lockedCategories();
+
+      if (!known.length) return null;
 
       var categories = migrated.categories.filter(function (key) {
-        return known.length === 0 || known.indexOf(key) !== -1;
+        return known.indexOf(key) !== -1;
       });
 
       return {
@@ -570,7 +972,8 @@
      * enabled wholesale by some browsers and carries no general legal force,
      * which makes reading it as a considered choice unsafe.
      *
-     * Returns true when a signal was applied and the banner should stay hidden.
+     * Returns the committed decision when a signal was applied and the banner
+     * should stay hidden, or false.
      */
     _applyPrivacySignal: function () {
       var cfg = this._config;
@@ -581,9 +984,7 @@
 
       if (!gpc && !dnt) return false;
 
-      this._commit('reject_all', this._lockedCategories(), gpc ? 'gpc' : 'dnt');
-
-      return true;
+      return this._commit('reject_all', this._lockedCategories(), gpc ? 'gpc' : 'dnt');
     },
 
     /* ---------------------------------------------------------------
@@ -623,12 +1024,28 @@
       if (cached === 'show') { this._showBanner(); return; }
       if (cached === 'hide') { this._applyGeoBypass(null); return; }
 
+      // The lookup is asynchronous, and the visitor (or the site's own code)
+      // can decide while it is in flight — through a footer "manage
+      // preferences" control, rejectAll(), updateConsent(). The answer
+      // arriving afterwards used to be applied regardless: a "not targeted"
+      // answer activated every optional category over a rejection the
+      // visitor had just made, and a "targeted" one re-showed a banner that
+      // had already been answered. The generation counter already identifies
+      // the current decision for sync purposes; the same number says whether
+      // this lookup still belongs to the page state that asked for it.
+      var generation = this._syncGeneration;
+      var isStale = function () {
+        return generation !== self._syncGeneration || self.getConsent() !== null;
+      };
+
       fetch(cfg.geoUrl, {
         credentials: 'same-origin',
         headers: { Accept: 'application/json' }
       }).then(function (res) {
         return res.ok ? res.json() : { show: true };
       }).then(function (json) {
+        if (isStale()) return;
+
         var show = !json || json.show !== false;
         try {
           window.sessionStorage.setItem(cacheKey, show ? 'show' : 'hide');
@@ -637,6 +1054,8 @@
         if (show) self._showBanner();
         else self._applyGeoBypass(json && json.country);
       }).catch(function () {
+        if (isStale()) return;
+
         self._showBanner();
       });
     },
@@ -799,6 +1218,38 @@
       }
     },
 
+    /**
+     * After the banner and preference centre are hidden, focus must not stay
+     * on a control inside them. The modal layout restores focus to what had
+     * it before the banner opened; the bar and corner layouts never took
+     * focus, so a keyboard user who tabbed into them and decided was left
+     * focused on a hidden button. Focus goes to the site's own "manage
+     * preferences" control when the page has one — the natural place to
+     * change the decision just made — and is released otherwise.
+     */
+    _moveFocusOutOfHiddenUi: function () {
+      var active = document.activeElement;
+      var banner = this._element('banner');
+      var prefs = this._element('preferences');
+
+      if (!active || active === document.body) return;
+
+      var inHidden = (banner && banner.hidden && banner.contains(active)) ||
+        (prefs && prefs.hidden && prefs.contains(active));
+
+      if (!inHidden) return;
+
+      var controls = toArray(document.querySelectorAll('[data-cck-action="open-preferences"]')).filter(function (node) {
+        return !(banner && banner.contains(node)) && !(prefs && prefs.contains(node)) && node.offsetParent !== null;
+      });
+
+      if (controls.length) {
+        controls[0].focus();
+      } else if (typeof active.blur === 'function') {
+        active.blur();
+      }
+    },
+
     /** Shows or hides the dimming overlay that only the popup layout renders. */
     _toggleOverlay: function (hidden) {
       var overlay = this._element('bannerOverlay');
@@ -842,6 +1293,11 @@
     openPreferences: function () {
       var modal = this._element('preferences');
       if (!modal) return;
+
+      // Already open: remembering the current focus now would store an
+      // element inside the dialog, and closing would "restore" focus into
+      // the hidden dialog.
+      if (!modal.hidden) return;
 
       this._previousFocus = document.activeElement;
 
@@ -994,6 +1450,13 @@
 
       try { window.sessionStorage.removeItem(this._geoCacheKey()); } catch (e) {}
 
+      // Withdrawal reaches Google too. Tags already on the page otherwise
+      // kept running under the grant that was just taken back until the next
+      // navigation. Every optional signal returns to denied; the locked
+      // categories' signals stay granted, exactly as a rejection leaves them.
+      this._pushConsentMode(this._lockedCategories());
+      deactivateGatedFrames(this._lockedCategories());
+
       this._emit('reset', {});
       this._maybeShowBanner();
     },
@@ -1027,8 +1490,14 @@
 
       activateGatedContent(categories);
       this._pushConsentMode(categories);
-      this._hideBanner();
+
+      // The preference centre closes first. Hiding the banner while it was
+      // still open discarded the banner's remembered focus, and closing it
+      // afterwards returned focus to its opener — a button inside the banner
+      // that had just been hidden — so keyboard focus fell to <body>.
       this.closePreferences();
+      this._hideBanner();
+      this._moveFocusOutOfHiddenUi();
 
       // Say so rather than failing silently: with no writable storage the
       // decision cannot outlive the page, and a listener may want to react.
@@ -1042,6 +1511,8 @@
       // cookie names can be reported. Covers accept, reject, custom, the
       // JavaScript API, and the GPC/DNT paths, all of which arrive here.
       this._reportDetectedCookies();
+
+      return data;
     },
 
     /* ---------------------------------------------------------------
@@ -1056,8 +1527,13 @@
      * Every signal the configuration mentions is set explicitly to granted or
      * denied, so withdrawing consent genuinely returns a signal to denied
      * rather than leaving the previous grant standing.
+     *
+     * With `grantsOnly`, only the given categories' signals are sent, as
+     * granted — used before the visitor has answered, when the locked
+     * categories are already in effect but nothing optional has been decided
+     * and the denied default must be left alone.
      */
-    _pushConsentMode: function (categories) {
+    _pushConsentMode: function (categories, grantsOnly) {
       var mode = this._config.consentMode;
       if (!mode || !mode.enabled || !mode.signals) return;
 
@@ -1067,6 +1543,8 @@
         if (!Object.prototype.hasOwnProperty.call(mode.signals, category)) continue;
 
         var granted = categories.indexOf(category) !== -1;
+        if (grantsOnly && !granted) continue;
+
         var signals = mode.signals[category] || [];
 
         for (var i = 0; i < signals.length; i++) {
@@ -1117,11 +1595,30 @@
       // longer exists.
       var generation = this._syncGeneration;
 
-      this._post(cfg.saveUrl, { action: data.action, categories: data.categories, source: data.source })
-        .then(function (json) {
+      // An outbox, written *before* the request. It used to be written only
+      // when a request failed — so a navigation that aborted the request
+      // (a site reloading on `cookieConsent:changed`, a click on a link right
+      // after Accept) ran no handler at all, and the record was lost without
+      // trace. And because each new decision replaces the entry, an older
+      // decision still queued from an earlier page can never be re-sent over
+      // a newer one. The cost is at-least-once delivery: a request whose
+      // response never arrived is sent again on the next page view.
+      var attempts = typeof data.syncAttempts === 'number' ? data.syncAttempts : 0;
+      var entry = assign(assign({}, data), { syncAttempts: attempts });
+
+      Store.set(pendingKey, entry);
+
+      this._post(cfg.saveUrl, {
+        action: data.action,
+        categories: data.categories,
+        source: data.source,
+        policyVersion: data.policyVersion
+      }, { keepalive: true })
+        .then(function () {
           if (generation !== self._syncGeneration) return;
 
-          if (json && json.visitorUuid) Store.set(self._visitorKey, json.visitorUuid);
+          // The visitor identifier lives only in the server's httpOnly
+          // cookie; nothing here stores it.
           Store.remove(pendingKey);
         })
         .catch(function (error) {
@@ -1137,22 +1634,20 @@
             return;
           }
 
-          var attempts = (typeof data.syncAttempts === 'number' ? data.syncAttempts : 0) + 1;
-
-          if (attempts > MAX_SYNC_ATTEMPTS) {
+          if (attempts + 1 > MAX_SYNC_ATTEMPTS) {
             Store.remove(pendingKey);
             self._emit('syncFailed', {
               permanent: false,
               status: (error && error.status) || 0,
-              attempts: attempts
+              attempts: attempts + 1
             });
 
             return;
           }
 
-          // Queued as a copy: the attempt count is bookkeeping for the queue
-          // and has no business in the decision the visitor's storage holds.
-          Store.set(pendingKey, assign(assign({}, data), { syncAttempts: attempts }));
+          // The attempt count is bookkeeping for the queue and never part of
+          // the decision the visitor's own storage holds.
+          Store.set(pendingKey, assign(entry, { syncAttempts: attempts + 1 }));
         });
     },
 
@@ -1187,20 +1682,48 @@
      * fetched when first needed, and a rejection is treated as "that token
      * expired" rather than as a failure.
      */
-    _post: function (url, payload) {
+    _post: function (url, payload, options) {
       var self = this;
 
-      return this._csrf().then(function (token) {
-        return self._rawPost(url, payload, token).then(function (res) {
-          if (res.status !== 400) return res;
+      // No token means the session endpoint could not be reached, which is a
+      // passing condition. Posting anyway guaranteed an `invalid_csrf`
+      // refusal, which counted as final — so a brief outage of that one
+      // endpoint permanently dropped the consent record.
+      var requireToken = function (token) {
+        if (!token && self._config.csrfUrl) {
+          throw new Error('No CSRF token available');
+        }
 
-          // Discard and re-fetch, then try once more. Only once — a second
-          // failure is a real problem, not a stale token, and retrying
-          // further would just hammer the endpoint.
+        return token;
+      };
+
+      // Only a rejected token is worth another attempt. The endpoints say so
+      // explicitly (`invalid_csrf`); any other 400 is a refusal of the
+      // payload itself, and re-sending it would only spend another request
+      // against a rate-limited endpoint to be refused again.
+      var classify = function (res, second) {
+        if (res.status !== 400) return res;
+
+        return self._errorCode(res).then(function (code) {
+          if (code !== 'invalid_csrf') return { ok: false, status: 400 };
+
+          // A second rejection right after a fresh token is not the payload's
+          // fault either (a session that will not stick, say): report it as
+          // retryable later, rather than as a permanent refusal.
+          if (second) return { ok: false, status: 0 };
+
           self._csrfToken = null;
-          return self._csrf(true).then(function (fresh) {
-            return self._rawPost(url, payload, fresh);
+          return self._csrf(true).then(requireToken).then(function (fresh) {
+            return self._rawPost(url, payload, fresh, options).then(function (again) {
+              return classify(again, true);
+            });
           });
+        });
+      };
+
+      return this._csrf().then(requireToken).then(function (token) {
+        return self._rawPost(url, payload, token, options).then(function (res) {
+          return classify(res, false);
         });
       }).then(function (res) {
         if (!res.ok) {
@@ -1216,7 +1739,7 @@
       });
     },
 
-    _rawPost: function (url, payload, token) {
+    _rawPost: function (url, payload, token, options) {
       var body = {};
       for (var key in payload) {
         if (Object.prototype.hasOwnProperty.call(payload, key)) body[key] = payload[key];
@@ -1230,28 +1753,61 @@
         method: 'POST',
         credentials: 'same-origin',
         headers: headers,
-        body: JSON.stringify(body)
+        body: JSON.stringify(body),
+        // Lets a consent save outlive the page that sent it.
+        keepalive: !!(options && options.keepalive)
       });
     },
 
-    /** Fetches (and memoises for the page view) a CSRF token. */
+    /** The `error` code of a JSON error response, or '' when it has none. */
+    _errorCode: function (res) {
+      if (!res || typeof res.json !== 'function') return Promise.resolve('');
+
+      return res.json().then(function (json) {
+        return (json && typeof json.error === 'string') ? json.error : '';
+      }, function () {
+        return '';
+      });
+    },
+
+    /**
+     * Fetches (and memoises for the page view) a CSRF token.
+     *
+     * The request itself is shared, not just its result. A decision starts
+     * the consent save and the cookie-name report in the same tick, and each
+     * used to fetch a token of its own; on a visitor with no session yet that
+     * meant two session requests, two sessions, and one POST carrying a token
+     * the other request's cookie had already replaced. A forced refresh
+     * starts a new request, which later callers then share in turn.
+     */
     _csrf: function (force) {
       var self = this;
 
       if (this._csrfToken && !force) return Promise.resolve(this._csrfToken);
       if (!this._config.csrfUrl) return Promise.resolve('');
+      if (this._csrfPromise && !force) return this._csrfPromise;
 
-      return fetch(this._config.csrfUrl, {
+      var request = fetch(this._config.csrfUrl, {
         credentials: 'same-origin',
         headers: { Accept: 'application/json' }
       }).then(function (res) {
         return res.ok ? res.json() : {};
       }).then(function (json) {
-        self._csrfToken = (json && json.csrfTokenValue) || '';
-        return self._csrfToken;
+        var token = (json && json.csrfTokenValue) || '';
+        if (self._csrfPromise === request) self._csrfToken = token;
+        return token;
       }).catch(function () {
         return '';
+      }).then(function (token) {
+        // Released once settled, so a failed lookup is retried by the next
+        // caller rather than remembered for the rest of the page view.
+        if (self._csrfPromise === request) self._csrfPromise = null;
+        return token;
       });
+
+      this._csrfPromise = request;
+
+      return request;
     },
 
     /* ---------------------------------------------------------------
@@ -1307,8 +1863,22 @@
       if (!names.length) return;
 
       var reportedKey = 'cck_reported_' + (cfg.siteId !== undefined ? cfg.siteId : '0');
-      var reported = Store.get(reportedKey) || {};
       var now = Date.now();
+
+      // Pruned on every read, so the map holds at most the names seen within
+      // the last day rather than every name ever seen. It is kept in
+      // localStorage only: with no localStorage it used to fall back to a
+      // year-long cookie that grew with each name, went out with every
+      // request, and was silently dropped by the browser past 4 KB. Without
+      // localStorage names are simply reported once per page view.
+      var reported = {};
+      var previous = Store.getLocal(reportedKey) || {};
+      for (var seen in previous) {
+        if (Object.prototype.hasOwnProperty.call(previous, seen) &&
+            typeof previous[seen] === 'number' && now - previous[seen] <= REPORT_TTL_MS) {
+          reported[seen] = previous[seen];
+        }
+      }
 
       var fresh = names.filter(function (name) {
         return !reported[name] || (now - reported[name]) > REPORT_TTL_MS;
@@ -1318,7 +1888,7 @@
 
       this._post(cfg.reportCookiesUrl, { names: fresh }).then(function () {
         fresh.forEach(function (name) { reported[name] = now; });
-        Store.set(reportedKey, reported);
+        Store.setLocal(reportedKey, reported);
       }).catch(function () {
         // Best-effort only — a failed report is simply retried on a later
         // page load, and never surfaces to the visitor.
@@ -1406,18 +1976,26 @@
       var self = this;
 
       document.addEventListener('click', function (e) {
-        var btn = e.target && e.target.closest ? e.target.closest('[data-cck-action]') : null;
+        var btn = closestAction(e.target);
         if (!btn) return;
 
-        switch (btn.getAttribute('data-cck-action')) {
-          case 'accept-all': self.acceptAll(); break;
-          case 'reject-all': self.rejectAll(); break;
-          case 'open-preferences': self.openPreferences(); break;
-          case 'close-preferences': self.closePreferences(); break;
-          case 'save-preferences': self.savePreferences(); break;
-          case 'reset-consent': self.resetConsent(); break;
-          default: return;
-        }
+        var handlers = {
+          'accept-all': 'acceptAll',
+          'reject-all': 'rejectAll',
+          'open-preferences': 'openPreferences',
+          'close-preferences': 'closePreferences',
+          'save-preferences': 'savePreferences',
+          'reset-consent': 'resetConsent'
+        };
+        var method = handlers[btn.getAttribute('data-cck-action')];
+
+        if (!method) return;
+
+        // A control written as `<a href="#">` would otherwise also navigate
+        // (or jump to the top of the page) after doing its job.
+        if (typeof e.preventDefault === 'function') e.preventDefault();
+
+        self[method]();
       });
 
       document.addEventListener('keydown', function (e) {

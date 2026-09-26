@@ -4,8 +4,13 @@
   The banner is hidden by default; JS reveals it when no consent is stored.
 #}
 
-{# ----- Dynamic CSS custom properties ----- #}
+{# ----- Dynamic CSS custom properties -----
+   On the front end the runtime applies these from its configuration, through
+   the CSSOM, so no inline <style> is needed (a strict style-src would block
+   it). The control-panel preview has no runtime, so it keeps the element. #}
+{% if isPreview ?? false %}
 <style>{{ settings.cssVars|raw }}</style>
+{% endif %}
 
 {# ----- Consent Banner ----- #}
 {% set layoutClass = 'cck-layout--' ~ settings.bannerLayout %}
@@ -159,7 +164,10 @@
     {% endif %}
 
     {# Category toggles #}
-    {% set cookiesByCategory = craft.cookieConsent.cookiesByCategory %}
+    {# Grouped from the settings already loaded — the site the banner is
+       rendered for, which in the dashboard preview is the previewed site, not
+       the current one — instead of querying the cookie table again. #}
+    {% set cookiesByCategory = (settings.cookies ?? [])|group(c => c.categoryKey) %}
     <div class="cck-categories" role="list">
       {% for category in settings.categories %}
         {% set categoryCookies = cookiesByCategory[category.key] ?? [] %}

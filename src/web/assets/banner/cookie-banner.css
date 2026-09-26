@@ -47,6 +47,14 @@
   left: 0;
   right: 0;
   max-width: 100%;
+  /* Never taller than the screen: a long description with zoomed text, or a
+     landscape phone, would otherwise push the action buttons off-screen with
+     no way to scroll to them — leaving the visitor unable to answer. */
+  max-height: 100vh;
+  max-height: 100dvh;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding-bottom: calc(var(--cck-padding, 24px) + env(safe-area-inset-bottom, 0px));
   border-radius: var(--cck-radius, 8px) var(--cck-radius, 8px) 0 0;
   border-bottom: none;
 }
@@ -69,6 +77,10 @@
   left: 0;
   right: 0;
   max-width: 100%;
+  max-height: 100vh;
+  max-height: 100dvh;
+  overflow-y: auto;
+  overscroll-behavior: contain;
   border-radius: 0 0 var(--cck-radius, 8px) var(--cck-radius, 8px);
   border-top: none;
 }
@@ -350,7 +362,7 @@
   border: none;
   cursor: pointer;
   padding: 4px;
-  color: var(--cck-close-color, #9ca3af);
+  color: var(--cck-close-color, #6b7280);
   border-radius: 4px;
   flex-shrink: 0;
   line-height: 1;
@@ -500,7 +512,10 @@
   width: 44px;
   height: 24px;
   border-radius: 12px;
-  background: #d1d5db;
+  /* 3.3:1 against the white thumb and a white banner — the 3:1 WCAG 1.4.11
+     asks of a control's boundary. The previous #d1d5db was 1.47:1, so the
+     "off" state was barely visible. */
+  background: #878d97;
   transition: background-color 0.2s ease;
   position: relative;
 }
@@ -541,6 +556,7 @@
    -------------------------------------------------------------------------- */
 .cck-preferences__footer {
   display: flex;
+  flex-wrap: wrap;
   justify-content: flex-end;
   gap: 8px;
   padding-top: 16px;
@@ -585,9 +601,26 @@
     flex-direction: column;
   }
 
-  .cck-btn {
+  /* Scoped to the plugin's own containers: unscoped, this also stretched a
+     site's footer "manage preferences" and reset buttons. */
+  .cck-banner .cck-btn,
+  .cck-preferences .cck-btn {
     width: 100%;
     justify-content: center;
+    /* Long (often translated) labels wrap instead of overflowing. */
+    white-space: normal;
+    line-height: 1.25;
+    text-align: center;
+  }
+
+  /* The preference centre's footer stacks too. As a nowrap row it needed
+     ~330px, and with `justify-content: flex-end` the overflow went off the
+     *left* edge — which a scroll container cannot scroll to — so Reject All
+     sat partly off-screen and out of reach on every phone. Reversed, so the
+     primary action (Save) stays on top as it is on the right on desktop. */
+  .cck-preferences__footer {
+    flex-direction: column-reverse;
+    align-items: stretch;
   }
 
   /* All four layouts collapse to the same bottom-anchored bar on mobile,
@@ -612,8 +645,23 @@
     transform: none;
     width: 100%;
     max-width: 100%;
-    max-height: 80vh;
     border-radius: var(--cck-radius, 8px) var(--cck-radius, 8px) 0 0;
+  }
+
+  /* Every layout — the bottom bar included, which this rule used to skip —
+     is capped below the visible viewport height and scrolls inside itself,
+     so the buttons stay reachable at 320px wide, at 200% text zoom, and in
+     landscape. `dvh` tracks the browser toolbar showing and hiding; the
+     `vh` line is for browsers without it. */
+  .cck-layout--bottom-bar,
+  .cck-layout--top-bar,
+  .cck-layout--center-popup,
+  .cck-layout--corner-popup {
+    max-height: 80vh;
+    max-height: 85dvh;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    padding-bottom: calc(var(--cck-padding, 24px) + env(safe-area-inset-bottom, 0px));
   }
 
   /* `.cck-layout--corner-popup.cck-corner--bottom-left` (two classes) is
@@ -638,11 +686,10 @@
     flex: 0 1 auto;
   }
 
-  /* center-popup's dimmed backdrop doesn't fit the bottom-bar treatment
-     it's collapsed into above. */
-  .cck-banner-overlay {
-    display: none;
-  }
+  /* The center popup stays a modal dialog on small screens — it traps focus
+     and is `aria-modal` — so its dimmed backdrop stays too. Hiding it left
+     the page behind visible and tappable while being hidden from assistive
+     technology, which is a modal in semantics only. */
 }
 
 /* --------------------------------------------------------------------------
@@ -733,9 +780,13 @@
 .cck-banner :focus-visible,
 .cck-preferences :focus-visible,
 .cck-btn:focus-visible {
-  outline: 2px solid currentColor;
+  /* The link colour, not currentColor: on Accept and Save the text colour is
+     white, so a currentColor ring drawn on the offset — over the white banner
+     background — was invisible exactly where focus most needs showing. The
+     border-radius override is gone too: it changed a button's shape while
+     focused. */
+  outline: 2px solid var(--cck-link-color, #2563eb);
   outline-offset: 2px;
-  border-radius: 2px;
 }
 
 /* The panel receives focus when the dialog opens; it is a scroll container,
@@ -775,7 +826,9 @@
   .cck-preferences,
   .cck-preferences__panel,
   .cck-toggle__track,
-  .cck-toggle__track::after {
+  .cck-toggle__track::after,
+  .cck-btn,
+  .cck-category__cookies-summary::before {
     animation: none !important;
     transition: none !important;
   }
@@ -857,5 +910,13 @@
   .cck-cookie-table td {
     border: 0;
     padding: 0.125rem 0;
+  }
+
+  /* The column headings are hidden at this width, so each value carries its
+     own label; screen readers get the same association from the ARIA table
+     roles in the markup, which survive the display change. */
+  .cck-cookie-table td[data-label]::before {
+    content: attr(data-label) ": ";
+    font-weight: 600;
   }
 }
