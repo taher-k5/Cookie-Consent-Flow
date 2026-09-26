@@ -25,7 +25,7 @@ class SettingsService extends Component
 {
     /** Boolean settings fields. */
     private const BOOL_FIELDS = [
-        'bannerEnabled', 'fullWidth', 'shadow', 'fixedPosition', 'geoEnabled', 'logEnabled',
+        'bannerEnabled', 'fullWidth', 'shadow', 'geoEnabled', 'logEnabled',
         'consentModeEnabled', 'consentModeAutoInject',
         'consentModeUrlPassthrough', 'consentModeAdsDataRedaction',
         'respectGpc', 'respectDnt',
@@ -125,6 +125,14 @@ class SettingsService extends Component
      */
     public function saveGlobalSettings(array $raw): bool
     {
+        // Categories must be a list of rows; anything else is refused here
+        // rather than cast into a TypeError.
+        if (isset($raw['categories']) && !is_array($raw['categories'])) {
+            $this->_validationErrors = [Craft::t('cookie-consent-flow', '{field}: unexpected value.', ['field' => 'categories'])];
+
+            return false;
+        }
+
         $raw = $this->normalizeFields($raw);
 
         if (!$this->_validateFields($raw)) {
@@ -175,7 +183,25 @@ class SettingsService extends Component
      */
     public function saveSiteOverrides(int $siteId, array $raw, array $useGlobalFlags): bool
     {
+        // An emptied number field on a site's override means "no value of my
+        // own", not zero: casting it would silently override the global
+        // wait_for_update with 0 (Google stops waiting for a decision). The
+        // site inherits it instead.
+        // (`logoAssetId` is different: see below.)
+        if (array_key_exists('consentModeWaitForUpdate', $raw) && trim((string) $raw['consentModeWaitForUpdate']) === '') {
+            $useGlobalFlags['consentModeWaitForUpdate'] = '1';
+            unset($raw['consentModeWaitForUpdate']);
+        }
+
         $raw = $this->normalizeFields($raw);
+
+        // An empty logo on a site that overrides it is a deliberate "no logo
+        // here". normalizeFields() turns it into null, which on a site row
+        // means "inherit" — so the global logo kept showing. 0 is stored
+        // instead: never a real asset id, and read as "no logo".
+        if (array_key_exists('logoAssetId', $raw) && $raw['logoAssetId'] === null && empty($useGlobalFlags['logoAssetId'])) {
+            $raw['logoAssetId'] = 0;
+        }
 
         // A site override lands in exactly the same columns, and is rendered
         // to exactly the same visitors, as a global value — so it is held to
@@ -241,6 +267,10 @@ class SettingsService extends Component
                     $cookieDefinitions->deleteAllForSettingsId((int) $record->id);
                 } elseif ($saved && $cookiesOverridden) {
                     $saved = $cookieDefinitions->saveAll((int) $record->id, $raw['cookies']);
+
+                    if (!$saved) {
+                        array_push($this->_validationErrors, ...$cookieDefinitions->getValidationErrors());
+                    }
                 }
             }
 
@@ -406,7 +436,11 @@ class SettingsService extends Component
             $attributes[] = $field;
         }
 
-        if ($attributes === [] || $model->validate($attributes)) {
+        $categoryErrors = isset($raw['categories']) && is_array($raw['categories'])
+            ? self::validateCategories($raw['categories'])
+            : [];
+
+        if (($attributes === [] || $model->validate($attributes)) && $categoryErrors === []) {
             return true;
         }
 
@@ -414,12 +448,145 @@ class SettingsService extends Component
             $this->_validationErrors[] = $field . ': ' . implode(' ', $messages);
         }
 
+        array_push($this->_validationErrors, ...$categoryErrors);
+
         Craft::error(
             'Cookie consent settings failed validation: ' . Json::encode($model->getErrors()),
             __METHOD__
         );
 
         return false;
+    }
+
+    /**
+     * Problems with a normalised category list that the database would
+     * otherwise report as an anonymous failed INSERT, or that would make the
+     * list mean different things on different databases.
+     *
+     * - Every row needs a key (after sanitising to `[A-Za-z0-9_-]`) and a
+     *   label, within the column widths.
+     * - Keys must be unique **ignoring case**. The unique index on
+     *   (settingsId, key) is case-insensitive under MySQL's collations and
+     *   case-sensitive on PostgreSQL, so `Analytics` beside `analytics` was
+     *   refused on one and accepted on the other — and a site that relied on
+     *   the difference would have two categories that markup, storage and
+     *   the records filter could not tell apart on MySQL.
+     *
+     * @param array<int, array<string, mixed>> $categories
+     * @return string[] One translated message per problem.
+     */
+    public static function validateCategories(array $categories): array
+    {
+        $errors = [];
+        $seen   = [];
+
+        foreach (array_values($categories) as $i => $category) {
+            $row   = $i + 1;
+            $key   = (string) ($category['key'] ?? '');
+            $label = (string) ($category['label'] ?? '');
+
+            if ($key === '') {
+                $errors[] = Craft::t('cookie-consent-flow', 'Category {row}: the key may only contain letters, numbers, hyphens and underscores.', ['row' => $row]);
+                continue;
+            }
+
+            if (mb_strlen($key) > 100) {
+                $errors[] = Craft::t('cookie-consent-flow', 'Category {row}: the key must be at most {max} characters.', ['row' => $row, 'max' => 100]);
+            }
+
+            if (trim($label) === '') {
+                $errors[] = Craft::t('cookie-consent-flow', 'Category {row}: a label is required.', ['row' => $row]);
+            } elseif (mb_strlen($label) > 255) {
+                $errors[] = Craft::t('cookie-consent-flow', 'Category {row}: the label must be at most {max} characters.', ['row' => $row, 'max' => 255]);
+            }
+
+            if (mb_strlen((string) ($category['description'] ?? '')) > Settings::LONG_TEXT_MAX_LENGTH) {
+                $errors[] = Craft::t('cookie-consent-flow', 'Category {row}: the description must be at most {max} characters.', ['row' => $row, 'max' => Settings::LONG_TEXT_MAX_LENGTH]);
+            }
+
+            $folded = strtolower($key);
+
+            if (isset($seen[$folded])) {
+                $errors[] = Craft::t('cookie-consent-flow', 'Category {row}: the key “{key}” is already used by category {other} (keys are compared ignoring case).', [
+                    'row'   => $row,
+                    'key'   => $key,
+                    'other' => $seen[$folded],
+                ]);
+            } else {
+                $seen[$folded] = $row;
+            }
+        }
+
+        return $errors;
+    }
+
+    /**
+     * The policy version an invalidation moves to: the UTC date and time to
+     * the second (`2026-09-26.143005`), with a counter appended only if that
+     * exact value is the current one.
+     *
+     * The previous scheme used the last four digits of the Unix time, which
+     * repeat every 10,000 seconds — so an invalidation could land on a
+     * version used earlier the same day, and every visitor who had consented
+     * under *that* version would silently count as having consented under
+     * this one. A full timestamp never repeats, and always sorts after the
+     * versions it replaces.
+     */
+    public static function nextPolicyVersion(string $current, ?\DateTimeImmutable $now = null): string
+    {
+        $base    = ($now ?? new \DateTimeImmutable('now', new \DateTimeZone('UTC')))
+            ->setTimezone(new \DateTimeZone('UTC'))
+            ->format('Y-m-d.His');
+        $version = $base;
+
+        for ($n = 2; $version === $current || (str_starts_with($current, $base) && strcmp($version, $current) <= 0); $n++) {
+            $version = $base . '.' . $n;
+        }
+
+        return $version;
+    }
+
+    /**
+     * Removes everything tied to one site's configuration: its settings row
+     * (with its categories and cookie disclosures, by cascade) and its
+     * detected-cookie inventory. Called when a Craft site is deleted.
+     *
+     * Consent records are not touched — see Plugin::_registerSiteCleanup().
+     */
+    public function deleteSiteData(int $siteId): void
+    {
+        if ($siteId <= 0) {
+            // Site 0 is the global row, which belongs to no site.
+            return;
+        }
+
+        $transaction = Craft::$app->getDb()->beginTransaction();
+
+        try {
+            $settingsId = $this->findSiteSettingsId($siteId);
+
+            if ($settingsId !== null) {
+                // Explicitly, as well as by cascade: the category table's
+                // foreign key is added after the fact by the install
+                // migration, and a database that predates it must not keep
+                // the children of a deleted row.
+                CookieCategoryRecord::deleteAll(['settingsId' => $settingsId]);
+                Plugin::getInstance()->cookieDefinitions->deleteAllForSettingsId($settingsId);
+                SettingsRecord::deleteAll(['id' => $settingsId]);
+            }
+
+            \sfsinfotech\craftcookieconsentflow\records\DetectedCookieRecord::deleteAll(['siteId' => $siteId]);
+
+            $transaction->commit();
+        } catch (\Throwable $e) {
+            if ($transaction->getIsActive()) {
+                $transaction->rollBack();
+            }
+
+            throw $e;
+        }
+
+        $this->clearCache();
     }
 
     /**
@@ -519,6 +686,18 @@ class SettingsService extends Component
                 }
 
                 $transaction->commit();
+            } catch (\yii\db\IntegrityException $e) {
+                // Two first requests raced to seed the row; the other one won.
+                // Use its row rather than failing this request.
+                if ($transaction->getIsActive()) {
+                    $transaction->rollBack();
+                }
+
+                $record = SettingsRecord::find()->where(['siteId' => 0])->one();
+
+                if ($record === null) {
+                    throw $e;
+                }
             } catch (\Throwable $e) {
                 if ($transaction->getIsActive()) {
                     $transaction->rollBack();
@@ -795,7 +974,7 @@ class SettingsService extends Component
 
             $raw['geoTargetCountries'] = array_values(array_unique(array_filter(
                 array_map(static fn($code): string => strtoupper(trim((string) $code)), $countries),
-                static fn(string $code): bool => (bool) preg_match('/^[A-Z]{2}$/', $code)
+                static fn(string $code): bool => (bool) preg_match('/^[A-Z]{2}$/D', $code)
             )));
         }
 

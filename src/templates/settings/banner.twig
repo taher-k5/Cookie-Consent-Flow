@@ -126,14 +126,6 @@
     </div>
 
     {{ forms.lightswitchField({
-        label:        "Fixed / Sticky Position"|t('cookie-consent-flow'),
-        instructions: "Keep the banner fixed on screen while the user scrolls."|t('cookie-consent-flow'),
-        id:           'fixedPosition',
-        name:         'settings[fixedPosition]',
-        on:           settings.fixedPosition,
-    }) }}
-
-    {{ forms.lightswitchField({
         label:        "Full Width"|t('cookie-consent-flow'),
         instructions: "Stretch the banner to the full viewport width."|t('cookie-consent-flow'),
         id:           'fullWidth',
@@ -191,7 +183,7 @@
                 }) }}
             </div>
         </div>
-         <p class="muted">{{ "Maximum width and height for popup layouts (center and corner). Ignored for bar layouts. Max Width is ignored when Full Width is enabled. Examples: 600px (width), 80vh or 600px (height). Leave blank for no limit."|t('cookie-consent-flow') }}</p>
+         <p class="muted">{{ "Maximum width and height for popup layouts (center and corner). Ignored for bar layouts. Max Width is ignored when Full Width is enabled. Examples: 600px (width), 80vh or 600px (height). A blank or invalid value uses the default (600px wide, 90vh high)."|t('cookie-consent-flow') }}</p>
     </div>
 
 </div>{# /#ccf-general #}
@@ -513,6 +505,21 @@
 <div id="ccf-geo" class="hidden" role="tabpanel" aria-labelledby="tab-ccf-geo">
 
     <h2>{{ "Geo-targeting"|t('cookie-consent-flow') }}</h2>
+
+    {% if not plugin.geo.hasTrustedSource() %}
+        {# Without a trusted country source every visitor's country is
+           unknown, and geo-targeting fails open: the banner is shown to
+           everyone. Request headers are client-controlled unless your proxy
+           overwrites them, so none is believed until you name it. #}
+        <div class="readable warning" role="note">
+            <p>
+                {{ "No trusted country source is configured, so every visitor’s country is unknown and the banner is shown to everyone. Set {key} in {file} to the header your CDN or proxy writes the country into (for example CF-IPCountry on Cloudflare), and only a header that proxy always overwrites."|t('cookie-consent-flow', {
+                    key: 'geoCountryHeader',
+                    file: 'config/cookie-consent-flow.php',
+                }) }}
+            </p>
+        </div>
+    {% endif %}
 
     {{ forms.lightswitchField({
         label:        "Enable Geo-targeting"|t('cookie-consent-flow'),

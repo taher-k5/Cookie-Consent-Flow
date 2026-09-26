@@ -94,7 +94,8 @@ class Settings extends Model
     public string $saveTextColor = '#ffffff';
 
     // Close icon
-    public string $closeIconColor = '#9ca3af';
+    /** #6b7280: 4.8:1 on the default white, above the 3:1 an icon needs (#9ca3af was 2.5:1). */
+    public string $closeIconColor = '#6b7280';
 
     // Layout controls
     public string $borderRadius  = '8px';
@@ -104,6 +105,15 @@ class Settings extends Model
     public string $maxHeight     = '90vh';
     public bool   $fullWidth     = false;
     public bool   $shadow        = true;
+
+    /**
+     * @deprecated Never had an effect. The banner is injected at the end of
+     *             `<body>`, so a non-fixed bar would sit after the page's
+     *             footer rather than at the top or bottom of the viewport; no
+     *             layout ever read this value. It is no longer shown,
+     *             stored or overridable, and remains only so templates that
+     *             read `settings.fixedPosition` keep rendering.
+     */
     public bool   $fixedPosition = true;
 
     // Cookie categories
@@ -283,6 +293,38 @@ class Settings extends Model
     public const COLOR_MAX_LENGTH = 64;
 
     /**
+     * Maximum length of the long free-text values (banner description,
+     * category descriptions, cookie purposes), in characters.
+     *
+     * Those columns are TEXT, which on MySQL holds 65,535 **bytes**: 16,000
+     * characters of four-byte UTF-8 (emoji) still fits, so no value the
+     * validator accepts can be truncated or refused by the database.
+     */
+    public const LONG_TEXT_MAX_LENGTH = 16000;
+
+    /**
+     * Settings stored in 255-character columns, validated to that width so an
+     * over-long value is refused on the settings screen with the field named,
+     * not by the database with "Couldn't save settings."
+     */
+    public const SHORT_TEXT_FIELDS = [
+        'bannerHeading', 'privacyPolicyUrl', 'privacyPolicyLinkText',
+        'acceptButtonText', 'rejectButtonText', 'customizeButtonText',
+        'savePreferencesText', 'closeButtonText',
+        'borderRadius', 'padding', 'maxWidth', 'maxHeight',
+    ];
+
+    /**
+     * Button labels. Each is the only accessible name its button has (the
+     * close button's label is its `aria-label`), so none may be blank: an
+     * empty Accept and an empty Reject are indistinguishable.
+     */
+    public const BUTTON_LABEL_FIELDS = [
+        'acceptButtonText', 'rejectButtonText', 'customizeButtonText',
+        'savePreferencesText', 'closeButtonText',
+    ];
+
+    /**
      * Fields a site is allowed to override. Consent logging is intentionally
      * excluded — it's an operational/compliance setting for the whole
      * install, not per-site branding.
@@ -304,7 +346,7 @@ class Settings extends Model
         'customizeHoverBgColor', 'customizeHoverTextColor',
         'saveBgColor', 'saveTextColor', 'closeIconColor',
         'borderRadius', 'padding', 'maxWidth', 'maxHeight',
-        'fullWidth', 'shadow', 'fixedPosition',
+        'fullWidth', 'shadow',
         'categories', 'cookies',
         'geoEnabled', 'geoTargetCountries',
         'consentModeEnabled', 'consentModeType', 'consentModeAutoInject',
@@ -348,7 +390,6 @@ class Settings extends Model
                     ['value' => 'bottom-right', 'label' => 'Bottom Right'],
                     ['value' => 'bottom-left', 'label' => 'Bottom Left'],
                 ]],
-                ['key' => 'fixedPosition', 'type' => 'lightswitch', 'label' => 'Fixed / Sticky Position'],
                 ['key' => 'fullWidth', 'type' => 'lightswitch', 'label' => 'Full Width'],
                 ['key' => 'shadow', 'type' => 'lightswitch', 'label' => 'Shadow'],
                 ['key' => 'borderRadius', 'type' => 'text', 'label' => 'Border Radius'],
@@ -608,8 +649,20 @@ class Settings extends Model
      */
     public function getLogoAsset(): ?\craft\elements\Asset
     {
-        return $this->logoAssetId ? \craft\elements\Asset::find()->id($this->logoAssetId)->one() : null;
+        // Memoised per model: the banner template reads the logo several
+        // times per page, and each read used to be its own element query.
+        if ($this->_logoFor !== $this->logoAssetId) {
+            $this->_logoFor = $this->logoAssetId;
+            $this->_logo    = $this->logoAssetId ? \craft\elements\Asset::find()->id($this->logoAssetId)->one() : null;
+        }
+
+        return $this->_logo;
     }
+
+    private ?\craft\elements\Asset $_logo = null;
+    private int|false|null $_logoFor = false;
+    private ?string $_safeDescription = null;
+    private ?string $_safeDescriptionFor = null;
 
     /** Convenience accessor for templates: the logo's URL, or null. */
     public function getLogoUrl(): ?string
@@ -627,11 +680,24 @@ class Settings extends Model
      */
     public function getSafeDescription(): string
     {
-        return HtmlPurifier::process($this->bannerDescription, [
-            'HTML.Allowed' => 'a[href|title|target|rel],strong,b,em,i,br',
-            'URI.AllowedSchemes' => ['http' => true, 'https' => true, 'mailto' => true],
-            'AutoFormat.Linkify' => false,
-        ]);
+        // Memoised: the banner and preference centre both render it, and
+        // purification is the most expensive thing done per page view.
+        if ($this->_safeDescriptionFor !== $this->bannerDescription) {
+            $this->_safeDescriptionFor = $this->bannerDescription;
+            $this->_safeDescription    = HtmlPurifier::process($this->bannerDescription, [
+                'HTML.Allowed' => 'a[href|title|target|rel],strong,b,em,i,br',
+                'URI.AllowedSchemes' => ['http' => true, 'https' => true, 'mailto' => true],
+                // `target` is in the allow-list above, but HTMLPurifier drops
+                // it unless the frame targets are named; opening in a new tab
+                // gets rel="noopener noreferrer" added.
+                'Attr.AllowedFrameTargets' => ['_blank'],
+                'HTML.TargetNoopener' => true,
+                'HTML.TargetNoreferrer' => true,
+                'AutoFormat.Linkify' => false,
+            ]);
+        }
+
+        return $this->_safeDescription;
     }
 
     /**
@@ -643,7 +709,7 @@ class Settings extends Model
     private function normalizeColor(string $value): string
     {
         $v = trim($value);
-        if ($v !== '' && $v[0] !== '#' && preg_match('/^[0-9a-fA-F]{3}$|^[0-9a-fA-F]{6}$/', $v)) {
+        if ($v !== '' && $v[0] !== '#' && preg_match('/^[0-9a-fA-F]{3}$|^[0-9a-fA-F]{6}$/D', $v)) {
             return '#' . $v;
         }
         return $v;
@@ -668,11 +734,11 @@ class Settings extends Model
             return $fallback;
         }
 
-        if (preg_match('/^(#[0-9a-f]{3,8}|[a-z]+)$/i', $value)) {
+        if (preg_match('/^(#[0-9a-f]{3,8}|[a-z]+)$/iD', $value)) {
             return $value;
         }
 
-        if (preg_match('/^(rgb|rgba|hsl|hsla)\([0-9.,%\s+\/-]+\)$/i', $value)) {
+        if (preg_match('/^(rgb|rgba|hsl|hsla)\([0-9.,%\s+\/-]+\)$/iD', $value)) {
             return $value;
         }
 
@@ -684,7 +750,7 @@ class Settings extends Model
     {
         $value = trim($value);
 
-        return preg_match('/^(0|(?:\d+(?:\.\d+)?)(?:px|rem|em|%|vh|vw|vmin|vmax))$/i', $value)
+        return preg_match('/^(0|(?:\d+(?:\.\d+)?)(?:px|rem|em|%|vh|vw|vmin|vmax))$/iD', $value)
             ? $value
             : $fallback;
     }
@@ -696,15 +762,34 @@ class Settings extends Model
     public function getSafePrivacyPolicyUrl(): string
     {
         $url = trim($this->privacyPolicyUrl);
-        if ($url === '' || preg_match('/[\x00-\x20<>]/', $url)) {
-            return '';
+
+        return self::isSafeUrl($url) ? $url : '';
+    }
+
+    /**
+     * Whether a URL is safe to use as a link target: http(s) or mailto, or a
+     * relative URL.
+     *
+     * The scheme is found here rather than with `parse_url()`, which reads
+     * `javascript:1/alert(1)` as host `javascript`, port `1` and returns no
+     * scheme — so the value passed as "relative" and rendered as a live
+     * `javascript:` link on every page. By the URL standard, anything before
+     * the first `/`, `?` or `#` that contains a `:` is a scheme; a relative
+     * URL is one with no `:` there at all.
+     */
+    public static function isSafeUrl(string $url): bool
+    {
+        if ($url === '' || preg_match('/[\x00-\x20<>"\'`\\\\]/', $url)) {
+            return false;
         }
 
-        $scheme = parse_url($url, PHP_URL_SCHEME);
+        $head = preg_split('#[/?\#]#', $url, 2)[0];
 
-        return $scheme === null || in_array(strtolower((string) $scheme), ['http', 'https', 'mailto'], true)
-            ? $url
-            : '';
+        if (!str_contains($head, ':')) {
+            return true;
+        }
+
+        return (bool) preg_match('/^(https?|mailto):/i', $url);
     }
 
     /**
@@ -712,6 +797,25 @@ class Settings extends Model
      * Rendered as an inline <style> in the banner template.
      */
     public function getCssVars(): string
+    {
+        $lines = [];
+        foreach ($this->getCssVarMap() as $prop => $value) {
+            $lines[] = "  {$prop}: {$value};";
+        }
+
+        return ':root {' . "\n" . implode("\n", $lines) . "\n" . '}';
+    }
+
+    /**
+     * The banner's CSS custom properties as a name → value map, every value
+     * allow-listed. The front-end runtime applies these itself (through the
+     * CSSOM, which a Content Security Policy does not restrict), so the
+     * banner needs no inline `<style>` element that a strict `style-src`
+     * would block; the control-panel preview renders them as {@see getCssVars()}.
+     *
+     * @return array<string, string>
+     */
+    public function getCssVarMap(): array
     {
         $defaults = new self();
         $color = fn(string $value, string $field): string => $this->safeCssColor($value, $defaults->$field);
@@ -758,12 +862,7 @@ class Settings extends Model
             '--cck-shadow'    => $shadow,
         ];
 
-        $lines = [];
-        foreach ($vars as $prop => $value) {
-            $lines[] = "  {$prop}: {$value};";
-        }
-
-        return ':root {' . "\n" . implode("\n", $lines) . "\n" . '}';
+        return $vars;
     }
 
     // Validation
@@ -772,7 +871,7 @@ class Settings extends Model
         return [
             [
                 [
-                    'bannerEnabled', 'geoEnabled', 'logEnabled', 'fullWidth', 'shadow', 'fixedPosition',
+                    'bannerEnabled', 'geoEnabled', 'logEnabled', 'fullWidth', 'shadow',
                     'consentModeEnabled', 'consentModeAutoInject',
                     'consentModeUrlPassthrough', 'consentModeAdsDataRedaction',
                     'respectGpc', 'respectDnt',
@@ -783,14 +882,14 @@ class Settings extends Model
             [['consentModeWaitForUpdate'], 'integer', 'min' => 0, 'max' => 10000],
             [['bannerLayout'], 'in', 'range' => ['bottom-bar', 'top-bar', 'center-popup', 'corner-popup']],
             [['cornerPosition'], 'in', 'range' => ['bottom-left', 'bottom-right']],
+            [self::SHORT_TEXT_FIELDS, 'string', 'max' => 255],
+            [['bannerDescription'], 'string', 'max' => self::LONG_TEXT_MAX_LENGTH],
+            [self::BUTTON_LABEL_FIELDS, 'required'],
             [
-                [
-                    'bannerHeading', 'bannerDescription', 'privacyPolicyUrl', 'privacyPolicyLinkText',
-                    'acceptButtonText', 'rejectButtonText', 'customizeButtonText',
-                    'savePreferencesText', 'closeButtonText',
-                    'borderRadius', 'padding', 'maxWidth', 'maxHeight',
-                ],
-                'string',
+                self::BUTTON_LABEL_FIELDS,
+                'match',
+                'pattern' => '/\S/u',
+                'message' => Craft::t('cookie-consent-flow', '{attribute} cannot be blank.'),
             ],
             // Bounded to the storage width, so an over-long colour is refused
             // on the settings screen with a message naming the field, rather
@@ -800,6 +899,27 @@ class Settings extends Model
             [['logRetentionDays', 'consentExpiryDays'], 'integer', 'min' => 0],
             [['logoAssetId'], 'integer'],
             [['policyVersion'], 'string', 'max' => 50],
+            // An empty version would make every stored decision, and the head
+            // snippet, skip the policy check altogether.
+            [['policyVersion'], 'required'],
+            // The runtime reports this value back with every decision, and the
+            // server only accepts it in this shape (ConsentService::POLICY_VERSION_PATTERN).
+            [
+                ['policyVersion'],
+                'match',
+                'pattern' => \sfsinfotech\craftcookieconsentflow\services\ConsentService::POLICY_VERSION_PATTERN,
+                'message' => Craft::t('cookie-consent-flow', 'Use letters, numbers, dots, dashes, underscores and colons only.'),
+            ],
+            [
+                ['privacyPolicyUrl'],
+                function (string $attribute): void {
+                    $value = trim((string) $this->$attribute);
+
+                    if ($value !== '' && !self::isSafeUrl($value)) {
+                        $this->addError($attribute, Craft::t('cookie-consent-flow', 'Use an http(s) or mailto URL, or a relative path.'));
+                    }
+                },
+            ],
         ];
     }
 }

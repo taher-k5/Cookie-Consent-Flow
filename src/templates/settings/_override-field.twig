@@ -87,13 +87,19 @@
                 disabled:     not isOverridden,
             }) }}
         {% elseif fieldDef.type == 'textarea' %}
+            {# Always the effective value — the site's own when overridden,
+               the inherited global one otherwise. These used to render
+               empty with the global value as a placeholder, so switching a
+               section to override and saving stored blanks: empty button
+               labels on the live banner, and an emptied wait_for_update
+               saved as 0. The inherited value is now what the admin starts
+               editing from. #}
             {{ forms.textareaField({
                 id:           fid,
                 name:         name,
                 label:        label,
                 instructions: instructions,
-                value:        isOverridden ? value : '',
-                placeholder:  globalValue,
+                value:        value,
                 rows:         4,
                 disabled:     not isOverridden,
             }) }}
@@ -127,13 +133,13 @@
                 disabled:     not isOverridden,
             }) }}
         {% else %}
+            {# See the textarea above: the effective value, never a blank. #}
             {{ forms.textField({
                 id:           fid,
                 name:         name,
                 label:        label,
                 instructions: instructions,
-                value:        isOverridden ? value : '',
-                placeholder:  globalValue,
+                value:        value,
                 disabled:     not isOverridden,
             }) }}
         {% endif %}

@@ -59,7 +59,7 @@
         <div class="cck-category-row__toggles">
             {{ forms.lightswitchField({
                 label:        "Enabled by default"|t('cookie-consent-flow'),
-                instructions: "Pre-check this category in the preferences panel."|t('cookie-consent-flow'),
+                instructions: "Pre-check this category in the preferences panel. Saving the panel unchanged then records consent to it; in many jurisdictions (including the EU under the GDPR) a pre-ticked box is not valid consent, so leave this off for optional categories unless your legal review says otherwise."|t('cookie-consent-flow'),
                 name:         namePrefix ~ '[categories][' ~ index ~ '][default]',
                 on:           category.default,
             }) }}

@@ -7,6 +7,7 @@ use craft\web\Controller;
 use sfsinfotech\craftcookieconsentflow\helpers\Permissions;
 use sfsinfotech\craftcookieconsentflow\models\Settings;
 use sfsinfotech\craftcookieconsentflow\Plugin;
+use sfsinfotech\craftcookieconsentflow\services\SettingsService;
 use yii\web\Response;
 
 /**
@@ -52,7 +53,8 @@ class SettingsController extends Controller
         $this->requireCpRequest();
 
         $settings = Plugin::getInstance()->getSettings();
-        $sites    = Craft::$app->getSites()->getAllSites();
+        // Only the sites this user may work on (see Permissions::accessibleSites()).
+        $sites    = Permissions::accessibleSites();
 
         return $this->renderTemplate('cookie-consent-flow/settings/site-overrides', [
             'settings' => $settings,
@@ -83,6 +85,18 @@ class SettingsController extends Controller
         $plugin  = Plugin::getInstance();
         $sitesIn = $request->getBodyParam('sites', []);
 
+        if (!is_array($sitesIn)) {
+            throw new \yii\web\BadRequestHttpException('Invalid sites payload.');
+        }
+
+        // Every posted site must be one this user may work on — refused as a
+        // whole, before anything is written, rather than silently skipped.
+        foreach (array_keys($sitesIn) as $postedSiteId) {
+            if (Craft::$app->getSites()->getSiteById((int) $postedSiteId) !== null) {
+                Permissions::requireSite((int) $postedSiteId);
+            }
+        }
+
         $transaction = Craft::$app->getDb()->beginTransaction();
 
         try {
@@ -94,7 +108,11 @@ class SettingsController extends Controller
                     continue;
                 }
 
-                $useGlobal = $siteData['__useGlobal'] ?? [];
+                if (!is_array($siteData)) {
+                    throw new \yii\web\BadRequestHttpException('Invalid site payload.');
+                }
+
+                $useGlobal = is_array($siteData['__useGlobal'] ?? null) ? $siteData['__useGlobal'] : [];
                 unset($siteData['__useGlobal']);
 
                 if (!$plugin->cookieSettings->saveSiteOverrides((int) $siteId, $siteData, $useGlobal)) {
@@ -188,6 +206,10 @@ class SettingsController extends Controller
         $plugin  = Plugin::getInstance();
         $siteId  = (int) $request->getRequiredBodyParam('siteId');
 
+        if (Craft::$app->getSites()->getSiteById($siteId) !== null) {
+            Permissions::requireSite($siteId);
+        }
+
         if (Craft::$app->getSites()->getSiteById($siteId) === null) {
             return $request->getAcceptsJson()
                 ? $this->asFailure(Craft::t('cookie-consent-flow', 'That site no longer exists.'))
@@ -227,6 +249,12 @@ class SettingsController extends Controller
         $toSiteId    = (int) $request->getRequiredBodyParam('toSiteId');
 
         $sitesService = Craft::$app->getSites();
+        foreach ([$fromSiteId, $toSiteId] as $involved) {
+            if ($sitesService->getSiteById($involved) !== null) {
+                Permissions::requireSite($involved);
+            }
+        }
+
         if ($sitesService->getSiteById($fromSiteId) === null || $sitesService->getSiteById($toSiteId) === null) {
             return $request->getAcceptsJson()
                 ? $this->asFailure(Craft::t('cookie-consent-flow', 'That site no longer exists.'))
@@ -279,6 +307,10 @@ class SettingsController extends Controller
 
         $raw = $request->getBodyParam('settings', []);
 
+        if (!is_array($raw)) {
+            throw new \yii\web\BadRequestHttpException('Invalid settings payload.');
+        }
+
         if (!$plugin->cookieSettings->saveGlobalSettings($raw)) {
             Craft::$app->getSession()->setError($this->_saveErrorMessage(
                 Craft::t('cookie-consent-flow', "Couldn't save banner settings.")
@@ -305,6 +337,10 @@ class SettingsController extends Controller
         $plugin  = Plugin::getInstance();
 
         $raw = $request->getBodyParam('settings', []);
+
+        if (!is_array($raw)) {
+            throw new \yii\web\BadRequestHttpException('Invalid settings payload.');
+        }
 
         if (!$plugin->cookieSettings->saveGlobalSettings($raw)) {
             Craft::$app->getSession()->setError($this->_saveErrorMessage(
@@ -352,14 +388,13 @@ class SettingsController extends Controller
         $plugin  = Plugin::getInstance();
         $current = $plugin->getSettings()->policyVersion;
 
-        // Date-stamped and suffixed, so repeated invalidations on one day
-        // still differ and the value reads as a date in the CP rather than an
-        // opaque counter.
-        $version = (new \DateTimeImmutable())->format('Y-m-d') . '.' . substr((string) time(), -4);
+        // A UTC timestamp to the second, so it reads as a date in the CP and
+        // can never repeat a version used before — see nextPolicyVersion().
+        $version = SettingsService::nextPolicyVersion($current);
 
         $request = Craft::$app->getRequest();
 
-        if ($version === $current || !$plugin->cookieSettings->saveGlobalSettings(['policyVersion' => $version])) {
+        if (!$plugin->cookieSettings->saveGlobalSettings(['policyVersion' => $version])) {
             $message = Craft::t('cookie-consent-flow', "Couldn't invalidate existing consent.");
 
             if ($request->getAcceptsJson()) {

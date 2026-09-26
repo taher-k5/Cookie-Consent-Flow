@@ -58,7 +58,6 @@ use craft\db\ActiveRecord;
  * @property string|null $maxHeight
  * @property bool|null   $fullWidth
  * @property bool|null   $shadow
- * @property bool|null   $fixedPosition
  * @property bool|null   $geoEnabled
  * @property string|null $geoTargetCountries JSON-encoded array, whole-value override.
  * @property bool|null   $logEnabled Only meaningful on the global row.
