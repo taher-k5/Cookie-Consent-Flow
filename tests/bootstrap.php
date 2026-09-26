@@ -62,5 +62,18 @@ new yii\console\Application([
         // cache directory would leak state between runs.
         'cache' => ['class' => yii\caching\ArrayCache::class],
         'log'   => ['traceLevel' => 0, 'targets' => []],
+        // The plugin's own message catalogue, so code that labels things with
+        // Craft::t() (the CP navigation, validation messages) runs as it does
+        // in the control panel.
+        'i18n'  => [
+            'translations' => [
+                'cookie-consent-flow' => [
+                    'class'          => yii\i18n\PhpMessageSource::class,
+                    'sourceLanguage' => 'en',
+                    'basePath'       => dirname(__DIR__) . '/src/translations',
+                    'forceTranslation' => true,
+                ],
+            ],
+        ],
     ],
 ]);
