@@ -42,6 +42,9 @@ can be recorded in the control panel.
 - Craft CMS `^5.0`
 - PHP `>=8.2.0`
 
+The plugin is tested on Craft 5.0.0 and the current 5.x release. Earlier
+Craft 5 releases have published security advisories, so run the latest 5.x.
+
 ## Installation
 
 ```bash
@@ -276,7 +279,7 @@ php craft cookie-consent-flow/retention/clear --dry-run=1
 php craft cookie-consent-flow/retention/clear --force=1
 ```
 
-The command also accepts `--days=N` and `--site=handle`. You can also set
+The command also accepts `--days=N` and `--site=handle` (or a site ID). You can also set
 `automaticRetention` to `true` to have Craft's garbage collection delete them.
 
 ## Multisite
@@ -367,7 +370,9 @@ page cache:
 - `actions/cookie-consent-flow/cookie-detection/report`
 - `actions/users/session-info`
 
-These endpoints are rate limited per visitor. Behind a CDN or load balancer,
+These endpoints are rate limited per visitor, per minute: 20 saves, 30 status
+and 30 geo requests, and 10 cookie reports of at most 100 names each. Behind a
+CDN or load balancer,
 list its IP ranges in Craft's `trustedHosts` so each visitor is identified
 exactly; without it, visitors are told apart by the forwarded address within
 a larger limit for each proxy address, and a forged header cannot escape that
@@ -407,4 +412,7 @@ See [CHANGELOG.md](CHANGELOG.md).
 
 ## License
 
-MIT. See [LICENSE.md](LICENSE.md).
+Cookie Consent Flow is intended to be distributed as a commercial plugin
+through the Craft Plugin Store, under the [Craft License](LICENSE.md). It is
+not open-source software. Each licence covers one production environment at
+a time; see [LICENSE.md](LICENSE.md) for the full terms.

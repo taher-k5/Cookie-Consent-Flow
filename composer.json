@@ -3,7 +3,7 @@
     "description": "Cookie consent and compliance management for Craft CMS 5 \u2014 banners, categories, geo-targeting, consent logs, and multi-site support.",
     "type": "craft-plugin",
     "version": "1.0.0",
-    "license": "MIT",
+    "license": "proprietary",
     "keywords": [
         "craft",
         "craftcms",
@@ -16,10 +16,10 @@
     ],
     "support": {
         "email": "hello@softwareforsolution.com",
-        "issues": "https://github.com/sfsinfotech/cookie-consent-flow/issues?state=open",
-        "source": "https://github.com/sfsinfotech/cookie-consent-flow",
-        "docs": "https://github.com/sfsinfotech/cookie-consent-flow",
-        "rss": "https://github.com/sfsinfotech/cookie-consent-flow/releases.atom"
+        "issues": "https://github.com/taher-k5/Cookie-Consent-Flow/issues?state=open",
+        "source": "https://github.com/taher-k5/Cookie-Consent-Flow",
+        "docs": "https://github.com/taher-k5/Cookie-Consent-Flow",
+        "rss": "https://github.com/taher-k5/Cookie-Consent-Flow/releases.atom"
     },
     "require": {
         "php": ">=8.2.0",
@@ -38,8 +38,8 @@
         "name": "Cookie Consent Flow",
         "developer": "SFS Infotech",
         "developerUrl": "https://softwareforsolution.com",
-        "documentationUrl": "https://github.com/sfsinfotech/cookie-consent-flow",
-        "changelogUrl": "https://raw.githubusercontent.com/sfsinfotech/cookie-consent-flow/main/CHANGELOG.md"
+        "documentationUrl": "https://github.com/taher-k5/Cookie-Consent-Flow",
+        "changelogUrl": "https://raw.githubusercontent.com/taher-k5/Cookie-Consent-Flow/main/CHANGELOG.md"
     },
     "scripts": {
         "test": "@php tests/phpunit.php",
