@@ -25,8 +25,8 @@ class Permissions
     public const EXPORT_LOGS = 'cookieConsentFlow:exportLogs';
 
     /**
-     * Whether the current user holds any of the given permissions, taking the
-     * Admins always pass, per Craft's own convention.
+     * Whether the current user holds any of the given permissions. Admins
+     * always pass, per Craft's own convention.
      */
     public static function canAny(string ...$permissions): bool
     {
@@ -52,6 +52,57 @@ class Permissions
     {
         if (!self::canAny(...$permissions)) {
             throw new ForbiddenHttpException('User is not permitted to perform this action.');
+        }
+    }
+
+    /**
+     * The sites whose consent data and overrides the current user may see.
+     *
+     * On a multisite install Craft grants access per site (`editSite:<uid>`),
+     * and the plugin's per-site data — consent records, exports, site
+     * overrides — follows the same boundary: a user who may only work on
+     * site A must not be able to read site B's records by changing a `site`
+     * parameter. Admins, and every user on a single-site install (where Craft
+     * registers no per-site permission), see every site.
+     *
+     * @return \craft\models\Site[]
+     */
+    public static function accessibleSites(): array
+    {
+        $sites = Craft::$app->getSites()->getAllSites();
+        $user  = Craft::$app->getUser();
+
+        if (count($sites) <= 1 || ($user->getIdentity()?->admin ?? false)) {
+            return $sites;
+        }
+
+        return array_values(array_filter(
+            $sites,
+            static fn(\craft\models\Site $site): bool => $user->checkPermission('editSite:' . $site->uid)
+        ));
+    }
+
+    /** @return int[] */
+    public static function accessibleSiteIds(): array
+    {
+        return array_map(static fn(\craft\models\Site $site): int => (int) $site->id, self::accessibleSites());
+    }
+
+    /** Whether the current user may see a given site's data. */
+    public static function canAccessSite(?int $siteId): bool
+    {
+        return $siteId !== null && in_array($siteId, self::accessibleSiteIds(), true);
+    }
+
+    /**
+     * Throws unless the current user may see the given site's data.
+     *
+     * @throws ForbiddenHttpException
+     */
+    public static function requireSite(?int $siteId): void
+    {
+        if (!self::canAccessSite($siteId)) {
+            throw new ForbiddenHttpException('User is not permitted to access this site.');
         }
     }
 

@@ -96,9 +96,27 @@ class GeoService extends Component
                 continue;
             }
 
-            if ($code !== null && $code !== '') {
-                return $this->_countryCode = strtoupper($code);
+            // Every provider's answer is held to the same shape the header
+            // provider enforces. A custom provider returning `GBR` or
+            // `United Kingdom` used to be passed through: it matched no
+            // target country (so every visitor was treated as untargeted and
+            // had optional content activated) and failed every consent
+            // INSERT against the two-character column.
+            $code = is_string($code) ? strtoupper(trim($code)) : '';
+
+            if ($code === '') {
+                continue;
             }
+
+            if (!preg_match('/^[A-Z]{2}$/D', $code)) {
+                Craft::warning(
+                    'Cookie Consent Flow geo provider ' . $provider::class . " returned '{$code}', which is not an ISO 3166-1 alpha-2 code; ignoring it.",
+                    __METHOD__
+                );
+                continue;
+            }
+
+            return $this->_countryCode = $code;
         }
 
         return $this->_countryCode = null;
@@ -145,6 +163,26 @@ class GeoService extends Component
             array_map('strtoupper', $settings->geoTargetCountries),
             true
         );
+    }
+
+    /**
+     * Whether any provider in the chain can actually resolve a country.
+     *
+     * False when the only providers are {@see HeaderGeoProvider}s with no
+     * trusted header configured — then every visitor's country is unknown and
+     * geo-targeting, failing open, shows the banner to everyone. The control
+     * panel says so, rather than letting an admin believe targeting works.
+     * A custom provider is assumed capable: the plugin cannot know otherwise.
+     */
+    public function hasTrustedSource(): bool
+    {
+        foreach ($this->_providers() as $provider) {
+            if (!$provider instanceof HeaderGeoProvider || $provider->trustedHeaders() !== []) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     /**
