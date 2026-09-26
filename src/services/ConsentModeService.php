@@ -3,7 +3,7 @@
 namespace sfsinfotech\craftcookieconsentflow\services;
 
 use craft\base\Component;
-use craft\helpers\Json;
+use sfsinfotech\craftcookieconsentflow\helpers\ConsentHelper;
 use sfsinfotech\craftcookieconsentflow\models\Settings;
 
 /**
@@ -123,10 +123,15 @@ class ConsentModeService extends Component
      * is selected (which deliberately emits no default command), or when a
      * snippet has already been emitted for this request.
      *
-     * @param bool $markEmitted Pass false to render without claiming the
-     *                          once-per-request slot (used by the CP preview).
+     * @param bool        $markEmitted Pass false to render without claiming the
+     *                                 once-per-request slot (used by the CP preview).
+     * @param string|null $nonce       A CSP nonce for the inline script, for sites
+     *                                 whose policy allows inline scripts only by
+     *                                 nonce. Place the snippet with
+     *                                 `consentModeScript(nonce)` in that case.
+     * @param int|null    $siteId      The site whose stored decision is replayed; the current one by default.
      */
-    public function renderScript(Settings $settings, bool $markEmitted = true): string
+    public function renderScript(Settings $settings, bool $markEmitted = true, ?string $nonce = null, ?int $siteId = null): string
     {
         if (!$settings->consentModeEnabled || $this->_emitted) {
             return '';
@@ -148,8 +153,8 @@ class ConsentModeService extends Component
                 $default['wait_for_update'] = $settings->consentModeWaitForUpdate;
             }
 
-            $lines[] = 'gtag(' . Json::encode('consent') . ',' . Json::encode('default') . ','
-                . Json::encode($default) . ');';
+            $lines[] = 'gtag(' . ConsentHelper::jsonForHtml('consent') . ',' . ConsentHelper::jsonForHtml('default') . ','
+                . ConsentHelper::jsonForHtml($default) . ');';
         }
 
         if ($settings->consentModeAdsDataRedaction) {
@@ -164,9 +169,13 @@ class ConsentModeService extends Component
         // gets a chance to act on the denied default. Read from the visitor's
         // own browser storage rather than rendered server-side, so this stays
         // identical in cached HTML for every visitor.
-        $lines[] = $this->_storageReplayJs($settings);
+        $lines[] = $this->_storageReplayJs($settings, $siteId ?? \Craft::$app->getSites()->getCurrentSite()->id);
 
-        return "<script>\n" . implode("\n", $lines) . "\n</script>";
+        $nonceAttr = $nonce !== null && $nonce !== ''
+            ? ' nonce="' . htmlspecialchars($nonce, ENT_QUOTES) . '"'
+            : '';
+
+        return "<script{$nonceAttr}>\n" . implode("\n", $lines) . "\n</script>";
     }
 
     /**
@@ -190,25 +199,35 @@ class ConsentModeService extends Component
      * browser doing it at runtime — nothing visitor-specific is rendered into
      * this snippet, so it stays identical for every visitor and safe to cache.
      */
-    private function _storageReplayJs(Settings $settings): string
+    private function _storageReplayJs(Settings $settings, int $siteId): string
     {
-        $config = Json::encode([
-            'key'           => 'cck_consent_' . \Craft::$app->getSites()->getCurrentSite()->id,
+        $config = ConsentHelper::jsonForHtml([
+            'key'           => 'cck_consent_' . $siteId,
             'signals'       => $settings->getCategoryGcmSignals(),
             'policyVersion' => $settings->policyVersion,
             'expiryDays'    => $settings->consentExpiryDays,
+            // cookie-banner.js STORAGE_VERSION: envelopes newer than this are unreadable.
+            'storageVersion' => 2,
         ]);
 
+        // Validation mirrors cookie-banner.js getConsent() exactly — shape,
+        // envelope version, policy version, and freshness — because the two
+        // must agree about whether a stored decision exists. When they did
+        // not (a missing action, a future envelope version, a timestamp in
+        // the future), this granted Google signals for a decision the runtime
+        // then rejected, so tags ran under a grant while the banner asked.
         return <<<JS
 (function(c){try{
 var raw=null;try{raw=localStorage.getItem(c.key);}catch(e){}
 if(!raw){var m=document.cookie.match(new RegExp('(?:^|; )'+c.key.replace(/[.*+?^\${}()|[\]\\\\]/g,'\\\\\$&')+'=([^;]*)'));
 if(m)raw=decodeURIComponent(m[1]);}
 if(!raw)return;var s=JSON.parse(raw);
-if(!s||!Array.isArray(s.categories))return;
+if(!s||typeof s!=='object'||!Array.isArray(s.categories)||typeof s.action!=='string')return;
+if((typeof s.v==='number'?s.v:1)>c.storageVersion)return;
 if(c.policyVersion&&s.policyVersion!==c.policyVersion)return;
-if(c.expiryDays&&s.timestamp&&Date.now()-s.timestamp>c.expiryDays*864e5)return;
-var u={};for(var k in c.signals){if(s.categories.indexOf(k)===-1)continue;
+if(c.expiryDays){var t=s.timestamp,n=Date.now();
+if(typeof t!=='number'||!(t>0)||t>n+864e5||n-t>c.expiryDays*864e5)return;}
+var u={};for(var k in c.signals){if(!Object.prototype.hasOwnProperty.call(c.signals,k)||s.categories.indexOf(k)===-1)continue;
 c.signals[k].forEach(function(g){u[g]='granted';});}
 if(Object.keys(u).length)gtag('consent','update',u);
 }catch(e){}}({$config}));

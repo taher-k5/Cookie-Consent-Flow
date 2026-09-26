@@ -3,7 +3,9 @@
 namespace sfsinfotech\craftcookieconsentflow\services;
 
 use Craft;
+use craft\helpers\Db;
 use craft\base\Component;
+use sfsinfotech\craftcookieconsentflow\models\Settings;
 use sfsinfotech\craftcookieconsentflow\Plugin;
 use sfsinfotech\craftcookieconsentflow\records\CookieDefinitionRecord;
 use sfsinfotech\craftcookieconsentflow\records\DetectedCookieRecord;
@@ -131,6 +133,12 @@ class CookieDefinitionService extends Component
      */
     public function saveAll(int $settingsId, array $raw): bool
     {
+        $this->_validationErrors = self::validateCookies($raw);
+
+        if ($this->_validationErrors !== []) {
+            return false;
+        }
+
         $db = Craft::$app->getDb();
         $transaction = $db->getTransaction();
         $ownsTransaction = $transaction === null || !$transaction->getIsActive();
@@ -179,6 +187,77 @@ class CookieDefinitionService extends Component
         return true;
     }
 
+    /** @var string[] Why the last saveAll() was refused; see getValidationErrors(). */
+    private array $_validationErrors = [];
+
+    /**
+     * Why the last saveAll() was refused, one message per problem — empty
+     * when it was not refused by validation.
+     *
+     * @return string[]
+     */
+    public function getValidationErrors(): array
+    {
+        return $this->_validationErrors;
+    }
+
+    /**
+     * Problems with a posted cookie list, checked before anything is deleted
+     * or written, against the same widths the columns have. A value that
+     * used to reach the database and fail its INSERT is reported here with
+     * the row and the field instead of "Couldn't save cookies."
+     *
+     * Rows without a name are skipped by saveAll(), so they are not errors.
+     *
+     * @param array<int, mixed> $rows
+     * @return string[]
+     */
+    public static function validateCookies(array $rows): array
+    {
+        $limits = [
+            'name'        => [255, 'Name'],
+            'provider'    => [255, 'Provider'],
+            'duration'    => [100, 'Duration'],
+            'categoryKey' => [100, 'Category'],
+            'purpose'     => [Settings::LONG_TEXT_MAX_LENGTH, 'Purpose'],
+        ];
+
+        $errors = [];
+
+        foreach (array_values($rows) as $i => $row) {
+            if (!is_array($row)) {
+                $errors[] = Craft::t('cookie-consent-flow', 'Cookie {row}: unexpected value.', ['row' => $i + 1]);
+                continue;
+            }
+
+            if (empty($row['name'])) {
+                continue;
+            }
+
+            foreach ($limits as $field => [$max, $label]) {
+                $value = $row[$field] ?? '';
+
+                if (!is_scalar($value)) {
+                    $errors[] = Craft::t('cookie-consent-flow', 'Cookie {row}: unexpected value for {field}.', [
+                        'row'   => $i + 1,
+                        'field' => Craft::t('cookie-consent-flow', $label),
+                    ]);
+                    continue;
+                }
+
+                if (mb_strlen((string) $value) > $max) {
+                    $errors[] = Craft::t('cookie-consent-flow', 'Cookie {row}: {field} must be at most {max} characters.', [
+                        'row'   => $i + 1,
+                        'field' => Craft::t('cookie-consent-flow', $label),
+                        'max'   => $max,
+                    ]);
+                }
+            }
+        }
+
+        return $errors;
+    }
+
     /** Deletes every cookie row for a settings row (reverts a site to inheriting global). */
     public function deleteAllForSettingsId(int $settingsId): void
     {
@@ -189,36 +268,75 @@ class CookieDefinitionService extends Component
 
     /**
      * Records that these cookie names were actually seen in a visitor's
-     * browser (reported by cookie-banner.js). Upserts per (siteId, name):
-     * a name seen for the first time gets a new row; a name seen again just
-     * bumps `dateUpdated` (last-seen) — this is a raw "what's actually
-     * running" signal, not a per-visitor log, so no identifying visitor data
-     * is stored here.
+     * browser (reported by cookie-banner.js): a name seen for the first time
+     * gets a row whose `dateCreated` is its first sighting, and every
+     * sighting — first or not — sets `lastSeen`. This is a raw "what's
+     * actually running" signal, not a per-visitor log, so no identifying
+     * visitor data is stored here.
+     *
+     * One atomic upsert per name (`INSERT … ON DUPLICATE KEY UPDATE` on
+     * MySQL, `ON CONFLICT … DO UPDATE` on PostgreSQL), rather than the
+     * previous find-then-save:
+     *
+     * - "last seen" never moved. It relied on `save()` touching
+     *   `dateUpdated`, which Craft only does for a record with changed
+     *   attributes — and a re-sighted name has none.
+     * - two browsers reporting the same new name at once both found nothing,
+     *   both inserted, and the loser's unique-key violation aborted the rest
+     *   of its batch.
+     *
+     * A dismissal survives re-sighting: the update touches only the dates.
      *
      * @param string[] $names
      */
+    /**
+     * Most distinct detected names kept per site. A real site uses tens or
+     * low hundreds; the endpoint is anonymous, so without a ceiling anyone
+     * could fill the table (and slow the Cookies page, which reads it) with
+     * invented names. At the ceiling, names already known still have their
+     * `lastSeen` updated; new ones are dropped and the drop is logged.
+     */
+    public const MAX_DETECTED_PER_SITE = 2000;
+
+    /** Most undocumented names the Cookies page lists at once. */
+    public const MAX_UNDOCUMENTED_LISTED = 500;
+
     public function recordDetected(array $names, int $siteId): void
     {
+        $db   = Craft::$app->getDb();
+        $now  = Db::prepareDateForDb(new \DateTime());
+        $full = (int) DetectedCookieRecord::find()->where(['siteId' => $siteId])->count() >= self::MAX_DETECTED_PER_SITE;
+
         foreach (array_unique($names) as $name) {
             $name = trim((string) $name);
             if ($name === '' || mb_strlen($name) > 255) {
                 continue;
             }
 
-            $record = DetectedCookieRecord::find()
-                ->where(['siteId' => $siteId, 'name' => $name])
-                ->one();
+            if ($full) {
+                $updated = DetectedCookieRecord::updateAll(['lastSeen' => $now], ['siteId' => $siteId, 'name' => $name]);
 
-            if ($record === null) {
-                $record             = new DetectedCookieRecord();
-                $record->siteId     = $siteId;
-                $record->name       = $name;
-                $record->isDismissed = false;
+                if ($updated === 0) {
+                    Craft::warning(
+                        "Cookie Consent Flow: site #{$siteId} already has " . self::MAX_DETECTED_PER_SITE
+                        . " detected cookie names; not recording '{$name}'. Dismiss or document names to make room.",
+                        __METHOD__
+                    );
+                }
+
+                continue;
             }
 
-            // Touches dateUpdated even when nothing else changed, so
-            // "last seen" stays accurate — that's the point of this call.
-            $record->save();
+            try {
+                $db->createCommand()->upsert(
+                    DetectedCookieRecord::tableName(),
+                    ['siteId' => $siteId, 'name' => $name, 'isDismissed' => false, 'lastSeen' => $now],
+                    ['lastSeen' => $now]
+                )->execute();
+            } catch (\Throwable $e) {
+                // One bad name must not cost the rest of the batch.
+                Craft::warning("Cookie Consent Flow could not record detected cookie '{$name}': " . $e->getMessage(), __METHOD__);
+            }
         }
     }
 
@@ -235,18 +353,47 @@ class CookieDefinitionService extends Component
      */
     public function getUndocumented(): array
     {
+        return array_column($this->getUndocumentedDetails(), 'name');
+    }
+
+    /**
+     * As getUndocumented(), with when each name was first and last seen on
+     * any site (UTC, `Y-m-d H:i:s`).
+     *
+     * @return array<int, array{name: string, firstSeen: ?string, lastSeen: ?string}>
+     */
+    public function getUndocumentedDetails(): array
+    {
         $documentedPatterns = CookieDefinitionRecord::find()->select('name')->column();
 
-        $detectedNames = DetectedCookieRecord::find()
-            ->select('name')
+        $rows = DetectedCookieRecord::find()
+            ->select([
+                'name',
+                'firstSeen' => 'MIN([[dateCreated]])',
+                'lastSeen'  => 'MAX(COALESCE([[lastSeen]], [[dateUpdated]]))',
+            ])
             ->where(['isDismissed' => false])
-            ->distinct()
-            ->column();
+            ->groupBy(['name'])
+            ->orderBy(['lastSeen' => SORT_DESC, 'name' => SORT_ASC])
+            ->limit(self::MAX_UNDOCUMENTED_LISTED)
+            ->asArray()
+            ->all();
 
-        return array_values(array_filter(
-            $detectedNames,
-            fn(string $name): bool => !$this->_matchesAnyPattern($name, $documentedPatterns)
-        ));
+        $details = [];
+
+        foreach ($rows as $row) {
+            if ($this->_matchesAnyPattern((string) $row['name'], $documentedPatterns)) {
+                continue;
+            }
+
+            $details[] = [
+                'name'      => (string) $row['name'],
+                'firstSeen' => $row['firstSeen'] !== null ? (string) $row['firstSeen'] : null,
+                'lastSeen'  => $row['lastSeen'] !== null ? (string) $row['lastSeen'] : null,
+            ];
+        }
+
+        return $details;
     }
 
     /**
@@ -267,14 +414,16 @@ class CookieDefinitionService extends Component
      * Whether a detected cookie name is covered by any documented cookie
      * name/pattern. Documented names are treated as wildcard patterns where
      * `*` stands for "anything" (e.g. `_ga_*` covers `_ga_G-XXXXXXX`) —
-     * exact matches are just a pattern with no `*` in it.
+     * exact matches are just a pattern with no `*` in it. Matching is
+     * case-sensitive, like cookie names themselves: `_ga` does not cover a
+     * detected `_GA`, which is a different cookie.
      *
      * @param string[] $patterns
      */
     private function _matchesAnyPattern(string $name, array $patterns): bool
     {
         foreach ($patterns as $pattern) {
-            $regex = '/^' . str_replace('\*', '.*', preg_quote($pattern, '/')) . '$/i';
+            $regex = '/^' . str_replace('\*', '.*', preg_quote($pattern, '/')) . '$/D';
             if (preg_match($regex, $name)) {
                 return true;
             }

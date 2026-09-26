@@ -9,6 +9,8 @@ use yii\db\ActiveQuery;
 use yii\db\Expression;
 use sfsinfotech\craftcookieconsentflow\events\AfterConsentSaveEvent;
 use sfsinfotech\craftcookieconsentflow\helpers\ConsentHelper;
+use sfsinfotech\craftcookieconsentflow\helpers\PluginConfig;
+use sfsinfotech\craftcookieconsentflow\helpers\Throttle;
 use sfsinfotech\craftcookieconsentflow\Plugin;
 use sfsinfotech\craftcookieconsentflow\records\ConsentLogRecord;
 
@@ -36,23 +38,83 @@ class ConsentService extends Component
     public const ACTIONS = ['accept_all', 'reject_all', 'custom'];
 
     /**
-     * Persists a visitor's consent choice and fires the AfterConsentSave event.
+     * Records a visitor's consent decision, then announces it.
+     *
+     * ## Order
+     *
+     * 1. The decision is normalised against the site's configuration (see
+     *    {@see normalizeDecision()}).
+     * 2. With logging disabled, nothing is written and nothing is announced:
+     *    no record exists, so no visitor identifier is minted either.
+     * 3. The record is saved. A save that fails throws — it used to be logged
+     *    and then reported to the visitor as a success, so a lost record
+     *    looked exactly like a kept one and was never retried.
+     * 4. The statistics cache is invalidated.
+     * 5. {@see Plugin::EVENT_AFTER_CONSENT_SAVE} fires, carrying the record.
+     *
+     * The event used to fire first, before anything was written. A listener
+     * that threw therefore stopped the record being written at all, and the
+     * event was announced for saves that then failed and for installs with
+     * logging off — so "after consent save" described something that had not
+     * happened.
+     *
+     * Steps 4 and 5 run after the evidence is committed and cannot undo it,
+     * so a failure in either is logged rather than propagated: the visitor's
+     * request succeeded, and answering it with a 500 would make the runtime
+     * queue and re-send a decision that is already recorded, writing a
+     * duplicate.
      *
      * @param  string   $action     'accept_all' | 'reject_all' | 'custom'
      * @param  string[] $categories Category keys the visitor accepted.
      * @param  string   $source     How the decision was reached — one of the SOURCE_* constants.
-     * @return array{visitorUuid: string, action: string, categories: string[], siteId: int}
+     * @param  ?string  $policyVersion The policy version the visitor's page showed; null for the current one.
+     * @return array{visitorUuid: ?string, action: string, categories: string[], siteId: int, recorded: bool, recordId: ?int}
+     * @throws \InvalidArgumentException for an unknown action.
+     * @throws \RuntimeException when logging is on and the record cannot be saved.
      */
-    public function saveConsent(string $action, array $categories, string $source = self::SOURCE_BANNER): array
+    /**
+     * The shape of a policy version a client may report: what
+     * SettingsService::nextPolicyVersion() and the settings field produce.
+     */
+    public const POLICY_VERSION_PATTERN = '/^[A-Za-z0-9._:\-]{1,50}$/D';
+
+    public function saveConsent(string $action, array $categories, string $source = self::SOURCE_BANNER, ?string $policyVersion = null): array
     {
-        $settings = Plugin::getInstance()->getSettings();
+        if (!in_array($action, self::ACTIONS, true)) {
+            throw new \InvalidArgumentException("Unknown consent action '{$action}'.");
+        }
+
+        if (!in_array($source, self::SOURCES, true)) {
+            $source = self::SOURCE_BANNER;
+        }
+
+        $plugin   = Plugin::getInstance();
         $request  = Craft::$app->getRequest();
         $siteId   = Craft::$app->getSites()->getCurrentSite()->id;
+        $settings = $plugin->cookieSettings->getEffectiveSettings($siteId);
 
-        // Resolve visitor UUID: prefer this site's own namespaced cookie,
-        // falling back once to the legacy unnamespaced cookie (pre-dates
-        // multi-site visitor namespacing) so existing visitors aren't
-        // treated as brand new after upgrading.
+        ['action' => $action, 'categories' => $categories] = self::normalizeDecision(
+            $action,
+            $categories,
+            $settings->getCategoryKeys(),
+            $settings->getLockedCategoryKeys()
+        );
+
+        if (!$settings->logEnabled) {
+            return [
+                'visitorUuid' => null,
+                'action'      => $action,
+                'categories'  => $categories,
+                'siteId'      => $siteId,
+                'recorded'    => false,
+                'recordId'    => null,
+            ];
+        }
+
+        // Resolve the visitor UUID from this site's own cookie only. The
+        // un-namespaced cookie of pre-multisite development builds is not
+        // read: on a shared origin it would link one site's records to a
+        // visitor identity issued by another.
         //
         // Guarded on the request type rather than assumed: a console request
         // has no cookies at all, and calling getCookies() on one throws. That
@@ -62,54 +124,71 @@ class ConsentService extends Component
         $visitorUuid = null;
 
         if ($request instanceof \craft\web\Request) {
-            $visitorUuid = $request->getCookies()->getValue(ConsentHelper::visitorCookieName($siteId))
-                ?? $request->getCookies()->getValue(ConsentHelper::LEGACY_VISITOR_COOKIE);
+            $visitorUuid = $request->getCookies()->getValue(ConsentHelper::visitorCookieName($siteId));
         }
 
-        $visitorUuid ??= ConsentHelper::generateVisitorUuid();
+        if (!is_string($visitorUuid) || !preg_match('/^[0-9a-f-]{36}$/iD', $visitorUuid)) {
+            $visitorUuid = ConsentHelper::generateVisitorUuid();
+        }
+
+        $record                = new ConsentLogRecord();
+        $record->visitorUuid   = $visitorUuid;
+        $record->ipHash        = ConsentHelper::hashIp(
+            $request instanceof \craft\web\Request ? Throttle::resolveIp($request) : ''
+        );
+        $record->siteId        = $siteId;
+        $record->categories    = Json::encode($categories);
+        $record->action        = $action;
+        // The version the visitor was shown, not whatever is current by the
+        // time the request arrives. With full-page caching those differ right
+        // after "Invalidate Existing Consent": a page cached earlier still
+        // shows — and the visitor agrees to — the previous policy, and
+        // stamping the new version on that record would claim consent to a
+        // policy they never saw. The client's claim only ever describes its
+        // own record, and its shape is validated.
+        $record->policyVersion = $policyVersion !== null && preg_match(self::POLICY_VERSION_PATTERN, $policyVersion)
+            ? $policyVersion
+            : $settings->policyVersion;
+        $record->source        = $source;
+        $record->countryCode   = $plugin->geo->getCountryCode();
+        $record->userAgent     = $request instanceof \craft\web\Request
+            ? mb_substr((string) $request->getHeaders()->get('user-agent', ''), 0, 500)
+            : '';
+
+        if (!$record->save()) {
+            Craft::error('Cookie consent log save failed: ' . Json::encode($record->getErrors()), __METHOD__);
+
+            throw new \RuntimeException('The consent record could not be saved.');
+        }
+
+        try {
+            $plugin->statistics->invalidate();
+        } catch (\Throwable $e) {
+            // The cached aggregates expire on their own (StatisticsService
+            // TTL); a stale dashboard for a few minutes is the whole cost.
+            Craft::warning('Cookie consent statistics could not be invalidated: ' . $e->getMessage(), __METHOD__);
+        }
 
         // Notification only: listeners can react (push to a data layer, kick
-        // off an integration) but cannot change or veto what is recorded. The
-        // event carries no cancel flag and nothing below consults one — a
-        // record of consent is evidence, and letting a listener suppress it
-        // would make the log a claim about what listeners allowed rather than
-        // about what the visitor did.
+        // off an integration) but cannot change or veto what is recorded —
+        // the record already exists by the time they hear about it.
         $event = new AfterConsentSaveEvent([
             'action'      => $action,
             'categories'  => $categories,
             'visitorUuid' => $visitorUuid,
             'source'      => $source,
             'siteId'      => $siteId,
+            'recordId'    => (int) $record->id,
         ]);
-        Plugin::getInstance()->trigger(
-            Plugin::EVENT_AFTER_CONSENT_SAVE,
-            $event
-        );
 
-        if ($settings->logEnabled) {
-            $record              = new ConsentLogRecord();
-            $record->visitorUuid = $visitorUuid;
-            $record->ipHash      = ConsentHelper::hashIp(
-                $request instanceof \craft\web\Request ? ($request->getRemoteIP() ?? '') : ''
+        try {
+            $plugin->trigger(Plugin::EVENT_AFTER_CONSENT_SAVE, $event);
+        } catch (\Throwable $e) {
+            Craft::error(
+                'A ' . Plugin::EVENT_AFTER_CONSENT_SAVE . ' listener failed (the consent record #' . $record->id
+                . ' was saved): ' . $e->getMessage(),
+                __METHOD__
             );
-            $record->siteId      = $siteId;
-            $record->categories    = Json::encode($categories);
-            $record->action        = $action;
-            $record->policyVersion = $settings->policyVersion;
-            $record->source        = $source;
-            $record->countryCode   = Plugin::getInstance()->geo->getCountryCode();
-            $record->userAgent   = $request instanceof \craft\web\Request
-                ? mb_substr((string) $request->getHeaders()->get('user-agent', ''), 0, 500)
-                : '';
-            if (!$record->save()) {
-                Craft::error(
-                    'Cookie consent log save failed: ' .
-                    Json::encode($record->getErrors()),
-                    __METHOD__
-                );
-            } else {
-                Plugin::getInstance()->statistics->invalidate();
-            }
         }
 
         return [
@@ -117,7 +196,57 @@ class ConsentService extends Component
             'action'      => $action,
             'categories'  => $categories,
             'siteId'      => $siteId,
+            'recorded'    => true,
+            'recordId'    => (int) $record->id,
         ];
+    }
+
+    /**
+     * Makes a posted decision internally consistent with the site's
+     * configuration, so a record can never claim more consent than the
+     * visitor gave or contradict itself.
+     *
+     * - Only categories the site has are kept; locked ones are always added.
+     * - `accept_all` means every optional category. A payload that says
+     *   `accept_all` but lacks some — a page cached before the admin added a
+     *   category, or a hand-crafted request — is recorded as `custom` with
+     *   exactly what was sent. Recording "all" would claim consent to a
+     *   category the visitor was never shown.
+     * - `reject_all` means no optional category. A payload that says
+     *   `reject_all` but includes some is recorded as a rejection with the
+     *   locked categories only: the visitor's stated intent was to refuse,
+     *   and of the two readings that is the one that records less consent.
+     * - `custom` accepts any combination, including all or none — it records
+     *   that the visitor used the preference centre.
+     *
+     * @param string[] $categories
+     * @param string[] $known
+     * @param string[] $locked
+     * @return array{action: string, categories: string[]}
+     */
+    public static function normalizeDecision(string $action, array $categories, array $known, array $locked): array
+    {
+        $categories = array_values(array_intersect(
+            array_values(array_unique(array_map('strval', $categories))),
+            $known
+        ));
+
+        $optional = array_values(array_diff($known, $locked));
+        $chosen   = array_values(array_intersect($categories, $optional));
+
+        if ($action === 'reject_all') {
+            $chosen = [];
+        } elseif ($action === 'accept_all' && count($chosen) !== count($optional)) {
+            $action = 'custom';
+        }
+
+        // Known-category order, so the same decision always serialises the same way.
+        $accepted = array_values(array_filter(
+            $known,
+            static fn(string $key): bool => in_array($key, $locked, true) || in_array($key, $chosen, true)
+        ));
+
+        return ['action' => $action, 'categories' => $accepted];
     }
 
     /**
@@ -184,11 +313,10 @@ class ConsentService extends Component
      * Acceptance rate per category: how many records include each category
      * key, out of how many records there are.
      *
-     * `categories` is a JSON array column, so this cannot be a GROUP BY — the
-     * rows are scanned in batches and tallied in PHP. Batching (rather than
-     * ->all()) is what keeps memory flat regardless of table size; the cost
-     * is proportional to the number of records, so the result is cached by
-     * the caller (see StatisticsService) rather than recomputed per render.
+     * `categories` is a JSON array column, so this cannot be a GROUP BY; it
+     * is one COUNT per category using {@see categoryCondition()} — the exact,
+     * driver-consistent test the records filter uses — so nothing is loaded
+     * into PHP whatever the table size.
      *
      * Takes the same `$filters` as {@see buildQuery()}, and for the same
      * reason the outcome counts do: a screen that reports outcome totals for a
@@ -202,30 +330,20 @@ class ConsentService extends Component
      */
     public function getCategoryStats(?int $siteId, array $categoryKeys, array $filters = []): array
     {
-        $counts = array_fill_keys($categoryKeys, 0);
-        $total  = 0;
-
-        $query = $this->buildQuery($siteId, $filters)->select(['categories'])->asArray();
-
-        foreach ($query->batch(500) as $rows) {
-            foreach ($rows as $row) {
-                $total++;
-                $accepted = Json::decodeIfJson($row['categories']);
-
-                if (!is_array($accepted)) {
-                    continue;
-                }
-
-                foreach ($accepted as $key) {
-                    if (array_key_exists($key, $counts)) {
-                        $counts[$key]++;
-                    }
-                }
-            }
-        }
-
+        // One COUNT per category, in SQL, using the same exact condition the
+        // records filter uses. The previous version decoded every record's
+        // JSON in PHP on each cache miss — and every consent save invalidates
+        // the cache — so a large table made the dashboard slow and, through a
+        // buffered result set, could exhaust memory.
+        $driver = Craft::$app->getDb()->getDriverName();
+        $total  = (int) $this->buildQuery($siteId, $filters)->count();
         $result = [];
-        foreach ($counts as $key => $count) {
+
+        foreach ($categoryKeys as $key) {
+            $count = $total === 0 ? 0 : (int) $this->buildQuery($siteId, $filters)
+                ->andWhere(self::categoryCondition((string) $key, $driver))
+                ->count();
+
             $result[$key] = [
                 'count'   => $count,
                 'percent' => $total > 0 ? round(($count / $total) * 100, 1) : 0.0,
@@ -240,9 +358,10 @@ class ConsentService extends Component
      * dashboard's trend line. Grouped in SQL by date so the result set is at
      * most one row per day regardless of how many records exist.
      *
+     * @param array<string, mixed> $filters Optional record filters; see buildQuery().
      * @return array<int, array{date: string, count: int}>
      */
-    public function getDailyTrend(?int $siteId, int $days = 30): array
+    public function getDailyTrend(?int $siteId, int $days = 30, array $filters = []): array
     {
         // UTC, because `dateCreated` is stored in UTC. Built from the server's
         // local clock, the window silently started or ended hours off on every
@@ -250,7 +369,10 @@ class ConsentService extends Component
         $since = (new \DateTimeImmutable("-{$days} days", new \DateTimeZone('UTC')))
             ->format('Y-m-d 00:00:00');
 
-        $rows = $this->_baseQuery($siteId)
+        // The same filters as the rest of the screen: a trend of every record
+        // beside totals for a filtered set would describe two different
+        // datasets under one heading.
+        $rows = $this->buildQuery($siteId, $filters)
             ->andWhere(['>=', 'dateCreated', $since])
             ->select(['d' => new Expression('DATE([[dateCreated]])'), 'c' => 'COUNT(*)'])
             ->groupBy([new Expression('DATE([[dateCreated]])')])
@@ -299,13 +421,20 @@ class ConsentService extends Component
      *
      * Accepted filters: `action`, `source`, `policyVersion`, `countryCode`,
      * `category` (records that include this category key), `from` / `to`
-     * (dates). Unknown keys and empty values are ignored.
+     * (dates), `siteIds` (restrict to these sites). Unknown keys and empty
+     * values are ignored.
      *
      * @param array<string, mixed> $filters
      */
     public function buildQuery(?int $siteId, array $filters = []): ActiveQuery
     {
         $query = $this->_baseQuery($siteId);
+
+        // A restriction to the sites the viewer may see, applied when "all
+        // sites" means "all of *their* sites" (see Permissions::accessibleSites()).
+        if (isset($filters['siteIds']) && is_array($filters['siteIds'])) {
+            $query->andWhere(['siteId' => $filters['siteIds'] === [] ? [0] : array_map('intval', $filters['siteIds'])]);
+        }
 
         if (!empty($filters['action']) && in_array($filters['action'], self::ACTIONS, true)) {
             $query->andWhere(['action' => $filters['action']]);
@@ -332,15 +461,48 @@ class ConsentService extends Component
         }
 
         if (!empty($filters['category'])) {
-            // `categories` is a JSON array of keys. A LIKE on the quoted key
-            // is an approximation, not a JSON query — it is deliberately
-            // paired with the exact in-PHP check in the exporter, so a key
-            // that is a substring of another ('ads' vs 'ads_extra') narrows
-            // the scan here but never decides the result.
-            $query->andWhere(['like', 'categories', '"' . (string) $filters['category'] . '"']);
+            $query->andWhere(self::categoryCondition((string) $filters['category'], Craft::$app->getDb()->getDriverName()));
         }
 
         return $query;
+    }
+
+    /**
+     * The "record includes this category" condition, identical in meaning on
+     * both supported databases.
+     *
+     * `categories` is a JSON array of keys, so this finds the key *with its
+     * quotes* (`"analytics"`), which cannot match a longer key that merely
+     * contains it. What differed between drivers was case: the `LIKE` used
+     * before is
+     * case-insensitive under MySQL's default collations and case-sensitive on
+     * PostgreSQL, so filtering for `analytics` also counted `Analytics` on
+     * MySQL only, and the dashboard, the records list and the (exact,
+     * PHP-side) export disagreed there. The search is now binary on MySQL,
+     * making it case-sensitive — exact — everywhere.
+     *
+     * A value that cannot be a category key matches nothing rather than
+     * being dropped: a filtered view that silently showed every record would
+     * look like an answer.
+     *
+     * @return array<int|string, mixed>|Expression
+     */
+    public static function categoryCondition(string $category, string $driver): array|Expression
+    {
+        if (!preg_match('/^[A-Za-z0-9_-]{1,100}$/D', $category)) {
+            return new Expression('1 = 0');
+        }
+
+        // A plain substring search rather than LIKE: `_` is a LIKE wildcard
+        // that category keys may contain, and escaping it portably depends on
+        // SQL modes (NO_BACKSLASH_ESCAPES) the plugin does not control.
+        $needle = '"' . $category . '"';
+
+        if ($driver === 'mysql') {
+            return new Expression('LOCATE(:ccfCategory, CAST([[categories]] AS BINARY)) > 0', [':ccfCategory' => $needle]);
+        }
+
+        return new Expression('STRPOS([[categories]], :ccfCategory) > 0', [':ccfCategory' => $needle]);
     }
 
     /**
@@ -373,13 +535,61 @@ class ConsentService extends Component
             return (int) ConsentLogRecord::find()->where($condition)->count();
         }
 
-        $deleted = (int) ConsentLogRecord::deleteAll($condition);
+        $deleted = self::deleteInBatches(
+            static fn(int $limit): array => ConsentLogRecord::find()
+                ->select(['id'])
+                ->where($condition)
+                ->orderBy(['id' => SORT_ASC])
+                ->limit($limit)
+                ->column(),
+            static fn(array $ids): int => (int) ConsentLogRecord::deleteAll(['id' => $ids]),
+            PluginConfig::retentionBatchSize()
+        );
 
         if ($deleted > 0) {
             Plugin::getInstance()->statistics->invalidate();
         }
 
         return $deleted;
+    }
+
+    /**
+     * Deletes in bounded batches until nothing matches.
+     *
+     * A single `DELETE … WHERE dateCreated < ?` over a large table runs as one
+     * long statement that holds its locks (and, on MySQL, a growing undo log)
+     * until it finishes, blocking the consent saves arriving meanwhile. Each
+     * batch here is its own short statement and commits on its own, so
+     * concurrent writes wait for one batch at most, and an interrupted purge
+     * keeps what it already removed and resumes where it left off.
+     *
+     * @param callable(int): array<int, int|string> $selectIds Returns up to `$limit` ids still to delete.
+     * @param callable(array<int, int|string>): int  $delete   Deletes those ids, returning how many went.
+     */
+    public static function deleteInBatches(callable $selectIds, callable $delete, int $batchSize): int
+    {
+        $batchSize = max(1, $batchSize);
+        $total     = 0;
+
+        while (true) {
+            $ids = $selectIds($batchSize);
+
+            if ($ids === []) {
+                break;
+            }
+
+            $removed = $delete($ids);
+            $total  += $removed;
+
+            // Fewer ids than a full batch means that was the last of them; a
+            // batch that removed nothing (rows deleted concurrently) must not
+            // loop on the same ids for ever.
+            if (count($ids) < $batchSize || $removed === 0) {
+                break;
+            }
+        }
+
+        return $total;
     }
 
     /**
@@ -438,7 +648,7 @@ class ConsentService extends Component
             return null;
         }
 
-        if (preg_match('/^\d{4}-\d{2}-\d{2}$/', $value)) {
+        if (preg_match('/^\d{4}-\d{2}-\d{2}$/D', $value)) {
             $value .= ' ' . $timeFallback;
         }
 

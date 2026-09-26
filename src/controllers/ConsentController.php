@@ -23,8 +23,22 @@ class ConsentController extends Controller
 {
     protected array|int|bool $allowAnonymous = ['save', 'status', 'geo'];
 
-    /** Consent saves permitted per IP per minute. Generous for a human, not for a script. */
+    /** Consent saves permitted per client per minute. Generous for a human, not for a script. */
     private const SAVE_LIMIT = 20;
+
+    /**
+     * Geo lookups permitted per client per minute. The runtime asks once per
+     * tab (the answer is kept in sessionStorage), so a real visitor needs a
+     * handful; the limit exists because a site may configure a paid lookup
+     * provider behind this endpoint.
+     */
+    private const GEO_LIMIT = 30;
+
+    /** Status lookups permitted per client per minute. Each one is a database read. */
+    private const STATUS_LIMIT = 30;
+
+    /** More categories than any real configuration has; anything beyond is not a browser. */
+    private const MAX_CATEGORIES = 100;
 
     /**
      * Craft's automatic CSRF check is turned off here so each action can
@@ -66,13 +80,18 @@ class ConsentController extends Controller
     /**
      * POST /actions/cookie-consent-flow/consent/save
      *
-     * Body: `{ "action": "accept_all|reject_all|custom", "categories": [...], "source": "banner" }`
-     * Returns: `{ "success": true, "visitorUuid": "…" }`
+     * Body: `{ "action": "accept_all|reject_all|custom", "categories": [...], "source": "banner", "policyVersion": "…" }`
+     * Returns: `{ "success": true, "action": "…", "categories": [...], "recorded": true }`
      *
      * The authoritative copy of a visitor's decision is the one in their own
      * browser; this records it server-side as evidence. A failure here is
      * therefore reported honestly (so the client can retry) but is never
      * allowed to invalidate the decision the visitor already made.
+     *
+     * The response carries the decision *as recorded* — see
+     * ConsentService::normalizeDecision() — and no longer the visitor
+     * identifier, which stays in its httpOnly cookie where page scripts
+     * cannot read it.
      */
     public function actionSave(): Response
     {
@@ -85,39 +104,31 @@ class ConsentController extends Controller
 
         $request = Craft::$app->getRequest();
 
-        if (!Throttle::allow('consent-save', self::SAVE_LIMIT)) {
+        if (!Throttle::check('consent-save', self::SAVE_LIMIT)) {
             return $this->asJson(['success' => false, 'error' => 'rate_limited'])->setStatusCode(429);
         }
 
-        $settings = Plugin::getInstance()->cookieSettings->getEffectiveSettings();
+        $payload = self::validatePayload(
+            $request->getBodyParam('action'),
+            $request->getBodyParam('categories', []),
+            $request->getBodyParam('source'),
+            $request->getBodyParam('policyVersion')
+        );
 
-        $action = (string) $request->getBodyParam('action', '');
-        if (!in_array($action, ConsentService::ACTIONS, true)) {
-            return $this->asJson(['success' => false, 'error' => 'invalid_action'])->setStatusCode(400);
+        if (isset($payload['error'])) {
+            return $this->asJson(['success' => false, 'error' => $payload['error']])->setStatusCode(400);
         }
 
-        $source = (string) $request->getBodyParam('source', ConsentService::SOURCE_BANNER);
-        if (!in_array($source, ConsentService::SOURCES, true)) {
-            $source = ConsentService::SOURCE_BANNER;
-        }
-
-        // Only categories this site actually has are recorded. A client
-        // posting an unknown key is either stale (the admin removed a
-        // category since the page loaded) or hostile; either way the record
-        // must reflect this site's real configuration, not the client's claim.
-        $known      = $settings->getCategoryKeys();
-        $categories = array_values(array_intersect(
-            array_map('strval', (array) $request->getBodyParam('categories', [])),
-            $known
-        ));
-
-        // Locked categories are always in effect and are not the visitor's to
-        // decline, so they are recorded regardless of what the client sent —
-        // a record that omitted them would misstate what actually happened.
-        $categories = array_values(array_unique(array_merge($categories, $settings->getLockedCategoryKeys())));
-
+        // Unknown categories are dropped and locked ones added by the
+        // service, against this site's real configuration, so the record
+        // reflects the site rather than the client's claim.
         try {
-            $result = Plugin::getInstance()->consent->saveConsent($action, $categories, $source);
+            $result = Plugin::getInstance()->consent->saveConsent(
+                $payload['action'],
+                $payload['categories'],
+                $payload['source'],
+                $payload['policyVersion']
+            );
         } catch (\Throwable $e) {
             // Log the detail server-side; tell the visitor only that it
             // failed. Stack traces are not visitor-facing information.
@@ -127,24 +138,84 @@ class ConsentController extends Controller
         }
 
         $response = $this->asJson([
-            'success'     => true,
-            'visitorUuid' => $result['visitorUuid'],
-            'categories'  => $categories,
+            'success'    => true,
+            'action'     => $result['action'],
+            'categories' => $result['categories'],
+            'recorded'   => $result['recorded'],
         ]);
 
-        // First-party visitor UUID, namespaced by site so a shared-origin
-        // multi-site install never lets one site inherit another's visitor
-        // identity or consent.
-        $response->getCookies()->add(new \yii\web\Cookie([
-            'name'     => ConsentHelper::visitorCookieName($result['siteId']),
-            'value'    => $result['visitorUuid'],
-            'expire'   => time() + 365 * 24 * 3600,
-            'httpOnly' => true,
-            'secure'   => $request->getIsSecureConnection(),
-            'sameSite' => \yii\web\Cookie::SAME_SITE_LAX,
-        ]));
+        // The visitor identifier exists only to link a visitor's records to
+        // each other. With logging off there are no records, so no
+        // identifier is issued: a year-long tracking cookie with nothing to
+        // link would be exactly the kind of cookie this plugin is for.
+        //
+        // First-party and namespaced by site, so a shared-origin multi-site
+        // install never lets one site inherit another's visitor identity.
+        if ($result['recorded'] && $result['visitorUuid'] !== null) {
+            $response->getCookies()->add(new \yii\web\Cookie([
+                'name'     => ConsentHelper::visitorCookieName($result['siteId']),
+                'value'    => $result['visitorUuid'],
+                'expire'   => time() + 365 * 24 * 3600,
+                'httpOnly' => true,
+                'secure'   => $request->getIsSecureConnection(),
+                'sameSite' => \yii\web\Cookie::SAME_SITE_LAX,
+            ]));
+        }
 
         return $response;
+    }
+
+    /**
+     * Type-checks a posted decision before anything is done with it.
+     *
+     * The previous code cast blindly — `(string)` on an array, `strval` over
+     * nested arrays — so a malformed body raised "Array to string
+     * conversion" outside any handler and was answered with a 500. A payload
+     * of the wrong shape is the client's error and gets a 400 with a code
+     * saying which part was wrong.
+     *
+     * @return array{action: string, categories: string[], source: string}|array{error: string}
+     */
+    public static function validatePayload(mixed $action, mixed $categories, mixed $source, mixed $policyVersion = null): array
+    {
+        if (!is_string($action) || !in_array($action, ConsentService::ACTIONS, true)) {
+            return ['error' => 'invalid_action'];
+        }
+
+        if ($categories === null || $categories === '') {
+            $categories = [];
+        }
+
+        if (!is_array($categories) || count($categories) > self::MAX_CATEGORIES) {
+            return ['error' => 'invalid_categories'];
+        }
+
+        foreach ($categories as $category) {
+            if (!is_string($category) || strlen($category) > 100) {
+                return ['error' => 'invalid_categories'];
+            }
+        }
+
+        if ($source !== null && !is_string($source)) {
+            return ['error' => 'invalid_source'];
+        }
+
+        // An unrecognised source string is recorded as the banner, as before:
+        // older runtimes send none, and the value is informational.
+        $source = in_array($source, ConsentService::SOURCES, true) ? $source : ConsentService::SOURCE_BANNER;
+
+        // The policy version the visitor's page was showing when they decided.
+        // Absent from older runtimes, in which case the current one is used.
+        if ($policyVersion !== null && (!is_string($policyVersion) || !preg_match(ConsentService::POLICY_VERSION_PATTERN, $policyVersion))) {
+            return ['error' => 'invalid_policy_version'];
+        }
+
+        return [
+            'action'        => $action,
+            'categories'    => array_values($categories),
+            'source'        => $source,
+            'policyVersion' => $policyVersion,
+        ];
     }
 
     /**
@@ -159,13 +230,16 @@ class ConsentController extends Controller
     {
         $this->requireAcceptsJson();
 
+        if (!Throttle::check('consent-status', self::STATUS_LIMIT)) {
+            return $this->_uncached($this->asJson(['consent' => null, 'error' => 'rate_limited'])->setStatusCode(429));
+        }
+
         $request = Craft::$app->getRequest();
         $siteId  = Craft::$app->getSites()->getCurrentSite()->id;
 
-        $visitorUuid = $request->getCookies()->getValue(ConsentHelper::visitorCookieName($siteId))
-            ?? $request->getCookies()->getValue(ConsentHelper::LEGACY_VISITOR_COOKIE);
+        $visitorUuid = $request->getCookies()->getValue(ConsentHelper::visitorCookieName($siteId));
 
-        if (!$visitorUuid) {
+        if (!is_string($visitorUuid) || $visitorUuid === '') {
             return $this->_uncached($this->asJson(['consent' => null]));
         }
 
@@ -192,6 +266,15 @@ class ConsentController extends Controller
     public function actionGeo(): Response
     {
         $this->requireAcceptsJson();
+
+        // Refused with the fail-open answer, so a throttled visitor is shown
+        // the banner (the runtime treats any non-2xx as "show") rather than
+        // having optional content activated on a guess.
+        if (!Throttle::check('consent-geo', self::GEO_LIMIT)) {
+            return $this->_uncached(
+                $this->asJson(['show' => true, 'country' => null, 'error' => 'rate_limited'])->setStatusCode(429)
+            );
+        }
 
         $plugin   = Plugin::getInstance();
         $settings = $plugin->cookieSettings->getEffectiveSettings();
