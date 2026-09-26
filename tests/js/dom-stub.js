@@ -26,10 +26,10 @@
  */
 function parseSelector(selector) {
   var negated = null;
-  var notMatch = selector.match(/:not\(\[([\w-]+)\]\)\s*$/);
+  var notMatch = selector.match(/:not\(\[([\w-]+)(?:=["']([^"']*)["'])?\]\)\s*$/);
 
   if (notMatch) {
-    negated = notMatch[1];
+    negated = { name: notMatch[1], value: notMatch[2] };
     selector = selector.slice(0, notMatch.index);
   }
 
@@ -67,7 +67,14 @@ function parseSelector(selector) {
 
 function matchesOne(element, parsed) {
   if (parsed.tag && element.tagName !== parsed.tag) return false;
-  if (parsed.negated !== null && element.getAttribute(parsed.negated) !== null) return false;
+
+  if (parsed.negated !== null) {
+    var negatedValue = element.getAttribute(parsed.negated.name);
+
+    if (parsed.negated.value === undefined ? negatedValue !== null : negatedValue === parsed.negated.value) {
+      return false;
+    }
+  }
 
   for (var i = 0; i < parsed.classes.length; i++) {
     if (!element.classList.contains(parsed.classes[i])) return false;
@@ -111,9 +118,14 @@ function Element(tagName, document) {
   this.hidden = false;
   this.checked = false;
   this.disabled = false;
+  this.nonce = '';
 
-  // Non-null means "rendered", which is all the focus trap asks.
-  this.offsetParent = {};
+  // A script element created by script is async unless told otherwise, as in
+  // a browser; parsed ones are not, which is irrelevant here.
+  this.async = this.tagName === 'SCRIPT';
+
+  this._listeners = {};
+
 
   this._attrs = {};
 
@@ -172,8 +184,64 @@ Element.prototype.replaceChild = function (fresh, stale) {
   return stale;
 };
 
+// Whether this element or any ancestor is hidden — what a browser's layout
+// would report as not rendered.
+Element.prototype._isHidden = function () {
+  for (var node = this; node; node = node.parentNode) {
+    if (node.hidden) return true;
+  }
+  return false;
+};
+
+// Non-null means "rendered": null for anything inside a hidden subtree, as a
+// browser reports for display:none.
+Object.defineProperty(Element.prototype, 'offsetParent', {
+  get: function () { return this._isHidden() ? null : (this.parentNode || {}); }
+});
+
+// As in a browser, a hidden element cannot take focus: the call is ignored.
 Element.prototype.focus = function () {
+  if (this._isHidden()) return;
   this.ownerDocument.activeElement = this;
+};
+
+Element.prototype.blur = function () {
+  if (this.ownerDocument.activeElement === this) this.ownerDocument.activeElement = this.ownerDocument.body;
+};
+
+Element.prototype.contains = function (other) {
+  for (var node = other; node; node = node.parentNode) {
+    if (node === this) return true;
+  }
+  return false;
+};
+
+// Element-level listeners: the focus trap listens on its dialog, and the
+// ordered script queue on each script's load/error. No bubbling — every test
+// dispatches on the element it means.
+Element.prototype.addEventListener = function (name, handler) {
+  (this._listeners[name] = this._listeners[name] || []).push(handler);
+};
+
+Element.prototype.removeEventListener = function (name, handler) {
+  var bucket = this._listeners[name] || [];
+  var index = bucket.indexOf(handler);
+
+  if (index !== -1) bucket.splice(index, 1);
+};
+
+Element.prototype.dispatchEvent = function (event) {
+  event.target = event.target || this;
+  event.defaultPrevented = false;
+  event.preventDefault = function () { event.defaultPrevented = true; };
+
+  (this._listeners[event.type] || []).slice().forEach(function (handler) { handler(event); });
+
+  return !event.defaultPrevented;
+};
+
+Element.prototype.listenerCount = function (name) {
+  return (this._listeners[name] || []).length;
 };
 
 Element.prototype.descendants = function () {
@@ -249,6 +317,10 @@ Object.defineProperty(Element.prototype, 'src', {
 function createStorage(options) {
   var data = {};
   var broken = options && options.broken;
+  // Reads work, writes throw: a full quota, or storage that is readable but
+  // locked. The case where a read and a write can disagree about where a
+  // value lives.
+  var failWrites = options && options.failWrites;
 
   return {
     getItem: function (key) {
@@ -257,7 +329,7 @@ function createStorage(options) {
       return Object.prototype.hasOwnProperty.call(data, key) ? data[key] : null;
     },
     setItem: function (key, value) {
-      if (broken) throw new Error('storage unavailable');
+      if (broken || failWrites) throw new Error('storage unavailable');
       data[key] = String(value);
     },
     removeItem: function (key) {
@@ -275,7 +347,7 @@ function createEnvironment(options) {
   var cookies = {};
 
   var document = {
-    readyState: 'complete',
+    readyState: options.readyState || 'complete',
     activeElement: null,
     dispatched: [],
 
@@ -288,7 +360,9 @@ function createEnvironment(options) {
     querySelectorAll: function (selector) { return document.body.querySelectorAll(selector); },
     querySelector: function (selector) { return document.body.querySelector(selector); },
 
-    contains: function () { return true; },
+    // Real containment, so code that checks whether an element is still in
+    // the document is exercised rather than always passing.
+    contains: function (node) { return node === document.body || document.body.contains(node); },
 
     addEventListener: function (name, handler) {
       (listeners[name] = listeners[name] || []).push(handler);
@@ -303,9 +377,19 @@ function createEnvironment(options) {
 
     dispatchEvent: function (event) {
       document.dispatched.push(event);
-      (listeners[event.type] || []).forEach(function (handler) { handler(event); });
 
-      return true;
+      if (typeof event.preventDefault !== 'function') {
+        event.defaultPrevented = false;
+        event.preventDefault = function () { event.defaultPrevented = true; };
+      }
+
+      (listeners[event.type] || []).slice().forEach(function (handler) { handler(event); });
+
+      return !event.defaultPrevented;
+    },
+
+    listenerCount: function (name) {
+      return (listeners[name] || []).length;
     },
 
     get cookie() {
@@ -330,6 +414,15 @@ function createEnvironment(options) {
   };
 
   document.body = new Element('body', document);
+
+  // The root element, with just enough of a CSSStyleDeclaration to record
+  // custom properties the runtime sets.
+  document.documentElement = new Element('html', document);
+  document.documentElement.style = {
+    _props: {},
+    setProperty: function (name, value) { this._props[name] = String(value); },
+    getPropertyValue: function (name) { return this._props[name] || ''; }
+  };
 
   var window = {
     localStorage: createStorage(options.localStorage),

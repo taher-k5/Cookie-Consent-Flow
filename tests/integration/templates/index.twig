@@ -1,0 +1,13 @@
+{# Fixture: an ordinary page with the footer controls the README recommends. #}
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>CCF fixture</title></head>
+<body>
+  <main><h1>Fixture</h1><p>Page content.</p></main>
+  <script type="text/plain" data-cck-category="analytics" data-cck-src="https://analytics.example/a.js"></script>
+  <footer>
+    {{ craft.cookieConsent.renderPreferencesButton() }}
+    {{ craft.cookieConsent.resetConsentButton() }}
+  </footer>
+</body>
+</html>

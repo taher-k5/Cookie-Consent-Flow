@@ -128,4 +128,24 @@ final class GeoServiceTest extends TestCase
         self::assertTrue($service->isTargeted($this->settings(true, ['gb']), 'GB'));
         self::assertTrue($service->isTargeted($this->settings(true, ['GB']), 'gb'));
     }
+
+    /**
+     * A custom provider's malformed answer is not a country. It used to be
+     * passed through, matching no target (so the banner was hidden and
+     * optional content ran) and failing every consent INSERT.
+     */
+    public function testMalformedProviderCountriesAreIgnoredAndFallThrough(): void
+    {
+        foreach (['GBR', 'United Kingdom', 'G', '12', '<b>', 'gb-x'] as $bad) {
+            $service = new GeoService();
+            $service->setProviders([$this->providerReturning($bad), $this->providerReturning('de')]);
+
+            self::assertSame('DE', $service->getCountryCode(), "{$bad} must be skipped");
+        }
+
+        $service = new GeoService();
+        $service->setProviders([$this->providerReturning('GBR')]);
+        self::assertNull($service->getCountryCode());
+        self::assertTrue($service->shouldShowBanner($this->settings(true, ['GB'])), 'fails open');
+    }
 }

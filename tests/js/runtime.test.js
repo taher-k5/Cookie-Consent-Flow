@@ -119,11 +119,28 @@ function boot(options) {
   options = options || {};
 
   const config = Object.assign({}, BASE_CONFIG, options.config || {});
-  const env = createEnvironment({ navigator: options.navigator || {}, config: config });
+  const env = createEnvironment({
+    navigator: options.navigator || {},
+    config: config,
+    localStorage: options.localStorage,
+    readyState: options.readyState
+  });
   const doc = env.document;
+
+  // How the configuration reaches the page: the `window.cckConfig` global by
+  // default, the inert JSON block the plugin now renders, or — for the
+  // "runtime ran before its configuration" case — not yet at all.
+  if (options.configAsBlock || options.noConfig) {
+    delete env.window.cckConfig;
+  }
 
   // A cookie has to exist for detection to have anything to report.
   env.setCookie('CraftSessionId', 'abc123');
+
+  // Cookies already in the jar when the page loads — a previous page view's.
+  Object.keys(options.cookies || {}).forEach(function (name) {
+    env.setCookie(name, options.cookies[name]);
+  });
 
   const banner = doc.createElement('div');
   banner.setAttribute('id', 'cck-banner');
@@ -155,6 +172,16 @@ function boot(options) {
   gatedFrame.setAttribute('data-cck-src', 'https://ads.test/embed');
   doc.body.appendChild(gatedFrame);
 
+  if (options.configAsBlock) {
+    const block = doc.createElement('script');
+    block.setAttribute('type', 'application/json');
+    block.setAttribute('id', 'cck-config');
+    block.textContent = JSON.stringify(config);
+    doc.body.appendChild(block);
+  }
+
+  if (options.extra) options.extra(doc, config);
+
   Object.keys(options.storage || {}).forEach(function (key) {
     env.window.localStorage.setItem(key, JSON.stringify(options.storage[key]));
   });
@@ -175,14 +202,20 @@ function boot(options) {
   // nothing — which would make every assertion below pass for the wrong reason.
   env.window.fetch = fetch;
 
-  new Function('window', 'document', 'fetch', 'CustomEvent', RUNTIME)(
-    env.window,
-    doc,
-    fetch,
-    env.CustomEvent
-  );
+  const load = function () {
+    new Function('window', 'document', 'fetch', 'CustomEvent', RUNTIME)(
+      env.window,
+      doc,
+      fetch,
+      env.CustomEvent
+    );
+  };
+
+  for (let i = 0; i < (options.loadTimes || 1); i++) load();
 
   return {
+    /** Executes the runtime file again in the same page, as a second tag would. */
+    loadAgain: load,
     env: env,
     document: doc,
     window: env.window,
@@ -210,6 +243,34 @@ function boot(options) {
 
     events: function (name) {
       return doc.dispatched.filter(function (event) { return event.type === name; });
+    },
+
+    /** Clicks a control the way a visitor would: a click event reaching the document. */
+    click: function (element) {
+      return doc.dispatchEvent({ type: 'click', target: element });
+    },
+
+    /**
+     * Presses a key with focus where it currently is. `element` is kept for
+     * readability at the call site; as in a browser, the event reaches the
+     * document's listeners, which is where the focus trap listens.
+     */
+    key: function (element, key, shiftKey) {
+      return doc.dispatchEvent({ type: 'keydown', key: key, shiftKey: !!shiftKey, target: doc.activeElement });
+    },
+
+    /** Fires DOMContentLoaded, for pages booted in the `loading` state. */
+    domReady: function () {
+      doc.readyState = 'interactive';
+      doc.dispatchEvent({ type: 'DOMContentLoaded' });
+    },
+
+    /** Every live <script> the runtime created from a placeholder, in document order. */
+    activatedScripts: function () {
+      return doc.body.querySelectorAll('script').filter(function (node) {
+        const type = node.getAttribute('type');
+        return type !== 'text/plain' && type !== 'application/json';
+      });
     }
   };
 }
@@ -593,7 +654,9 @@ test('sync: a queued decision is retried and then cleared on success', async () 
 
   assert.strictEqual(page.fetch.to('/consent/save').length, 1, 'the queued decision is re-sent');
   assert.strictEqual(page.storage[PENDING], undefined, 'and the queue is emptied');
-  assert.strictEqual(JSON.parse(page.storage.cck_visitor_1), 'uuid-9');
+  // The visitor id stays in the server's httpOnly cookie (L14): nothing on
+  // the page needs it, so it is not copied where every script can read it.
+  assert.strictEqual(page.storage.cck_visitor_1, undefined);
 });
 
 test('sync: retries are bounded so a page load cannot queue for ever', async () => {
@@ -706,7 +769,8 @@ test('reset: a new decision afterwards syncs normally', async () => {
   inFlight.reject(new Error('offline'));
   await settle();
 
-  assert.strictEqual(JSON.parse(page.storage.cck_visitor_1), 'uuid-new');
+  assert.strictEqual(page.fetch.to('/consent/save').length, 2, 'the new decision is posted');
+  assert.strictEqual(page.fetch.bodyTo('/consent/save')[1].action, 'reject_all');
   assert.deepStrictEqual(JSON.parse(page.storage.cck_consent_1).categories, ['necessary']);
   assert.strictEqual(page.storage[PENDING], undefined, 'the stale failure must not queue anything');
 });
@@ -833,6 +897,1073 @@ test('regression: the public API keeps its documented and legacy names', async (
     'refreshGatedContent'].forEach(function (method) {
     assert.strictEqual(typeof page.consent[method], 'function', `${method} must remain public`);
   });
+});
+
+// ---------------------------------------------------------------------------
+// 6. H1 — one runtime per page, however many times the file is included
+// ---------------------------------------------------------------------------
+
+const saved = () => jsonResponse(200, { success: true });
+
+/** A button inside the banner that the delegated click handler acts on. */
+function addAction(doc, action) {
+  const button = doc.createElement('button');
+  button.setAttribute('data-cck-action', action);
+  doc.getElementById('cck-banner').appendChild(button);
+
+  return button;
+}
+
+test('H1: loading the file twice leaves one runtime and one set of listeners', async () => {
+  const page = boot({ loadTimes: 2, routes: { '/consent/save': saved } });
+  await settle();
+
+  assert.strictEqual(page.document.listenerCount('click'), 1, 'one delegated click handler');
+  assert.strictEqual(page.document.listenerCount('keydown'), 1, 'one Escape handler');
+  assert.strictEqual(page.events('cookieConsent:ready').length, 1, 'init ran once');
+});
+
+test('H1: a click after a double include saves exactly once', async () => {
+  let accept;
+  const page = boot({
+    loadTimes: 2,
+    routes: { '/consent/save': saved },
+    extra: (doc) => { accept = addAction(doc, 'accept-all'); }
+  });
+  await settle();
+
+  page.click(accept);
+  await settle();
+
+  assert.strictEqual(page.fetch.to('/consent/save').length, 1, 'one consent record per decision');
+  assert.strictEqual(page.events('cookieConsent:changed').length, 1);
+});
+
+test('H1: a third include later in the page still changes nothing', async () => {
+  const page = boot({ routes: { '/consent/save': saved } });
+  await settle();
+
+  const first = page.window.CookieConsent;
+  page.loadAgain();
+  page.loadAgain();
+  await settle();
+
+  assert.strictEqual(page.window.CookieConsent, first, 'the running instance is kept');
+  assert.strictEqual(page.document.listenerCount('click'), 1);
+});
+
+test('H1: a placeholder object named CookieConsent is replaced, not mistaken for the runtime', async () => {
+  const page = boot({});
+  await settle();
+
+  // A site stub assigned before (or instead of) the runtime.
+  page.window.CookieConsent = { queued: [] };
+  page.loadAgain();
+  await settle();
+
+  assert.strictEqual(typeof page.window.CookieConsent.acceptAll, 'function');
+  assert.strictEqual(page.window.CookieConsent._isCckRuntime, true);
+});
+
+test('H1: a runtime that arrives before its configuration waits for it', async () => {
+  const page = boot({ noConfig: true, readyState: 'loading', routes: { '/consent/save': saved } });
+  await settle();
+
+  assert.strictEqual(page.events('cookieConsent:ready').length, 0, 'nothing runs without configuration');
+
+  // The configuration block is reached later in the document.
+  page.window.cckConfig = Object.assign({}, BASE_CONFIG);
+  page.domReady();
+  await settle();
+
+  assert.strictEqual(page.events('cookieConsent:ready').length, 1);
+
+  page.consent.acceptAll();
+  await settle();
+
+  assert.ok(page.storage.cck_consent_1, 'site-namespaced storage, not the legacy key');
+  assert.strictEqual(page.storage.cck_consent, undefined);
+  assert.strictEqual(page.fetch.to('/consent/save').length, 1, 'save URL came from the configuration');
+});
+
+test('H1: the configuration is read from the inert JSON block', async () => {
+  const page = boot({ configAsBlock: true, config: { siteId: 3 }, routes: { '/consent/save': saved } });
+  await settle();
+
+  assert.strictEqual(page.window.cckConfig, undefined, 'no global is needed');
+
+  page.consent.rejectAll();
+  await settle();
+
+  assert.ok(page.storage.cck_consent_3);
+  assert.strictEqual(page.fetch.to('/consent/save').length, 1);
+});
+
+// ---------------------------------------------------------------------------
+// 7. M1 — a geo answer that arrives after a decision is ignored
+// ---------------------------------------------------------------------------
+
+function geoPending(answer) {
+  const lookup = deferred();
+  const page = boot({
+    config: geoConfig,
+    routes: {
+      '/consent/geo': () => lookup.promise,
+      '/consent/save': saved
+    }
+  });
+
+  return {
+    page,
+    answer: async () => {
+      lookup.resolve({ ok: true, status: 200, json: () => Promise.resolve(answer) });
+      await settle();
+    }
+  };
+}
+
+const NOT_TARGETED = { show: false, country: 'US' };
+
+test('M1: geo pending → reject → a late "not targeted" answer activates nothing', async () => {
+  const { page, answer } = geoPending(NOT_TARGETED);
+  await settle();
+
+  page.consent.rejectAll();
+  await settle();
+  const updatesBefore = page.consentUpdates().length;
+
+  await answer();
+
+  assert.strictEqual(page.activatedScript(), null, 'no optional script after a rejection');
+  assert.strictEqual(page.gatedFrame.getAttribute('src'), null, 'no optional iframe after a rejection');
+  assert.strictEqual(page.consent.isGeoBypassed(), false);
+  assert.strictEqual(page.consentUpdates().length, updatesBefore, 'no late grant sent to Google');
+  assert.strictEqual(page.events('cookieConsent:suppressed').length, 0);
+});
+
+test('M1: geo pending → accept → a late "targeted" answer does not re-show the banner', async () => {
+  const { page, answer } = geoPending({ show: true, country: 'DE' });
+  await settle();
+
+  page.consent.acceptAll();
+  await settle();
+  await answer();
+
+  assert.strictEqual(page.banner.hidden, true, 'an answered question is not asked again');
+  assert.strictEqual(page.events('cookieConsent:shown').length, 0);
+});
+
+test('M1: geo pending → custom → the custom choice stands', async () => {
+  const { page, answer } = geoPending(NOT_TARGETED);
+  await settle();
+
+  page.consent.updateConsent({ analytics: true });
+  await settle();
+  await answer();
+
+  assert.ok(page.activatedScript(), 'analytics was chosen');
+  assert.strictEqual(page.gatedFrame.getAttribute('src'), null, 'marketing was not');
+  assert.deepStrictEqual(page.consent.getConsentState(), { necessary: true, analytics: true, marketing: false });
+});
+
+test('M1: geo pending → reset → the stale answer is ignored and a fresh lookup decides', async () => {
+  let calls = 0;
+  const first = deferred();
+  const page = boot({
+    config: geoConfig,
+    storage: { cck_consent_1: validDecision({ action: 'reject_all', categories: ['necessary'] }) },
+    routes: {
+      '/consent/geo': () => (++calls === 1 ? first.promise : jsonResponse(200, { show: true, country: 'DE' })),
+      '/consent/save': saved
+    }
+  });
+  await settle();
+
+  // A stored decision means no lookup yet; reset starts the first one.
+  page.consent.resetConsent();
+  // …and a second reset, before it answers, supersedes it.
+  page.consent.resetConsent();
+  await settle();
+
+  first.resolve({ ok: true, status: 200, json: () => Promise.resolve(NOT_TARGETED) });
+  await settle();
+
+  assert.strictEqual(page.activatedScript(), null, 'the superseded "not targeted" answer is not applied');
+  assert.strictEqual(page.banner.hidden, false, 'the current lookup shows the banner');
+});
+
+test('M1: a geo failure after a decision does not re-show the banner', async () => {
+  const lookup = deferred();
+  const page = boot({ config: geoConfig, routes: { '/consent/geo': () => lookup.promise, '/consent/save': saved } });
+  await settle();
+
+  page.consent.rejectAll();
+  await settle();
+
+  lookup.reject(new Error('offline'));
+  await settle();
+
+  assert.strictEqual(page.banner.hidden, true);
+});
+
+// ---------------------------------------------------------------------------
+// 8. M5 — reset withdraws Google consent too
+// ---------------------------------------------------------------------------
+
+const DENIED = {
+  analytics_storage: 'denied',
+  ad_storage: 'denied',
+  ad_user_data: 'denied',
+  ad_personalization: 'denied'
+};
+
+test('M5: accept → reset sends every optional signal back to denied', async () => {
+  const page = boot({ routes: { '/consent/save': saved } });
+  await settle();
+
+  page.consent.acceptAll();
+  await settle();
+  page.consent.resetConsent();
+  await settle();
+
+  const updates = page.consentUpdates();
+  assert.strictEqual(updates[0].analytics_storage, 'granted', 'accept granted first');
+  assert.deepStrictEqual(updates[updates.length - 1], DENIED, 'reset denies afterwards');
+});
+
+test('M5: the denial is sent before the reset event, so listeners see the withdrawn state', async () => {
+  const page = boot({ storage: { cck_consent_1: validDecision() } });
+  await settle();
+
+  let atReset = null;
+  page.document.addEventListener('cookieConsent:reset', () => { atReset = page.consentUpdates().slice(-1)[0]; });
+  page.consent.resetConsent();
+
+  assert.deepStrictEqual(atReset, DENIED);
+});
+
+test('M5: custom → reset and reject → reset both end denied', async () => {
+  for (const decide of [(c) => c.updateConsent({ marketing: true }), (c) => c.rejectAll()]) {
+    const page = boot({ routes: { '/consent/save': saved } });
+    await settle();
+
+    decide(page.consent);
+    await settle();
+    page.consent.resetConsent();
+    await settle();
+
+    assert.deepStrictEqual(page.consentUpdates().slice(-1)[0], DENIED);
+  }
+});
+
+test('M5: repeated resets, and a reset before any decision, stay denied and do not throw', async () => {
+  const page = boot({});
+  await settle();
+
+  page.consent.resetConsent();
+  page.consent.resetConsent();
+  await settle();
+
+  const updates = page.consentUpdates();
+  assert.strictEqual(updates.length, 2);
+  updates.forEach((update) => assert.deepStrictEqual(update, DENIED));
+});
+
+test('M5: a locked category keeps its signal granted through a reset', async () => {
+  const page = boot({
+    config: {
+      consentMode: {
+        enabled: true,
+        type: 'advanced',
+        signals: { necessary: ['security_storage'], analytics: ['analytics_storage'] }
+      }
+    },
+    storage: { cck_consent_1: validDecision() }
+  });
+  await settle();
+
+  page.consent.resetConsent();
+
+  assert.deepStrictEqual(page.consentUpdates().slice(-1)[0], {
+    security_storage: 'granted',
+    analytics_storage: 'denied'
+  });
+});
+
+// ---------------------------------------------------------------------------
+// 9. M6 — the focus trap holds in both directions
+// ---------------------------------------------------------------------------
+
+/** A preference centre with a panel wrapper and three controls, one hidden and one disabled. */
+function withDialogControls(doc) {
+  const prefs = doc.getElementById('cck-preferences');
+  const panel = doc.createElement('div');
+  panel.setAttribute('class', 'cck-preferences__panel');
+
+  const close = doc.createElement('button');
+  close.setAttribute('id', 'close');
+  const disabled = doc.createElement('button');
+  disabled.setAttribute('id', 'disabled');
+  disabled.setAttribute('disabled', 'disabled');
+  disabled.disabled = true;
+  const hiddenWrap = doc.createElement('div');
+  hiddenWrap.hidden = true;
+  const hiddenButton = doc.createElement('button');
+  hiddenButton.setAttribute('id', 'hidden');
+  hiddenWrap.appendChild(hiddenButton);
+  const save = doc.createElement('button');
+  save.setAttribute('id', 'save');
+
+  panel.appendChild(close);
+  panel.appendChild(disabled);
+  panel.appendChild(hiddenWrap);
+  panel.appendChild(save);
+  prefs.appendChild(panel);
+}
+
+function openTrapped() {
+  const page = boot({ extra: withDialogControls });
+  page.consent.openPreferences();
+
+  return page;
+}
+
+test('M6: focus starts on the dialog panel', async () => {
+  const page = openTrapped();
+
+  assert.strictEqual(page.document.activeElement.getAttribute('class'), 'cck-preferences__panel');
+});
+
+test('M6: Shift+Tab straight after opening wraps to the last control instead of escaping', async () => {
+  const page = openTrapped();
+
+  const allowed = page.key(page.preferences, 'Tab', true);
+
+  assert.strictEqual(allowed, false, 'the default move out of the dialog is prevented');
+  assert.strictEqual(page.document.activeElement.getAttribute('id'), 'save');
+});
+
+/** The first control a keyboard user reaches: the first enabled category switch. */
+const firstControl = (page) => page.preferences.querySelectorAll('input[type="checkbox"][data-category]')
+  .filter((box) => !box.disabled)[0];
+
+test('M6: Tab from the panel is left to the browser, whose next stop is inside the dialog', async () => {
+  const page = openTrapped();
+
+  // The wrapper is the dialog's first element, so the browser's own next tab
+  // stop is the first control inside it; the trap only handles the edges.
+  assert.strictEqual(page.key(page.preferences, 'Tab'), true);
+  assert.ok(page.preferences.contains(firstControl(page)));
+});
+
+test('M6 (final audit): a Tab on a <summary> inside the dialog is not hijacked', async () => {
+  const page = boot({
+    extra: (doc) => {
+      // close, then a category's "Cookies used" disclosure, then save — the
+      // order the real preference centre renders them in.
+      const panel = doc.createElement('div');
+      panel.setAttribute('class', 'cck-preferences__panel');
+      const close = doc.createElement('button');
+      close.setAttribute('id', 'close');
+      const details = doc.createElement('details');
+      const summary = doc.createElement('summary');
+      summary.setAttribute('id', 'cookies-used');
+      details.appendChild(summary);
+      const save = doc.createElement('button');
+      save.setAttribute('id', 'save');
+      panel.appendChild(close);
+      panel.appendChild(details);
+      panel.appendChild(save);
+      doc.getElementById('cck-preferences').appendChild(panel);
+    }
+  });
+  page.consent.openPreferences();
+  page.document.getElementById('cookies-used').focus();
+
+  assert.strictEqual(page.key(page.preferences, 'Tab'), true, 'the browser moves on to the next control');
+  assert.strictEqual(page.key(page.preferences, 'Tab', true), true, 'and back');
+});
+
+test('M6 (final audit): focus that left the dialog (an overlay click) is brought back by Tab', async () => {
+  const page = openTrapped();
+
+  page.document.activeElement = page.document.body; // what clicking the overlay does
+
+  assert.strictEqual(page.key(page.document.body, 'Tab'), false, 'the move into the page behind is prevented');
+  assert.ok(page.preferences.contains(page.document.activeElement), 'focus is back inside the dialog');
+
+  page.document.activeElement = page.document.body;
+  page.key(page.document.body, 'Tab', true);
+  assert.strictEqual(page.document.activeElement.getAttribute('id'), 'save', 'Shift+Tab lands on the last control');
+});
+
+test('M6: Tab wraps from the last control and Shift+Tab from the first', async () => {
+  const page = openTrapped();
+  const byId = (id) => page.document.getElementById(id);
+
+  byId('save').focus();
+  assert.strictEqual(page.key(page.preferences, 'Tab'), false);
+  assert.strictEqual(page.document.activeElement, firstControl(page));
+
+  assert.strictEqual(page.key(page.preferences, 'Tab', true), false);
+  assert.strictEqual(page.document.activeElement.getAttribute('id'), 'save');
+});
+
+test('M6: a Tab between two inner controls is left to the browser', async () => {
+  const page = openTrapped();
+
+  firstControl(page).focus();
+
+  assert.strictEqual(page.key(page.preferences, 'Tab'), true, 'only the edges are intercepted');
+});
+
+test('M6: disabled and hidden controls are never focus targets', async () => {
+  const page = openTrapped();
+
+  page.key(page.preferences, 'Tab', true);
+  const target = page.document.activeElement.getAttribute('id');
+
+  assert.notStrictEqual(target, 'disabled');
+  assert.notStrictEqual(target, 'hidden');
+});
+
+test('M6: Escape closes the preference centre, records nothing, and releases the trap', async () => {
+  const page = openTrapped();
+  const opener = page.document.createElement('button');
+  // The opener has to be outside the dialog and focused before it opens.
+  page.consent.closePreferences();
+  page.document.body.appendChild(opener);
+  opener.focus();
+  page.consent.openPreferences();
+
+  page.document.dispatchEvent({ type: 'keydown', key: 'Escape' });
+
+  assert.strictEqual(page.preferences.hidden, true);
+  assert.strictEqual(page.document.activeElement, opener, 'focus returns to what opened it');
+  assert.strictEqual(page.preferences.listenerCount('keydown'), 0, 'no trap left behind');
+  assert.deepStrictEqual(page.fetch.to('/consent/save'), []);
+});
+
+test('M7 (final audit): deciding in a bar layout moves focus to the site\'s preferences control', async () => {
+  let accept;
+  let footer;
+  const page = boot({
+    routes: { '/consent/save': saved },
+    extra: (doc) => {
+      accept = addAction(doc, 'accept-all');
+      footer = doc.createElement('button');
+      footer.setAttribute('data-cck-action', 'open-preferences');
+      doc.body.appendChild(footer);
+    }
+  });
+  await settle();
+
+  accept.focus();
+  page.click(accept);
+
+  assert.strictEqual(page.banner.hidden, true);
+  assert.strictEqual(page.document.activeElement, footer, 'not left on the hidden Accept button');
+});
+
+test('M7 (final audit): with no preferences control, focus is released from the hidden banner', async () => {
+  let reject;
+  const page = boot({ routes: { '/consent/save': saved }, extra: (doc) => { reject = addAction(doc, 'reject-all'); } });
+  await settle();
+
+  reject.focus();
+  page.click(reject);
+
+  assert.notStrictEqual(page.document.activeElement, reject);
+  assert.ok(!page.banner.contains(page.document.activeElement));
+});
+
+// ---------------------------------------------------------------------------
+// 10. L1 — `ready` is deterministic, and late listeners still hear it
+// ---------------------------------------------------------------------------
+
+test('L1: ready fires once for a GPC visitor, carrying the implied rejection', async () => {
+  const page = boot({ navigator: { globalPrivacyControl: true }, routes: { '/consent/save': saved } });
+  await settle();
+
+  const ready = page.events('cookieConsent:ready');
+  assert.strictEqual(ready.length, 1);
+  assert.strictEqual(ready[0].detail.action, 'reject_all');
+  assert.strictEqual(ready[0].detail.source, 'gpc');
+});
+
+test('L1: ready fires once for a DNT visitor when DNT is honoured', async () => {
+  const page = boot({
+    config: { respectDnt: true },
+    navigator: { doNotTrack: '1' },
+    routes: { '/consent/save': saved }
+  });
+  await settle();
+
+  assert.strictEqual(page.events('cookieConsent:ready').length, 1);
+  assert.strictEqual(page.events('cookieConsent:ready')[0].detail.source, 'dnt');
+});
+
+test('L1: ready fires exactly once in each of the three starting states', async () => {
+  for (const options of [{}, { storage: { cck_consent_1: validDecision() } }, { navigator: { globalPrivacyControl: true } }]) {
+    const page = boot(Object.assign({ routes: { '/consent/save': saved } }, options));
+    await settle();
+
+    page.consent.acceptAll();
+    await settle();
+
+    assert.strictEqual(page.events('cookieConsent:ready').length, 1, 'a later decision does not fire ready again');
+  }
+});
+
+test('L1: onReady() calls back immediately when attached after ready', async () => {
+  const page = boot({ storage: { cck_consent_1: validDecision() } });
+  await settle();
+
+  let heard = null;
+  page.consent.onReady((detail) => { heard = detail; });
+
+  assert.ok(page.consent.isReady());
+  assert.strictEqual(heard.action, 'accept_all');
+});
+
+test('L1: onReady() attached before initialisation fires once on ready', async () => {
+  const page = boot({ noConfig: true, readyState: 'loading' });
+
+  let calls = 0;
+  page.consent.onReady(() => { calls++; });
+  assert.strictEqual(page.consent.isReady(), false);
+
+  page.window.cckConfig = Object.assign({}, BASE_CONFIG);
+  page.domReady();
+  await settle();
+
+  assert.strictEqual(calls, 1);
+});
+
+// ---------------------------------------------------------------------------
+// 11. L2 — storage reads and writes agree about where a value lives
+// ---------------------------------------------------------------------------
+
+test('L2: readable but unwritable localStorage — the decision survives a reload via the cookie', async () => {
+  const page = boot({ localStorage: { failWrites: true }, routes: { '/consent/save': saved } });
+  await settle();
+
+  page.consent.acceptAll();
+  await settle();
+
+  assert.ok(page.env.cookies.cck_consent_1, 'written to the fallback cookie');
+  assert.strictEqual(page.consent.hasStoredConsent(), true, 'and read back from it');
+
+  // The next page view: the same cookie jar, the same failing storage.
+  const reload = boot({
+    localStorage: { failWrites: true },
+    cookies: { cck_consent_1: page.env.cookies.cck_consent_1 },
+    routes: { '/consent/save': saved }
+  });
+  await settle();
+
+  assert.strictEqual(reload.consent.getConsent().action, 'accept_all');
+  assert.strictEqual(reload.banner.hidden, true, 'the banner does not come back on every page');
+  assert.deepStrictEqual(reload.fetch.to('/consent/save'), [], 'and no duplicate record is posted');
+});
+
+test('L2: localStorage unavailable entirely — the cookie fallback round-trips', async () => {
+  const page = boot({ localStorage: { broken: true }, routes: { '/consent/save': saved } });
+  await settle();
+
+  page.consent.rejectAll();
+  await settle();
+
+  assert.strictEqual(page.consent.getConsent().action, 'reject_all');
+  assert.strictEqual(page.banner.hidden, true);
+});
+
+test('L2: a successful localStorage write retires the old cookie copy', async () => {
+  const page = boot({ routes: { '/consent/save': saved } });
+  page.env.setCookie('cck_consent_1', encodeURIComponent(JSON.stringify(validDecision({ action: 'reject_all' }))));
+  await settle();
+
+  page.consent.acceptAll();
+  await settle();
+
+  assert.strictEqual(page.env.cookies.cck_consent_1, undefined, 'no stale fallback left to disagree');
+  assert.strictEqual(page.consent.getConsent().action, 'accept_all');
+});
+
+test('L2: a returning visitor whose decision is only in the cookie is recognised', async () => {
+  const page = boot({
+    cookies: { cck_consent_1: encodeURIComponent(JSON.stringify(validDecision())) }
+  });
+  await settle();
+
+  assert.strictEqual(page.consent.hasStoredConsent(), true);
+  assert.ok(page.activatedScript(), 'and their consent is acted on');
+});
+
+// ---------------------------------------------------------------------------
+// 12. L3 / L4 — one CSRF request at a time; only a CSRF 400 is retried
+// ---------------------------------------------------------------------------
+
+test('L3: a decision needing two POSTs fetches one CSRF token', async () => {
+  const page = boot({ routes: { '/consent/save': saved } });
+  await settle();
+
+  page.consent.acceptAll();
+  await settle();
+
+  assert.strictEqual(page.fetch.to('/users/session-info').length, 1, 'save and report share one token request');
+  assert.strictEqual(page.fetch.to('/consent/save').length, 1);
+  assert.strictEqual(page.fetch.to('/cookie-detection/report').length, 1);
+});
+
+test('L3: a failed token request is retried by the next caller, not remembered', async () => {
+  let attempt = 0;
+  const page = boot({
+    routes: {
+      '/users/session-info': () => (++attempt === 1 ? Promise.reject(new Error('offline')) : jsonResponse(200, { csrfTokenValue: 'token-2' })),
+      '/consent/save': saved
+    }
+  });
+  await settle();
+
+  page.consent.acceptAll();
+  await settle();
+  page.consent.rejectAll();
+  await settle();
+
+  const lastSave = page.fetch.to('/consent/save').slice(-1)[0];
+  assert.strictEqual(lastSave.init.headers['X-CSRF-Token'], 'token-2');
+});
+
+test('L4: a 400 that is not a CSRF refusal is not retried', async () => {
+  let posts = 0;
+  const page = boot({
+    routes: { '/consent/save': () => { posts++; return jsonResponse(400, { error: 'invalid_action' }); } }
+  });
+  await settle();
+
+  page.consent.acceptAll();
+  await settle();
+
+  assert.strictEqual(posts, 1, 'a refused payload is sent once');
+  assert.strictEqual(page.fetch.to('/users/session-info').length, 1, 'and no fresh token is fetched for it');
+  assert.strictEqual(page.events('cookieConsent:syncFailed')[0].detail.permanent, true);
+});
+
+test('L4: an invalid_csrf 400 is refreshed and retried exactly once', async () => {
+  let posts = 0;
+  const page = boot({
+    routes: {
+      '/consent/save': () => (++posts === 1 ? jsonResponse(400, { error: 'invalid_csrf' }) : saved())
+    }
+  });
+  await settle();
+
+  page.consent.acceptAll();
+  await settle();
+
+  assert.strictEqual(posts, 2);
+  assert.strictEqual(page.storage[PENDING], undefined);
+});
+
+// ---------------------------------------------------------------------------
+// 13. L5 / L6 / L7 — activation rules, order and CSP nonces
+// ---------------------------------------------------------------------------
+
+function gated(doc, category, attrs, text) {
+  const node = doc.createElement('script');
+  node.setAttribute('type', 'text/plain');
+  node.setAttribute('data-cck-category', category);
+  Object.keys(attrs || {}).forEach((name) => node.setAttribute(name, attrs[name]));
+  node.textContent = text || '';
+  doc.body.appendChild(node);
+
+  return node;
+}
+
+test('L5: locked-category content runs before a decision; optional content does not', async () => {
+  const page = boot({
+    extra: (doc) => { gated(doc, 'necessary', { 'data-cck-src': 'https://first.test/essential.js' }); }
+  });
+  await settle();
+
+  const srcs = page.activatedScripts().map((node) => node.getAttribute('src'));
+  assert.ok(srcs.indexOf('https://first.test/essential.js') !== -1, 'strictly necessary content is not held back');
+  assert.ok(srcs.indexOf('https://analytics.test/a.js') === -1, 'optional content waits for consent');
+  assert.deepStrictEqual(page.fetch.calls, [], 'and still no request is made before the visitor answers');
+});
+
+test('L5: before a decision, Google hears only the locked categories\' grants', async () => {
+  const page = boot({
+    config: {
+      consentMode: { enabled: true, type: 'advanced', signals: { necessary: ['security_storage'], analytics: ['analytics_storage'] } }
+    }
+  });
+  await settle();
+
+  assert.deepStrictEqual(page.consentUpdates(), [{ security_storage: 'granted' }]);
+});
+
+test('L6: an inline script waits for the external script before it', async () => {
+  const page = boot({
+    storage: { cck_consent_1: validDecision() },
+    extra: (doc) => {
+      gated(doc, 'analytics', { 'data-cck-src': 'https://lib.test/lib.js' });
+      gated(doc, 'analytics', {}, 'window.libInit = true;');
+    }
+  });
+  await settle();
+
+  const lib = page.activatedScripts().find((node) => node.getAttribute('src') === 'https://lib.test/lib.js');
+  assert.ok(lib, 'the library is inserted');
+  assert.strictEqual(lib.async, false, 'and is not async, so it executes in order');
+
+  const inlineBefore = page.activatedScripts().filter((node) => node.text === 'window.libInit = true;');
+  assert.strictEqual(inlineBefore.length, 0, 'the init snippet is not inserted before its library loads');
+
+  page.activatedScripts().forEach((node) => { if (node.getAttribute('src')) node.dispatchEvent({ type: 'load' }); });
+
+  const inlineAfter = page.activatedScripts().filter((node) => node.text === 'window.libInit = true;');
+  assert.strictEqual(inlineAfter.length, 1, 'and runs once it has');
+});
+
+test('L6: a failed external script does not block the scripts after it', async () => {
+  const page = boot({
+    storage: { cck_consent_1: validDecision() },
+    extra: (doc) => {
+      gated(doc, 'analytics', { 'data-cck-src': 'https://lib.test/missing.js' });
+      gated(doc, 'analytics', {}, 'window.after = true;');
+    }
+  });
+  await settle();
+
+  page.activatedScripts().forEach((node) => { if (node.getAttribute('src')) node.dispatchEvent({ type: 'error' }); });
+
+  assert.strictEqual(page.activatedScripts().filter((node) => node.text === 'window.after = true;').length, 1);
+});
+
+test('L6: an explicit async placeholder stays async and does not hold up the queue', async () => {
+  const page = boot({
+    storage: { cck_consent_1: validDecision() },
+    extra: (doc) => {
+      gated(doc, 'analytics', { 'data-cck-src': 'https://lib.test/independent.js', async: '' });
+      gated(doc, 'analytics', {}, 'window.next = true;');
+    }
+  });
+  await settle();
+
+  const independent = page.activatedScripts().find((node) => node.getAttribute('src') === 'https://lib.test/independent.js');
+  assert.strictEqual(independent.async, true);
+
+  // The page's own ordered analytics script still comes first; once it has
+  // loaded, the inline script runs even though the async one never reports.
+  page.activatedScripts()
+    .filter((node) => node.getAttribute('src') === 'https://analytics.test/a.js')
+    .forEach((node) => node.dispatchEvent({ type: 'load' }));
+
+  assert.strictEqual(page.activatedScripts().filter((node) => node.text === 'window.next = true;').length, 1);
+});
+
+test('L6: repeated activation passes never insert a placeholder twice', async () => {
+  const page = boot({ routes: { '/consent/save': saved } });
+  await settle();
+
+  page.consent.acceptAll();
+  page.consent.refreshGatedContent();
+  page.consent.updateConsent({ analytics: true, marketing: true });
+  await settle();
+
+  const analytics = page.activatedScripts().filter((node) => node.getAttribute('src') === 'https://analytics.test/a.js');
+  assert.strictEqual(analytics.length, 1);
+});
+
+test('L7: an activated script carries the placeholder\'s CSP nonce', async () => {
+  const page = boot({
+    storage: { cck_consent_1: validDecision() },
+    extra: (doc) => {
+      const node = gated(doc, 'analytics', { 'data-cck-src': 'https://lib.test/nonced.js' });
+      // As in a browser after parsing: the attribute is blanked, the property keeps the value.
+      node.setAttribute('nonce', '');
+      node.nonce = 'r4nd0m';
+    }
+  });
+  await settle();
+
+  const script = page.activatedScripts().find((node) => node.getAttribute('src') === 'https://lib.test/nonced.js');
+  assert.strictEqual(script.nonce, 'r4nd0m');
+  assert.strictEqual(script.getAttribute('nonce'), null, 'the blanked attribute is not copied over it');
+});
+
+// ---------------------------------------------------------------------------
+// 14. L14 and markup contract
+// ---------------------------------------------------------------------------
+
+test('L14: the visitor id returned by an older server is never written to storage', async () => {
+  const page = boot({ routes: { '/consent/save': () => jsonResponse(200, { success: true, visitorUuid: 'uuid-legacy' }) } });
+  await settle();
+
+  page.consent.acceptAll();
+  await settle();
+
+  assert.strictEqual(page.storage.cck_visitor_1, undefined);
+});
+
+test('controls written as links do not also navigate', async () => {
+  let link;
+  const page = boot({
+    routes: { '/consent/save': saved },
+    extra: (doc) => { link = addAction(doc, 'reject-all'); }
+  });
+  await settle();
+
+  assert.strictEqual(page.click(link), false, 'the default action is prevented');
+  await settle();
+  assert.strictEqual(page.consent.getConsent().action, 'reject_all');
+});
+
+test('unrelated clicks are left alone', async () => {
+  const page = boot({});
+  await settle();
+
+  const other = page.document.createElement('a');
+  page.document.body.appendChild(other);
+
+  assert.strictEqual(page.click(other), true);
+});
+
+// ---------------------------------------------------------------------------
+// 15. Final audit — sync outbox, stored-state validation, gating edges
+// ---------------------------------------------------------------------------
+
+test('final: the decision is queued before the request, so an aborted request loses nothing', async () => {
+  const never = deferred(); // a request the page navigates away from: no handler ever runs
+  const page = boot({ routes: { '/consent/save': () => never.promise } });
+  await settle();
+
+  page.consent.acceptAll();
+  await settle();
+
+  const queued = JSON.parse(page.storage[PENDING]);
+  assert.strictEqual(queued.action, 'accept_all', 'already in the outbox while the request is in flight');
+  assert.strictEqual(queued.syncAttempts, 0);
+});
+
+test('final: a newer decision replaces an older queued one, so the older is never re-sent', async () => {
+  const never = deferred();
+  const page = boot({
+    storage: { cck_consent_1: validDecision(), [PENDING]: validDecision({ action: 'accept_all', syncAttempts: 1 }) },
+    routes: { '/consent/save': () => never.promise }
+  });
+  await settle();
+
+  page.consent.rejectAll();
+  await settle();
+
+  assert.strictEqual(JSON.parse(page.storage[PENDING]).action, 'reject_all');
+});
+
+test('final: the save carries the policy version the page showed, and outlives the page', async () => {
+  const page = boot({ config: { policyVersion: '2026-09-26.110005' }, routes: { '/consent/save': saved } });
+  await settle();
+
+  page.consent.acceptAll();
+  await settle();
+
+  const call = page.fetch.to('/consent/save')[0];
+  assert.strictEqual(JSON.parse(call.init.body).policyVersion, '2026-09-26.110005');
+  assert.strictEqual(call.init.keepalive, true);
+});
+
+test('final: an unreachable session endpoint makes the save retryable, not a permanent drop', async () => {
+  const page = boot({
+    routes: {
+      '/users/session-info': () => Promise.reject(new Error('offline')),
+      '/consent/save': () => { throw new Error('must not post without a token'); }
+    }
+  });
+  await settle();
+
+  page.consent.acceptAll();
+  await settle();
+
+  assert.deepStrictEqual(page.fetch.to('/consent/save'), [], 'no doomed POST with an empty token');
+  assert.strictEqual(JSON.parse(page.storage[PENDING]).syncAttempts, 1, 'queued for a later page view');
+  assert.strictEqual(page.events('cookieConsent:syncFailed').length, 0, 'not reported as permanent');
+});
+
+test('final: a second invalid_csrf right after a fresh token is retryable', async () => {
+  const page = boot({ routes: { '/consent/save': () => jsonResponse(400, { error: 'invalid_csrf' }) } });
+  await settle();
+
+  page.consent.acceptAll();
+  await settle();
+
+  assert.strictEqual(page.fetch.to('/consent/save').length, 2);
+  assert.ok(page.storage[PENDING], 'kept for another attempt');
+});
+
+test('final: a decision dated in the future, or undated, does not count while expiry is on', async () => {
+  for (const timestamp of [Date.now() + 30 * 864e5, 0, undefined, 'yesterday']) {
+    const stored = validDecision({ timestamp: timestamp });
+    if (timestamp === undefined) delete stored.timestamp;
+
+    const page = boot({ storage: { cck_consent_1: stored } });
+    await settle();
+
+    assert.strictEqual(page.consent.hasStoredConsent(), false, String(timestamp));
+    assert.strictEqual(page.activatedScript(), null, 'nothing optional runs: ' + String(timestamp));
+  }
+});
+
+test('final: with expiry off, an undated decision still counts', async () => {
+  const stored = validDecision();
+  delete stored.timestamp;
+  const page = boot({ config: { consentExpiryDays: 0 }, storage: { cck_consent_1: stored } });
+  await settle();
+
+  assert.strictEqual(page.consent.hasStoredConsent(), true);
+});
+
+test('final: without configuration, nothing stored is trusted as consent', async () => {
+  const page = boot({ noConfig: true, storage: { cck_consent_1: validDecision({ categories: ['anything'] }) } });
+  page.preferences.childNodes.length = 0; // no rendered categories to fall back on either
+  await settle();
+
+  assert.strictEqual(page.consent.getConsent(), null);
+});
+
+test('final: tampered storage cannot add a category the site does not have', async () => {
+  const page = boot({ storage: { cck_consent_1: validDecision({ categories: ['necessary', '__proto__', 'constructor', 'x'] }) } });
+  await settle();
+
+  assert.deepStrictEqual(page.consent.getConsent().categories, ['necessary']);
+});
+
+test('final: withdrawing consent unloads iframes activated under it', async () => {
+  const page = boot({ routes: { '/consent/save': saved } });
+  await settle();
+
+  page.consent.acceptAll();
+  assert.strictEqual(page.gatedFrame.getAttribute('src'), 'https://ads.test/embed');
+
+  page.consent.updateConsent({ analytics: true, marketing: false });
+  assert.strictEqual(page.gatedFrame.getAttribute('src'), 'about:blank', 'marketing withdrawn');
+  assert.strictEqual(page.gatedFrame.getAttribute('data-cck-activated'), null);
+
+  page.consent.acceptAll();
+  assert.strictEqual(page.gatedFrame.getAttribute('src'), 'https://ads.test/embed', 'and reactivated on a later acceptance');
+
+  page.consent.resetConsent();
+  assert.strictEqual(page.gatedFrame.getAttribute('src'), 'about:blank', 'reset unloads it too');
+});
+
+test('final: javascript: and data: sources are never activated', async () => {
+  let frame;
+  const page = boot({
+    storage: { cck_consent_1: validDecision() },
+    extra: (doc) => {
+      frame = doc.createElement('iframe');
+      frame.setAttribute('data-cck-category', 'marketing');
+      frame.setAttribute('data-cck-src', 'javascript:alert(1)');
+      doc.body.appendChild(frame);
+      gated(doc, 'analytics', { 'data-cck-src': 'data:text/javascript,alert(1)' });
+    }
+  });
+  await settle();
+
+  assert.strictEqual(frame.getAttribute('src'), null);
+  assert.strictEqual(page.activatedScripts().filter((n) => /^data:/.test(n.getAttribute('src') || '')).length, 0);
+});
+
+test('final: a queued placeholder removed from the page does not stall later scripts', async () => {
+  // Document order: [analytics external (the page's own, still loading)]
+  // [inline A] [external B] [inline C]. A waits for the first external, so B
+  // and C are queued behind it; B is then removed from the page (a component
+  // re-rendered) before the queue reaches it.
+  let doomed;
+  const page = boot({
+    routes: { '/consent/save': saved },
+    extra: (doc) => {
+      gated(doc, 'analytics', {}, 'window.inlineA = true;');
+      doomed = gated(doc, 'analytics', { 'data-cck-src': 'https://lib.test/removed.js' });
+      gated(doc, 'analytics', {}, 'window.inlineC = true;');
+    }
+  });
+  await settle();
+
+  page.consent.acceptAll();
+
+  const siblings = doomed.parentNode.childNodes;
+  siblings.splice(siblings.indexOf(doomed), 1);
+  doomed.parentNode = null;
+
+  page.activatedScripts()
+    .filter((node) => node.getAttribute('src') === 'https://analytics.test/a.js')
+    .forEach((node) => node.dispatchEvent({ type: 'load' }));
+
+  const inline = (text) => page.activatedScripts().filter((n) => n.text === text).length;
+  assert.strictEqual(inline('window.inlineA = true;'), 1);
+  assert.strictEqual(inline('window.inlineC = true;'), 1, 'the removed placeholder does not hold the queue for ever');
+});
+
+test('final: the cookie-report map keeps only the last day and never becomes a cookie', async () => {
+  const old = Date.now() - 3 * 864e5;
+  const page = boot({ storage: { cck_consent_1: validDecision(), cck_reported_1: { stale: old, CraftSessionId: old } } });
+  await settle();
+
+  const map = JSON.parse(page.storage.cck_reported_1);
+  assert.deepStrictEqual(Object.keys(map), ['CraftSessionId'], 'stale names pruned, the re-reported one kept');
+
+  const noStorage = boot({ localStorage: { broken: true }, storage: {}, cookies: { cck_consent_1: encodeURIComponent(JSON.stringify(validDecision())) } });
+  await settle();
+  assert.strictEqual(noStorage.env.cookies.cck_reported_1, undefined, 'no growing fallback cookie');
+});
+
+test('final: the un-namespaced legacy key is removed, not adopted by whichever site loads first', async () => {
+  const page = boot({ storage: { cck_consent: validDecision() } });
+  await settle();
+
+  assert.strictEqual(page.consent.hasStoredConsent(), false);
+  assert.strictEqual(page.storage.cck_consent, undefined);
+  assert.strictEqual(page.banner.hidden, false);
+});
+
+test('final: configured colours are applied through the CSSOM, not an inline <style>', async () => {
+  const page = boot({ config: { cssVars: { '--cck-banner-bg': '#101010', 'color': 'red', '--cck-x': {} } } });
+  await settle();
+
+  const style = page.document.documentElement.style;
+  assert.strictEqual(style.getPropertyValue('--cck-banner-bg'), '#101010');
+  assert.strictEqual(style.getPropertyValue('color'), '', 'only --cck-* custom properties');
+  assert.strictEqual(style.getPropertyValue('--cck-x'), '', 'only string values');
+});
+
+test('final: opening the preference centre twice keeps the original focus to restore', async () => {
+  const page = boot({ extra: withDialogControls });
+  const opener = page.document.createElement('button');
+  page.document.body.appendChild(opener);
+  opener.focus();
+
+  page.consent.openPreferences();
+  page.consent.openPreferences();
+  page.consent.closePreferences();
+
+  assert.strictEqual(page.document.activeElement, opener);
+});
+
+test('final: buttons work where Element.closest is unavailable', async () => {
+  let accept;
+  const page = boot({ routes: { '/consent/save': saved }, extra: (doc) => { accept = addAction(doc, 'accept-all'); } });
+  await settle();
+
+  const inner = page.document.createElement('span');
+  accept.appendChild(inner);
+  inner.closest = undefined;
+
+  page.click(inner);
+  await settle();
+
+  assert.strictEqual(page.consent.getConsent().action, 'accept_all');
 });
 
 // ---------------------------------------------------------------------------
