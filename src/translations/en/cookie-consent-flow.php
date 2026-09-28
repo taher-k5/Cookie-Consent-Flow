@@ -51,9 +51,6 @@ return [
 
     // Dashboard
     'Consent Overview' => 'Consent Overview',
-    'Accepted all' => 'Accepted all',
-    'Rejected all' => 'Rejected all',
-    'Partial consent' => 'Partial consent',
     'Total decisions' => 'Total decisions',
     'Live Banner Preview' => 'Live Banner Preview',
 
@@ -159,7 +156,6 @@ return [
     'A quick comparison of the records in the current view.' => 'A quick comparison of the records in the current view.',
     'Accept All Button' => 'Accept All Button',
     'Accept Button' => 'Accept Button',
-    'Accepted All' => 'Accepted All',
     "Accessible name and tooltip for the preference centre's close icon." => "Accessible name and tooltip for the preference centre's close icon.",
     'Add Cookie' => 'Add Cookie',
     'Add' => 'Add',
@@ -271,7 +267,6 @@ return [
     'Redact ad click identifiers in network requests while ad storage is denied.' => 'Redact ad click identifiers in network requests while ad storage is denied.',
     'Reject All Button' => 'Reject All Button',
     'Reject Button' => 'Reject Button',
-    'Rejected All' => 'Rejected All',
     'Remove' => 'Remove',
     'Remove cookie' => 'Remove cookie',
     'Remove every override for this site and return it to Global Settings?' => 'Remove every override for this site and return it to Global Settings?',
@@ -353,6 +348,7 @@ return [
     'Keyed hash of the visitor’s network (not the full address). It cannot be reversed to an IP address, and matches only records from the same network on this install.' => 'Keyed hash of the visitor’s network (not the full address). It cannot be reversed to an IP address, and matches only records from the same network on this install.',
     'Maximum width and height for popup layouts (center and corner). Ignored for bar layouts. Max Width is ignored when Full Width is enabled. Examples: 600px (width), 80vh or 600px (height). A blank or invalid value uses the default (600px wide, 90vh high).' => 'Maximum width and height for popup layouts (center and corner). Ignored for bar layouts. Max Width is ignored when Full Width is enabled. Examples: 600px (width), 80vh or 600px (height). A blank or invalid value uses the default (600px wide, 90vh high).',
     'No trusted country source is configured, so every visitor’s country is unknown and the banner is shown to everyone. Set {key} in {file} to the header your CDN or proxy writes the country into (for example CF-IPCountry on Cloudflare), and only a header that proxy always overwrites.' => 'No trusted country source is configured, so every visitor’s country is unknown and the banner is shown to everyone. Set {key} in {file} to the header your CDN or proxy writes the country into (for example CF-IPCountry on Cloudflare), and only a header that proxy always overwrites.',
+    'Geo-targeting needs a trusted country source. Before turning it on, set {key} in {file} to the header your CDN or proxy writes the country into (for example CF-IPCountry on Cloudflare), and only a header that proxy always overwrites.' => 'Geo-targeting needs a trusted country source. Before turning it on, set {key} in {file} to the header your CDN or proxy writes the country into (for example CF-IPCountry on Cloudflare), and only a header that proxy always overwrites.',
 
     'Acceptance by category' => 'Acceptance by category',
     'Share of the records in the current view that include each category.' => 'Share of the records in the current view that include each category.',

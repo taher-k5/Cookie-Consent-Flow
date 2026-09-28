@@ -103,9 +103,16 @@
   left: 50%;
   transform: translate(-50%, -50%);
   width: calc(100% - 32px);
-  /* Respect configured maximum height so small content can be controlled */
+  /* The configured maximum height, but never taller than what is visible:
+     a fixed, centred box taller than the window has its top and bottom off
+     screen where no scrolling can reach them (a 700px setting on a 500px
+     laptop window). Each line falls back for browsers without the next
+     one's units. */
   max-height: var(--cck-max-height, 90vh);
+  max-height: min(var(--cck-max-height, 90vh), calc(100vh - 32px));
+  max-height: min(var(--cck-max-height, 90vh), calc(100dvh - 32px));
   overflow-y: auto;
+  overscroll-behavior: contain;
   background: var(--cck-banner-bg, #fff);
   border: 1px solid var(--cck-banner-border, #e5e7eb);
   box-shadow: var(--cck-shadow, 0 8px 40px rgba(0, 0, 0, 0.18));
@@ -139,8 +146,12 @@
   bottom: 24px;
   right: 24px;
   width: calc(100% - 48px);
+  /* As the centre popup: capped to the visible height above its 24px inset. */
   max-height: var(--cck-max-height, 80vh);
+  max-height: min(var(--cck-max-height, 80vh), calc(100vh - 48px));
+  max-height: min(var(--cck-max-height, 80vh), calc(100dvh - 48px));
   overflow-y: auto;
+  overscroll-behavior: contain;
 }
 
 .cck-layout--corner-popup.cck-corner--bottom-left {
@@ -317,8 +328,13 @@
   padding: var(--cck-padding, 24px);
   width: 100%;
   max-width: 560px;
+  /* `vh` is the largest viewport on mobile browsers, so 90vh could put the
+     footer buttons under a visible toolbar; `dvh` is what is on screen. The
+     container's 16px padding is kept clear on both edges. */
   max-height: 90vh;
+  max-height: min(90vh, calc(100dvh - 32px));
   overflow-y: auto;
+  overscroll-behavior: contain;
   z-index: 1;
 }
 

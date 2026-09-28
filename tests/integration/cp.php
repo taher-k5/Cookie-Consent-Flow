@@ -421,6 +421,29 @@ if ($second !== null) {
     });
 }
 
+$check('release: the country-source message warns only while geo-targeting is on', function () use ($admin) {
+    $plugin = sfsinfotech\craftcookieconsentflow\Plugin::getInstance();
+    if ($plugin->geo->hasTrustedSource()) {
+        return; // Configured here: neither message applies.
+    }
+
+    $service = $plugin->cookieSettings;
+    $before  = reload()->geoEnabled;
+
+    try {
+        expect($service->saveGlobalSettings(['geoEnabled' => false]), 'geo off');
+        $off = page($admin, 'cookie-consent-flow/banner');
+        expect(!str_contains($off, 'No trusted country source'), 'warned with geo-targeting off');
+        expect(str_contains($off, 'Geo-targeting needs a trusted country source'), 'setup guidance missing');
+
+        expect($service->saveGlobalSettings(['geoEnabled' => true]), 'geo on');
+        $on = page($admin, 'cookie-consent-flow/banner');
+        expect(str_contains($on, 'No trusted country source'), 'no warning with geo-targeting on and no source');
+    } finally {
+        $service->saveGlobalSettings(['geoEnabled' => $before]);
+    }
+});
+
 $check('final: a script: privacy URL is refused on save, naming the field', function () use ($admin) {
     $response = $admin->request('POST', 'admin/actions/cookie-consent-flow/settings/save-banner', [
         'settings' => ['privacyPolicyUrl' => 'javascript:1/alert(document.cookie)'],

@@ -282,6 +282,44 @@ for (const width of [320, 375, 390, 414]) {
   });
 }
 
+for (const layout of ['center-popup', 'corner-popup']) {
+  check(`release: on a short desktop window a ${layout} with a tall configured height stays on screen`, async () => {
+    settings({ bannerLayout: layout, maxHeight: '900px' });
+    const page = await openPage(1280, 480);
+    try {
+      await page.goto(base + '/');
+      await page.eval(`Promise.all(document.getAnimations().map(function(a){return a.finished}))`);
+      const m = await page.eval(`(function(){
+        var b=document.getElementById('cck-banner'); var r=b.getBoundingClientRect();
+        var btns=b.querySelectorAll('.cck-btn'); var last=btns[btns.length-1];
+        last.focus(); var lr=last.getBoundingClientRect();
+        return {top:r.top,bottom:r.bottom,h:innerHeight,lastTop:lr.top,lastBottom:lr.bottom,focused:document.activeElement===last,scrollable:b.scrollHeight>b.clientHeight?getComputedStyle(b).overflowY:'fits'};
+      })()`);
+      expect(m.top >= 0 && m.bottom <= m.h + 1, 'popup exceeds the window: ' + JSON.stringify(m));
+      expect(m.focused && m.lastTop >= 0 && m.lastBottom <= m.h + 1, 'the last button is not reachable by keyboard: ' + JSON.stringify(m));
+    } finally {
+      await page.close();
+      settings({ bannerLayout: 'bottom-bar', maxHeight: '90vh' });
+    }
+  });
+}
+
+check('release: on a short window every preference-centre button is reachable', async () => {
+  const page = await openPage(1280, 420);
+  try {
+    await page.goto(base + '/');
+    await page.eval(`document.querySelector('#cck-banner [data-cck-action="open-preferences"]').click()`);
+    await page.eval(`Promise.all(document.getAnimations().map(function(a){return a.finished}))`);
+    const panel = await page.eval(`(function(){var r=document.querySelector('.cck-preferences__panel').getBoundingClientRect();return {top:r.top,bottom:r.bottom,h:innerHeight}})()`);
+    expect(panel.top >= 0 && panel.bottom <= panel.h + 1, 'panel exceeds the window: ' + JSON.stringify(panel));
+    const boxes = await page.eval(`Array.from(document.querySelectorAll('#cck-preferences .cck-preferences__footer .cck-btn')).map(function(b){b.focus();var r=b.getBoundingClientRect();return {t:r.top,b:r.bottom,h:innerHeight,focused:document.activeElement===b}})`);
+    expect(boxes.length >= 2, 'footer buttons: ' + boxes.length);
+    boxes.forEach((box) => expect(box.focused && box.t >= 0 && box.b <= box.h + 1, 'unreachable: ' + JSON.stringify(box)));
+  } finally {
+    await page.close();
+  }
+});
+
 check('L24: on a narrow screen every cookie-table value is labelled', async () => {
   const page = await openPage(360, 740);
   try {

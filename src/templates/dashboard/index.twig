@@ -17,9 +17,9 @@
             {% else %}
                 <div class="ccf-stats-grid">
                     {% set outcomeCards = [
-                        { label: "Accepted all"|t('cookie-consent-flow'),  count: overview.acceptAll },
-                        { label: "Rejected all"|t('cookie-consent-flow'),  count: overview.rejectAll },
-                        { label: "Partial consent"|t('cookie-consent-flow'), count: overview.custom },
+                        { label: "Accept All"|t('cookie-consent-flow'),  count: overview.acceptAll },
+                        { label: "Reject All"|t('cookie-consent-flow'),  count: overview.rejectAll },
+                        { label: "Custom"|t('cookie-consent-flow'), count: overview.custom },
                         { label: "Total decisions"|t('cookie-consent-flow'), count: overview.total },
                     ] %}
 

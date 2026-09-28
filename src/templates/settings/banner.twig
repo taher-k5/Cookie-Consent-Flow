@@ -510,15 +510,28 @@
         {# Without a trusted country source every visitor's country is
            unknown, and geo-targeting fails open: the banner is shown to
            everyone. Request headers are client-controlled unless your proxy
-           overwrites them, so none is believed until you name it. #}
-        <div class="readable warning" role="note">
-            <p>
-                {{ "No trusted country source is configured, so every visitor’s country is unknown and the banner is shown to everyone. Set {key} in {file} to the header your CDN or proxy writes the country into (for example CF-IPCountry on Cloudflare), and only a header that proxy always overwrites."|t('cookie-consent-flow', {
+           overwrites them, so none is believed until you name it
+           (HeaderGeoProvider). Only this message depends on whether
+           targeting is on: a warning when it is, because it silently does
+           nothing; setup guidance when it is not, because showing the banner
+           to everyone is then exactly what was configured. #}
+        {% if settings.geoEnabled %}
+            <div class="readable warning" role="note">
+                <p>
+                    {{ "No trusted country source is configured, so every visitor’s country is unknown and the banner is shown to everyone. Set {key} in {file} to the header your CDN or proxy writes the country into (for example CF-IPCountry on Cloudflare), and only a header that proxy always overwrites."|t('cookie-consent-flow', {
+                        key: 'geoCountryHeader',
+                        file: 'config/cookie-consent-flow.php',
+                    }) }}
+                </p>
+            </div>
+        {% else %}
+            <p class="light readable">
+                {{ "Geo-targeting needs a trusted country source. Before turning it on, set {key} in {file} to the header your CDN or proxy writes the country into (for example CF-IPCountry on Cloudflare), and only a header that proxy always overwrites."|t('cookie-consent-flow', {
                     key: 'geoCountryHeader',
                     file: 'config/cookie-consent-flow.php',
                 }) }}
             </p>
-        </div>
+        {% endif %}
     {% endif %}
 
     {{ forms.lightswitchField({
