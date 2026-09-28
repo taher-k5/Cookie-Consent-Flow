@@ -210,6 +210,21 @@ class GeoService extends Component
                     __METHOD__
                 );
                 continue;
+            } catch (\Throwable $e) {
+                // A provider that fails while being constructed — its lookup
+                // database missing, a type error in its init() — is skipped
+                // like one that fails while answering (getCountryCode()), and
+                // for the same reason (invariant 8): the country is optional,
+                // and this runs on the visitor-facing consent save, where an
+                // escaping exception turned every decision into a 500 with no
+                // record written. Logged as an error, with the provider named,
+                // because unlike a lookup timing out this will not fix itself.
+                Craft::error(
+                    'Cookie Consent Flow geo provider ' . (is_array($provider) ? (string) ($provider['class'] ?? '?') : (is_string($provider) ? $provider : get_debug_type($provider)))
+                    . ' failed to initialise and was skipped: ' . get_class($e) . ': ' . $e->getMessage(),
+                    __METHOD__
+                );
+                continue;
             }
 
             if ($instance instanceof GeoProviderInterface) {

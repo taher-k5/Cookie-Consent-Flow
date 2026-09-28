@@ -86,6 +86,7 @@
         value: settings.logRetentionDays,
         type:  'number',
         min:    0,
+        max:    constant('sfsinfotech\\craftcookieconsentflow\\models\\Settings::DAYS_MAX'),
     }) }}
 
 </div>{# /tab-logging #}
@@ -194,6 +195,7 @@
         value: settings.consentExpiryDays,
         type:  'number',
         min:    0,
+        max:    constant('sfsinfotech\\craftcookieconsentflow\\models\\Settings::DAYS_MAX'),
     }) }}
 
     {{ forms.textField({

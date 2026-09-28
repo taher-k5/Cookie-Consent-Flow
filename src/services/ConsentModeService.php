@@ -204,6 +204,11 @@ class ConsentModeService extends Component
         $config = ConsentHelper::jsonForHtml([
             'key'           => 'cck_consent_' . $siteId,
             'signals'       => $settings->getCategoryGcmSignals(),
+            // getConsent() adds the *current* locked categories to every
+            // valid stored decision; so must this, or a category locked
+            // after a visitor decided stays denied here until the runtime
+            // loads.
+            'locked'        => $settings->getLockedCategoryKeys(),
             'policyVersion' => $settings->policyVersion,
             'expiryDays'    => $settings->consentExpiryDays,
             // cookie-banner.js STORAGE_VERSION: envelopes newer than this are unreadable.
@@ -211,7 +216,8 @@ class ConsentModeService extends Component
         ]);
 
         // Validation mirrors cookie-banner.js getConsent() exactly — shape,
-        // envelope version, policy version, and freshness — because the two
+        // envelope version, policy version, freshness, and the locked
+        // categories added to what was stored — because the two
         // must agree about whether a stored decision exists. When they did
         // not (a missing action, a future envelope version, a timestamp in
         // the future), this granted Google signals for a decision the runtime
@@ -227,7 +233,8 @@ if((typeof s.v==='number'?s.v:1)>c.storageVersion)return;
 if(c.policyVersion&&s.policyVersion!==c.policyVersion)return;
 if(c.expiryDays){var t=s.timestamp,n=Date.now();
 if(typeof t!=='number'||!(t>0)||t>n+864e5||n-t>c.expiryDays*864e5)return;}
-var u={};for(var k in c.signals){if(!Object.prototype.hasOwnProperty.call(c.signals,k)||s.categories.indexOf(k)===-1)continue;
+var a=s.categories.concat(c.locked);
+var u={};for(var k in c.signals){if(!Object.prototype.hasOwnProperty.call(c.signals,k)||a.indexOf(k)===-1)continue;
 c.signals[k].forEach(function(g){u[g]='granted';});}
 if(Object.keys(u).length)gtag('consent','update',u);
 }catch(e){}}({$config}));

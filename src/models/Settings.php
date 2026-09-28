@@ -293,6 +293,18 @@ class Settings extends Model
     public const COLOR_MAX_LENGTH = 64;
 
     /**
+     * Upper bound on `logRetentionDays` and `consentExpiryDays` (100 years).
+     *
+     * Both are stored in a signed 32-bit INT column, and retention turns the
+     * value into a DATETIME cutoff (`ConsentService::retentionCutoff()`), so
+     * an unbounded value either failed at INSERT behind a generic "Couldn't
+     * save settings." or produced a cutoff outside the column's date range.
+     * A century is far beyond any retention or re-consent period in real use,
+     * and always representable in both.
+     */
+    public const DAYS_MAX = 36500;
+
+    /**
      * Maximum length of the long free-text values (banner description,
      * category descriptions, cookie purposes), in characters.
      *
@@ -909,7 +921,7 @@ class Settings extends Model
             // than passing validation and failing at INSERT.
             [self::COLOR_FIELDS, 'string', 'max' => self::COLOR_MAX_LENGTH],
             [['categories', 'cookies', 'geoTargetCountries', 'siteOverrides'], 'safe'],
-            [['logRetentionDays', 'consentExpiryDays'], 'integer', 'min' => 0],
+            [['logRetentionDays', 'consentExpiryDays'], 'integer', 'min' => 0, 'max' => self::DAYS_MAX],
             [['logoAssetId'], 'integer'],
             [['policyVersion'], 'string', 'max' => 50],
             // An empty version would make every stored decision, and the head

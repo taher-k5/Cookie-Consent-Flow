@@ -373,6 +373,35 @@ $check('L10: reporting a name that already exists (a concurrent first report) do
     same(1, (int) (new Query())->from('{{%cookieconsent_detected_cookie}}')->where(['name' => '_ccfAfterRace'])->count(), 'the rest of the batch was recorded');
 });
 
+$check('release: undocumented cookies behind more than 500 documented ones are still listed', function () use ($plugin) {
+    $site   = $GLOBALS['primary']->id;
+    $recent = Db::prepareDateForDb(new DateTime('+1 hour'));
+    $older  = Db::prepareDateForDb(new DateTime('-1 hour'));
+    $rows   = [];
+
+    // 600 documented names, all seen more recently than the two undocumented ones.
+    for ($i = 0; $i < 600; $i++) {
+        $rows[] = [$site, "_ccfdoc_{$i}", false, $recent, $recent, $recent, craft\helpers\StringHelper::UUID()];
+    }
+    foreach (['_ccfUndocA', '_ccfUndocB'] as $name) {
+        $rows[] = [$site, $name, false, $older, $older, $older, craft\helpers\StringHelper::UUID()];
+    }
+    Craft::$app->getDb()->createCommand()->batchInsert('{{%cookieconsent_detected_cookie}}',
+        ['siteId', 'name', 'isDismissed', 'lastSeen', 'dateCreated', 'dateUpdated', 'uid'], $rows)->execute();
+
+    $globalId = $plugin->cookieSettings->getGlobalSettingsId();
+    $existing = array_map(static fn($r) => ['categoryKey' => $r->categoryKey, 'name' => $r->name, 'provider' => $r->provider, 'purpose' => $r->purpose, 'duration' => $r->duration],
+        sfsinfotech\craftcookieconsentflow\records\CookieDefinitionRecord::find()->where(['settingsId' => $globalId])->all());
+    expect($plugin->cookieDefinitions->saveAll($globalId, array_merge($existing, [
+        ['categoryKey' => 'necessary', 'name' => '_ccfdoc_*', 'provider' => 'Test', 'purpose' => 'Family', 'duration' => '1 day'],
+    ])), 'document the family: ' . implode(' ', $plugin->cookieDefinitions->getValidationErrors()));
+
+    $listed = $plugin->cookieDefinitions->getUndocumented();
+    expect(in_array('_ccfUndocA', $listed, true) && in_array('_ccfUndocB', $listed, true), 'undocumented names missing: ' . count($listed) . ' listed');
+    expect(!array_filter($listed, static fn($n) => str_starts_with($n, '_ccfdoc_')), 'documented names listed');
+    expect(count($listed) <= sfsinfotech\craftcookieconsentflow\services\CookieDefinitionService::MAX_UNDOCUMENTED_LISTED, 'over the cap');
+});
+
 // ---------------------------------------------------------------------------
 // L19 / L20 — retention
 // ---------------------------------------------------------------------------

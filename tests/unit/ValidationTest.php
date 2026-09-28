@@ -86,6 +86,38 @@ final class ValidationTest extends TestCase
         self::assertLessThanOrEqual(65535, Settings::LONG_TEXT_MAX_LENGTH * 4);
     }
 
+    /**
+     * @return array<string, array{0: string}>
+     */
+    public static function dayFieldProvider(): array
+    {
+        return ['retention' => ['logRetentionDays'], 'expiry' => ['consentExpiryDays']];
+    }
+
+    /**
+     * Day counts are bounded well inside the signed 32-bit column and the
+     * DATETIME range a retention cutoff has to land in, so an absurd value is
+     * refused with a message naming the limit instead of failing at INSERT.
+     *
+     * @dataProvider dayFieldProvider
+     */
+    public function testDayCountsAreBoundedBeforeTheyReachTheColumn(string $field): void
+    {
+        self::assertSame([], $this->errorsFor($field, 0), '0 is the documented "no limit" value');
+        self::assertSame([], $this->errorsFor($field, Settings::DAYS_MAX));
+        self::assertNotSame([], $this->errorsFor($field, -1));
+        self::assertNotSame([], $this->errorsFor($field, Settings::DAYS_MAX + 1));
+        self::assertNotSame([], $this->errorsFor($field, 99_999_999_999));
+        self::assertStringContainsString((string) Settings::DAYS_MAX, str_replace(',', '', implode(' ', $this->errorsFor($field, Settings::DAYS_MAX + 1))));
+
+        self::assertLessThan(2_147_483_647, Settings::DAYS_MAX);
+
+        // The largest allowed retention still yields a cutoff inside MySQL's
+        // DATETIME range (from year 1000).
+        $cutoff = \sfsinfotech\craftcookieconsentflow\services\ConsentService::retentionCutoff(Settings::DAYS_MAX);
+        self::assertGreaterThanOrEqual(1000, (int) substr((string) $cutoff, 0, 4));
+    }
+
     public function testErrorMessageNamesTheField(): void
     {
         $errors = $this->errorsFor('privacyPolicyUrl', str_repeat('a', 300));

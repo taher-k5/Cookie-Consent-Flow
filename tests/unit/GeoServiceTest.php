@@ -121,6 +121,36 @@ final class GeoServiceTest extends TestCase
         self::assertSame('ES', $service->getCountryCode());
     }
 
+    /**
+     * The same holds for a provider that fails while it is being built — its
+     * lookup database missing, an error in its init() — and for one that is
+     * misconfigured: skipped, the next provider answers, nothing escapes to
+     * the consent save that asked, and the banner still fails open.
+     */
+    public function testProvidersThatFailToInitialiseAreSkipped(): void
+    {
+        $service = new GeoService();
+        $service->setProviders([
+            ConstructorThrowingGeoProvider::class,
+            InitErroringGeoProvider::class,
+            '\\sfsinfotech\\DoesNotExist\\GeoProvider',
+            ['class' => \stdClass::class],
+            GermanyGeoProvider::class,
+        ]);
+
+        self::assertSame('DE', $service->getCountryCode());
+        self::assertTrue($service->hasTrustedSource());
+    }
+
+    public function testWhenEveryProviderFailsToInitialiseTheBannerIsShown(): void
+    {
+        $service = new GeoService();
+        $service->setProviders([ConstructorThrowingGeoProvider::class, InitErroringGeoProvider::class]);
+
+        self::assertNull($service->getCountryCode());
+        self::assertTrue($service->shouldShowBanner($this->settings(true, ['DE'])));
+    }
+
     public function testCountryMatchingIsCaseInsensitive(): void
     {
         $service = new GeoService();
@@ -147,5 +177,42 @@ final class GeoServiceTest extends TestCase
         $service->setProviders([$this->providerReturning('GBR')]);
         self::assertNull($service->getCountryCode());
         self::assertTrue($service->shouldShowBanner($this->settings(true, ['GB'])), 'fails open');
+    }
+}
+
+/** A provider whose dependency is missing: its constructor throws. */
+final class ConstructorThrowingGeoProvider implements GeoProviderInterface
+{
+    public function __construct()
+    {
+        throw new \RuntimeException('GeoIP database not found');
+    }
+
+    public function getCountryCode(): ?string
+    {
+        return 'US';
+    }
+}
+
+/** A provider with a programming error in init(). */
+final class InitErroringGeoProvider extends \yii\base\BaseObject implements GeoProviderInterface
+{
+    public function init(): void
+    {
+        parent::init();
+        strlen([]);
+    }
+
+    public function getCountryCode(): ?string
+    {
+        return 'US';
+    }
+}
+
+final class GermanyGeoProvider implements GeoProviderInterface
+{
+    public function getCountryCode(): ?string
+    {
+        return 'DE';
     }
 }

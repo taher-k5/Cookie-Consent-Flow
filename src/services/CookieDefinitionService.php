@@ -366,7 +366,7 @@ class CookieDefinitionService extends Component
     {
         $documentedPatterns = CookieDefinitionRecord::find()->select('name')->column();
 
-        $rows = DetectedCookieRecord::find()
+        $query = DetectedCookieRecord::find()
             ->select([
                 'name',
                 'firstSeen' => 'MIN([[dateCreated]])',
@@ -374,15 +374,50 @@ class CookieDefinitionService extends Component
             ])
             ->where(['isDismissed' => false])
             ->groupBy(['name'])
+            // A total order (names are unique per group), so consecutive
+            // batches neither repeat nor skip a name.
             ->orderBy(['lastSeen' => SORT_DESC, 'name' => SORT_ASC])
-            ->limit(self::MAX_UNDOCUMENTED_LISTED)
-            ->asArray()
-            ->all();
+            ->asArray();
 
+        // Documented names are wildcard patterns, so they cannot be excluded
+        // in SQL, and the limit used to be applied in SQL before they were
+        // excluded here: once 500 detected names were documented, genuinely
+        // undocumented ones fell off the list. Batches are read until the
+        // list is full or the rows run out — one query in the usual case,
+        // and bounded by MAX_DETECTED_PER_SITE per site at worst.
+        $batches = (function () use ($query): \Generator {
+            for ($offset = 0; ; $offset += self::MAX_UNDOCUMENTED_LISTED) {
+                $batch = (clone $query)->limit(self::MAX_UNDOCUMENTED_LISTED)->offset($offset)->all();
+
+                yield from $batch;
+
+                if (count($batch) < self::MAX_UNDOCUMENTED_LISTED) {
+                    return;
+                }
+            }
+        })();
+
+        return self::takeUndocumented($batches, $documentedPatterns, self::MAX_UNDOCUMENTED_LISTED);
+    }
+
+    /**
+     * The first `$limit` rows whose name no documented pattern covers,
+     * reading `$rows` only as far as needed.
+     *
+     * @param  iterable<array{name: mixed, firstSeen: mixed, lastSeen: mixed}> $rows
+     * @param  string[]                                                        $documentedPatterns
+     * @return array<int, array{name: string, firstSeen: ?string, lastSeen: ?string}>
+     */
+    public static function takeUndocumented(iterable $rows, array $documentedPatterns, int $limit): array
+    {
         $details = [];
 
+        if ($limit <= 0) {
+            return $details;
+        }
+
         foreach ($rows as $row) {
-            if ($this->_matchesAnyPattern((string) $row['name'], $documentedPatterns)) {
+            if (self::matchesAnyPattern((string) $row['name'], $documentedPatterns)) {
                 continue;
             }
 
@@ -391,6 +426,12 @@ class CookieDefinitionService extends Component
                 'firstSeen' => $row['firstSeen'] !== null ? (string) $row['firstSeen'] : null,
                 'lastSeen'  => $row['lastSeen'] !== null ? (string) $row['lastSeen'] : null,
             ];
+
+            // Stop before the next row is asked for, so a full list never
+            // costs another batch query.
+            if (count($details) >= $limit) {
+                break;
+            }
         }
 
         return $details;
@@ -420,7 +461,7 @@ class CookieDefinitionService extends Component
      *
      * @param string[] $patterns
      */
-    private function _matchesAnyPattern(string $name, array $patterns): bool
+    public static function matchesAnyPattern(string $name, array $patterns): bool
     {
         foreach ($patterns as $pattern) {
             $regex = '/^' . str_replace('\*', '.*', preg_quote($pattern, '/')) . '$/D';

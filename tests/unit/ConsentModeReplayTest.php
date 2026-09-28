@@ -121,6 +121,33 @@ final class ConsentModeReplayTest extends TestCase
         self::assertSame([], $this->replay($stored));
     }
 
+    /**
+     * getConsent() adds the current locked categories to any valid stored
+     * decision, so a category locked after the visitor decided is granted
+     * from the first line of <head>, not only once the runtime loads.
+     */
+    public function testLockedCategoriesAreAddedToAValidDecisionAsGetConsentAddsThem(): void
+    {
+        $updates = $this->replay(self::decision(['action' => 'custom', 'categories' => ['analytics']]));
+
+        self::assertCount(1, $updates);
+        self::assertSame(
+            ['security_storage' => 'granted', 'functionality_storage' => 'granted', 'analytics_storage' => 'granted'],
+            $updates[0]
+        );
+        self::assertArrayNotHasKey('ad_storage', $updates[0], 'an optional category the visitor did not choose was granted');
+    }
+
+    /**
+     * Only to a valid decision: with none, or one the runtime rejects, the
+     * replay still sends nothing and the denied default stands.
+     */
+    public function testLockedCategoriesAreNotGrantedWithoutAValidDecision(): void
+    {
+        self::assertSame([], $this->replay(null));
+        self::assertSame([], $this->replay(self::decision(['categories' => [], 'policyVersion' => '1'])));
+    }
+
     public function testNothingStoredGrantsNothing(): void
     {
         self::assertSame([], $this->replay(null));
