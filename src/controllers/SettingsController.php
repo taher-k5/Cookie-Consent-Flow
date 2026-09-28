@@ -52,14 +52,25 @@ class SettingsController extends Controller
     {
         $this->requireCpRequest();
 
-        $settings = Plugin::getInstance()->getSettings();
-        // Only the sites this user may work on (see Permissions::accessibleSites()).
-        $sites    = Permissions::accessibleSites();
+        return $this->_renderMultiSite();
+    }
+
+    /**
+     * Renders the Multisite page. The only place it is rendered from — the
+     * normal view and every failed save both come here — so the page can
+     * never list a site the user may not work on (see
+     * Permissions::accessibleSites()). The failure path used to render every
+     * site, so a refused save showed a one-site user every other site's
+     * overrides.
+     */
+    private function _renderMultiSite(): Response
+    {
+        $plugin = Plugin::getInstance();
 
         return $this->renderTemplate('cookie-consent-flow/settings/site-overrides', [
-            'settings' => $settings,
-            'sites'    => $sites,
-            'plugin'   => Plugin::getInstance(),
+            'settings' => $plugin->getSettings(),
+            'sites'    => Permissions::accessibleSites(),
+            'plugin'   => $plugin,
         ]);
     }
 
@@ -133,8 +144,10 @@ class SettingsController extends Controller
             return $this->_multiSiteOverrideFailure();
         }
 
+        // Counted over the sites this user may see, like everything else on
+        // the page.
         $totalOverrides = 0;
-        foreach (Craft::$app->getSites()->getAllSites() as $site) {
+        foreach (Permissions::accessibleSites() as $site) {
             $totalOverrides += $plugin->getSettings()->getSiteOverrideCount($site->id);
         }
 
@@ -184,11 +197,7 @@ class SettingsController extends Controller
                 : Craft::t('cookie-consent-flow', "Couldn't save Multisite — no site was changed.")
         ));
 
-        return $this->renderTemplate('cookie-consent-flow/settings/site-overrides', [
-            'settings' => $plugin->getSettings(),
-            'sites'    => Craft::$app->getSites()->getAllSites(),
-            'plugin'   => $plugin,
-        ]);
+        return $this->_renderMultiSite();
     }
 
     /**

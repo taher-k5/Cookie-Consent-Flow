@@ -33,7 +33,12 @@ if ($viewer === null) {
 if (!$viewer->active) {
     Craft::$app->getUsers()->activateUser($viewer);
 }
-Craft::$app->getUserPermissions()->saveUserPermissions($viewer->id, ['accesscp', 'accessplugin-cookie-consent-flow', 'cookieconsentflow:viewlogs']);
+// Records only, on the primary site (without a site, a multisite install
+// gives the user nothing to look at).
+Craft::$app->getUserPermissions()->saveUserPermissions($viewer->id, [
+    'accesscp', 'accessplugin-cookie-consent-flow', 'cookieconsentflow:viewlogs',
+    'editsite:' . Craft::$app->getSites()->getPrimarySite()->uid,
+]);
 
 $sites  = Craft::$app->getSites()->getAllSites();
 $second = null;
@@ -303,6 +308,21 @@ $check('L28: a records-only user sees only Dashboard and Consent Records, and is
     }
 
     expect($viewer->request('GET', 'admin/cookie-consent-flow/logs/export&format=csv')['status'] === 403, 'viewing implied exporting');
+
+    // The dashboard offers only what this user can open.
+    $dashboard = page($viewer, 'cookie-consent-flow');
+    expect(!str_contains($dashboard, 'Edit Banner') && !str_contains($dashboard, 'Edit Settings'), 'dashboard links to pages that answer 403');
+    expect(str_contains($dashboard, 'View Consent Records'), 'dashboard lost its records link');
+
+    // With no filter chosen there is nothing to clear.
+    $records = page($viewer, 'cookie-consent-flow/logs');
+    expect(!preg_match('#>\s*Clear\s*</a>#', $records), '"Clear" shown with no filters');
+    expect((bool) preg_match('#>\s*Clear\s*</a>#', page($viewer, 'cookie-consent-flow/logs&filter=reject_all')), '"Clear" missing with a filter');
+});
+
+$check('release: an admin\'s dashboard still offers Edit Banner and Edit Settings', function () use ($admin) {
+    $dashboard = page($admin, 'cookie-consent-flow');
+    expect(str_contains($dashboard, 'Edit Banner') && str_contains($dashboard, 'Edit Settings'), 'links missing for a user who can use them');
 });
 
 // ---------------------------------------------------------------------------
@@ -355,8 +375,40 @@ if ($second !== null) {
             expect((int) $record['siteId'] === (int) $primarySite->id, 'export included site ' . $record['siteId']);
         }
 
+        // A malformed site parameter must never widen the scope: refused,
+        // for the list, the statistics beside it, and both export formats.
+        foreach (['site[]=x', 'site[]=' . $primarySite->id . '&site[]=' . $second->id, 'site[id]=' . $second->id] as $shape) {
+            foreach (['cookie-consent-flow/logs&', 'cookie-consent-flow/logs/export&format=csv&', 'cookie-consent-flow/logs/export&format=json&'] as $path) {
+                $response = $user->request('GET', 'admin/' . $path . $shape);
+                expect($response['status'] === 400, "{$path}{$shape}: status {$response['status']}");
+                expect(!str_contains($response['body'], (string) $other['visitorUuid']), "{$path}{$shape}: another site's record returned");
+            }
+        }
+
+        // "All Sites" statistics count only the user's sites, unfiltered or not.
+        $expected = [
+            'cookie-consent-flow/logs&site=all'                    => $plugin->consent->getStats($primarySite->id)['total'],
+            'cookie-consent-flow/logs'                             => $plugin->consent->getStats($primarySite->id)['total'],
+            'cookie-consent-flow/logs&site=all&filter=reject_all'  => $plugin->consent->getStats($primarySite->id, ['action' => 'reject_all'])['total'],
+        ];
+        foreach ($expected as $path => $count) {
+            $html = page($user, $path);
+            expect(!str_contains($html, (string) $other['visitorUuid']), "{$path}: another site's record listed");
+            expect(str_contains($html, '<strong>' . $count . ' records</strong>'), "{$path}: total is not the user's own sites' total ({$count})");
+        }
+
+        $csv = $user->request('GET', 'admin/cookie-consent-flow/logs/export&format=csv&site=all')['body'];
+        expect(!str_contains($csv, (string) $other['visitorUuid']), 'CSV export included another site');
+
         $multisite = page($user, 'cookie-consent-flow/settings/multi-site-override');
         expect(!str_contains($multisite, 'sites[' . $second->id . ']'), 'multisite page offers the other site');
+
+        // A refused save re-renders the page — still only with the user's sites.
+        $failed = $user->request('POST', 'admin/actions/cookie-consent-flow/settings/save-multi-site-override', [
+            'sites' => [$primarySite->id => ['consentExpiryDays' => '-5']],
+        ]);
+        expect($failed['status'] === 200 && str_contains($failed['body'], 'Couldn'), 'invalid multisite save was not refused: ' . $failed['status']);
+        expect(!str_contains($failed['body'], 'sites[' . $second->id . ']'), 'a failed multisite save showed the other site');
 
         $save = $user->request('POST', 'admin/actions/cookie-consent-flow/settings/save-multi-site-override', [
             'sites' => [$second->id => ['bannerHeading' => 'Not yours']],

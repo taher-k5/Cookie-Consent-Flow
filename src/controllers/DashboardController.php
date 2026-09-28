@@ -72,6 +72,7 @@ class DashboardController extends Controller
             // tuning the banner right next to it.
             'overview'    => $plugin->statistics->getActionCounts($site->id),
             'canViewLogs' => Permissions::canAny(Permissions::VIEW_LOGS),
+            'canManageSettings' => Permissions::canAny(Permissions::MANAGE_SETTINGS),
         ]);
     }
 }

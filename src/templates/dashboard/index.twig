@@ -118,12 +118,17 @@
         </div>
 
         <p>
-            <a href="{{ cpUrl('cookie-consent-flow/banner') }}" class="btn submit">
-                {{ "Edit Banner"|t('cookie-consent-flow') }}
-            </a>
-            <a href="{{ cpUrl('cookie-consent-flow/settings') }}" class="btn">
-                {{ "Edit Settings"|t('cookie-consent-flow') }}
-            </a>
+            {# Only the links this user can open: both pages require the
+               manage-configuration permission, and a records-only user was
+               offered them and then refused. #}
+            {% if canManageSettings %}
+                <a href="{{ cpUrl('cookie-consent-flow/banner') }}" class="btn submit">
+                    {{ "Edit Banner"|t('cookie-consent-flow') }}
+                </a>
+                <a href="{{ cpUrl('cookie-consent-flow/settings') }}" class="btn">
+                    {{ "Edit Settings"|t('cookie-consent-flow') }}
+                </a>
+            {% endif %}
             {% if canViewLogs %}
                 <a href="{{ cpUrl('cookie-consent-flow/logs') }}" class="btn">
                     {{ "View Consent Records"|t('cookie-consent-flow') }}

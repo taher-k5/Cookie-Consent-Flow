@@ -9,6 +9,7 @@ use sfsinfotech\craftcookieconsentflow\helpers\ConsentHelper;
 use sfsinfotech\craftcookieconsentflow\helpers\Permissions;
 use sfsinfotech\craftcookieconsentflow\Plugin;
 use sfsinfotech\craftcookieconsentflow\services\ConsentService;
+use yii\web\BadRequestHttpException;
 use yii\web\NotFoundHttpException;
 use yii\web\Response;
 
@@ -63,18 +64,22 @@ class LogsController extends Controller
 
         $site    = $this->_resolveSite($request->getParam('site'));
         $filters = $this->_resolveFilters($request);
+        $query   = $filters + $this->_scopeFilters($site);
 
         // Bounded so an absurd page number cannot overflow the OFFSET into a
         // float that the query builder silently drops (showing page 1).
         $page = min(max(1, (int) $request->getParam('page', 1)), 1000000);
 
-        [$records, $total] = $plugin->consent->getLogs($site?->id, $filters, $page, self::PAGE_SIZE);
+        [$records, $total] = $plugin->consent->getLogs($site?->id, $query, $page, self::PAGE_SIZE);
 
         // With filters active, the chart describes the same result set as the
-        // table. Unfiltered counts use the cached aggregate.
-        $stats = $filters === []
+        // table. Unfiltered counts use the cached aggregate — but only where
+        // that aggregate is exactly the user's scope: one named site, or
+        // every site for a user who may see them all. "All Sites" for a
+        // restricted user is a subset no cached total describes.
+        $stats = $filters === [] && ($site !== null || $query === [])
             ? $plugin->statistics->getActionCounts($site?->id)
-            : $plugin->consent->getStats($site?->id, $filters);
+            : $plugin->consent->getStats($site?->id, $query);
         $totalRecords = max(1, $stats['total']);
 
         $statsCards = [
@@ -98,7 +103,7 @@ class LogsController extends Controller
         }
 
         $categoryStats = [];
-        foreach ($plugin->consent->getCategoryStats($site?->id, array_keys($categoryLabels), $filters) as $key => $data) {
+        foreach ($plugin->consent->getCategoryStats($site?->id, array_keys($categoryLabels), $query) as $key => $data) {
             $categoryStats[] = $data + ['key' => $key, 'label' => $categoryLabels[$key]];
         }
 
@@ -188,7 +193,7 @@ class LogsController extends Controller
         $format  = $request->getParam('format') === 'json' ? 'json' : 'csv';
 
         $site    = $this->_resolveSite($request->getParam('site'));
-        $filters = $this->_resolveFilters($request);
+        $filters = $this->_resolveFilters($request) + $this->_scopeFilters($site);
 
         $rows = $this->_collectRows($site?->id, $filters);
 
@@ -414,29 +419,69 @@ class LogsController extends Controller
     }
 
     /**
-     * Site filter: absent, empty, or the explicit `all` sentinel all mean
-     * "All Sites" (null) — the page's default. A concrete value is resolved
-     * to a real site, falling back to the primary site for a stale link.
-     */
-    /**
      * The site the records view is scoped to, or null for "all sites" — which
-     * means all the sites this user may see (see _resolveFilters()). A named
+     * means all the sites this user may see (see _scopeFilters()). A named
      * site the user may not see is a 403, not a silent fallback.
+     *
+     * Absent, empty, or the explicit `all` sentinel mean "All Sites". Any
+     * other non-scalar value (`site[]=…`) is refused rather than read as
+     * "All Sites": it used to be, while the site restriction was decided from
+     * the raw parameter, so the two disagreed and the restriction was skipped.
      */
     private function _resolveSite(mixed $param): ?\craft\models\Site
     {
-        if (!is_string($param) && !is_int($param)) {
+        if ($param === null || $param === '' || $param === 'all') {
             return null;
         }
 
-        if ($param === '' || $param === 'all') {
-            return null;
+        if (!is_string($param) && !is_int($param)) {
+            throw new BadRequestHttpException('Invalid site.');
         }
 
         $site = ConsentHelper::resolveSiteFromParam($param);
         Permissions::requireSite((int) $site->id);
 
         return $site;
+    }
+
+    /**
+     * The site restriction every records query carries, derived from the
+     * *resolved* scope — never from the raw request — so no request shape can
+     * widen it. A concrete site has already passed requireSite(); "All Sites"
+     * for anyone who cannot see every site means the sites they may see,
+     * which also leaves out records of deleted sites, whose access no site
+     * permission can grant.
+     *
+     * @return array{siteIds?: int[]}
+     */
+    private function _scopeFilters(?\craft\models\Site $site): array
+    {
+        $isAdmin = Craft::$app->getUser()->getIdentity()?->admin ?? false;
+
+        return self::scopeFilters($site?->id, count(Craft::$app->getSites()->getAllSites()), $isAdmin, Permissions::accessibleSiteIds());
+    }
+
+    /**
+     * Pure form of _scopeFilters(), so the rule can be verified without a
+     * user session.
+     *
+     * @param  int[] $accessibleSiteIds
+     * @return array{siteIds?: int[]}
+     */
+    public static function scopeFilters(?int $siteId, int $siteCount, bool $isAdmin, array $accessibleSiteIds): array
+    {
+        if ($isAdmin || $siteCount <= 1) {
+            return [];
+        }
+
+        // A concrete site scopes the query itself (and has passed
+        // requireSite()); the restriction still names it, so that a site the
+        // user cannot see matches nothing even if that check were bypassed.
+        if ($siteId !== null) {
+            return ['siteIds' => in_array($siteId, $accessibleSiteIds, true) ? [$siteId] : []];
+        }
+
+        return ['siteIds' => array_values(array_map('intval', $accessibleSiteIds))];
     }
 
     /**
@@ -477,16 +522,10 @@ class LogsController extends Controller
             $filters['countryCode'] = $country;
         }
 
-        // "All sites" for a non-admin on a multisite install means the sites
-        // they may see — which also leaves out records of deleted sites,
-        // whose access no site permission can grant.
-        $site = $request->getParam('site');
-        if (($site === null || $site === '' || $site === 'all')
-            && count(Craft::$app->getSites()->getAllSites()) > 1
-            && !(Craft::$app->getUser()->getIdentity()?->admin ?? false)) {
-            $filters['siteIds'] = Permissions::accessibleSiteIds();
-        }
-
+        // The site restriction is deliberately not added here: these are
+        // the filters the visitor chose, shown back on the page. The
+        // restriction comes from _scopeFilters() and is applied to every
+        // query separately, so it can never be mistaken for a user filter.
         return $filters;
     }
 }
