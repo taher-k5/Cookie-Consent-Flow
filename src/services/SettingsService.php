@@ -183,6 +183,27 @@ class SettingsService extends Component
      */
     public function saveSiteOverrides(int $siteId, array $raw, array $useGlobalFlags): bool
     {
+        // A site's own category or cookie list *is* its child rows, so an
+        // overridden list the editor emptied is no list of its own: the site
+        // inherits, exactly as with "Use Global" on. The form marks each list
+        // with an empty hidden sentinel, because a list with no rows used to
+        // post nothing at all — the save reported success and the removed
+        // rows came back.
+        foreach (['categories', 'cookies'] as $list) {
+            if (!array_key_exists($list, $raw) || !empty($useGlobalFlags[$list])) {
+                continue;
+            }
+
+            if ($raw[$list] === '' || $raw[$list] === []) {
+                unset($raw[$list]);
+                $useGlobalFlags[$list] = '1';
+            } elseif (!is_array($raw[$list])) {
+                $this->_validationErrors = [Craft::t('cookie-consent-flow', '{field}: unexpected value.', ['field' => $list])];
+
+                return false;
+            }
+        }
+
         // An emptied number field on a site's override means "no value of my
         // own", not zero: casting it would silently override the global
         // wait_for_update with 0 (Google stops waiting for a decision). The

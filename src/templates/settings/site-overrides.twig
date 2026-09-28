@@ -220,6 +220,10 @@
 
                 <div class="cck-override-card__body">
                     <div id="site{{ site.id }}-categories-block" class="cck-categories-group{% if not isCategoriesOverridden %} cck-override-field--inherited{% endif %}">
+                        {# Posted even when every row is removed, so an emptied
+                           list reaches the server as "empty" rather than as
+                           nothing (SettingsService::saveSiteOverrides()). #}
+                        <input type="hidden" name="sites[{{ site.id }}][categories]" value="">
                         <div class="cck-categories-list">
                             {% for i, category in resolved.categories %}
                                 {% include 'cookie-consent-flow/settings/_category-row' with {
@@ -283,6 +287,8 @@
 
                 <div class="cck-override-card__body">
                     <div id="site{{ site.id }}-cookies-block" class="cck-cookies-group{% if not isCookiesOverridden %} cck-override-field--inherited{% endif %}">
+                        {# See the categories sentinel above. #}
+                        <input type="hidden" name="sites[{{ site.id }}][cookies]" value="">
                         <div class="cck-cookies-list">
                             {% for i, cookie in resolved.cookies %}
                                 {% include 'cookie-consent-flow/cookies/_cookie-row' with {

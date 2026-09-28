@@ -634,6 +634,50 @@ if ($second !== null) {
         same(0, $service->getEffectiveSettings($second->id)->logoAssetId, 'the site has none, not the inherited one');
         expect($service->loadSettings()->isFieldOverridden($second->id, 'logoAssetId'), 'shown as overridden');
     });
+
+    $check('release: an emptied site cookie or category list is removed, not kept', function () use ($plugin, $second) {
+        $service  = $plugin->cookieSettings;
+        $cookies  = $plugin->cookieDefinitions;
+        $primary  = $GLOBALS['primary'];
+        $cats     = [['key' => 'necessary', 'label' => 'Necessary', 'locked' => '1'], ['key' => 'site_only', 'label' => 'Site only']];
+        $rows     = [
+            ['categoryKey' => 'necessary', 'name' => 'ccf_one', 'provider' => 'Test', 'purpose' => 'One', 'duration' => '1 day'],
+            ['categoryKey' => 'necessary', 'name' => 'ccf_two', 'provider' => 'Test', 'purpose' => 'Two', 'duration' => '1 day'],
+        ];
+
+        // Both sites override both lists.
+        foreach ([$primary, $second] as $site) {
+            expect($service->saveSiteOverrides($site->id, ['categories' => $cats, 'cookies' => $rows], []), 'seed ' . $site->handle . ': ' . implode(' ', $service->getValidationErrors()));
+        }
+        fresh();
+        $settingsId = static fn(int $siteId): int => (int) $service->findSiteSettingsId($siteId);
+        $count      = static fn(string $table, int $siteId): int => (int) (new Query())->from($table)->where(['settingsId' => $settingsId($siteId)])->count();
+        same(2, $count('{{%cookieconsent_cookie}}', $second->id), 'seeded cookies');
+
+        // Remove one: what the form posts is the sentinel, then the rows left.
+        expect($service->saveSiteOverrides($second->id, ['categories' => $cats, 'cookies' => [$rows[0]]], []), 'remove one');
+        fresh();
+        same(1, $count('{{%cookieconsent_cookie}}', $second->id), 'one cookie removed');
+
+        // Remove all: only the empty sentinels are posted.
+        expect($service->saveSiteOverrides($second->id, ['categories' => '', 'cookies' => ''], []), 'remove all: ' . implode(' ', $service->getValidationErrors()));
+        fresh();
+        $secondId = $service->findSiteSettingsId($second->id);
+        same(0, $secondId === null ? 0 : $count('{{%cookieconsent_cookie}}', $second->id), 'every cookie row removed');
+        same(0, $secondId === null ? 0 : $count('{{%cookieconsent_category}}', $second->id), 'every category row removed');
+
+        // Reloaded, the site inherits instead of showing the removed rows.
+        $global = $service->loadSettings();
+        same($global->getCategoryKeys(), $service->getEffectiveSettings($second->id)->getCategoryKeys(), 'categories inherit after reload');
+        same($service->getGlobalSettingsId(), $cookies->getEffectiveSettingsId($second->id), 'cookies inherit after reload');
+
+        // The other site is untouched.
+        same(2, $count('{{%cookieconsent_cookie}}', $primary->id), "the other site's cookies");
+        same(['necessary', 'site_only'], $service->getEffectiveSettings($primary->id)->getCategoryKeys(), "the other site's categories");
+
+        // A list that is neither rows nor the sentinel is refused, not guessed at.
+        expect(!$service->saveSiteOverrides($second->id, ['cookies' => 'nonsense'], []), 'a scalar cookie list was accepted');
+    });
 }
 
 $check('final: reconcile() prunes the rows of a soft-deleted site', function () use ($plugin) {
