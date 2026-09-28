@@ -2,7 +2,9 @@
  * Real-browser checks for the consent runtime, driven over the Chrome
  * DevTools Protocol with nothing but Node's built-in fetch and WebSocket.
  *
- *     node tests/browser/run.mjs http://127.0.0.1:8611 /path/to/craft-project
+ *     node tests/browser/run.mjs http://127.0.0.1:8611 /path/to/craft-project [admin password]
+ *
+ * With an admin's credentials the control-panel checks run too.
  *
  * The project must be a disposable Craft install serving the fixture
  * templates in tests/integration/templates/ (see tests/integration/http.php).
@@ -22,7 +24,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-const [base, projectRoot] = process.argv.slice(2);
+const [base, projectRoot, cpUser, cpPassword] = process.argv.slice(2);
 
 if (!base || !projectRoot) {
   console.error('Usage: node tests/browser/run.mjs http://127.0.0.1:8611 /path/to/craft-project');
@@ -398,6 +400,86 @@ check('the full flow produces no console errors', async (page) => {
   const relevant = page.consoleErrors.filter((e) => !/analytics\.example|ERR_CONNECTION|Failed to load resource/.test(e));
   expect(relevant.length === 0, 'errors: ' + JSON.stringify(relevant));
 });
+
+// ---------------------------------------------------------------------------
+// Control panel
+// ---------------------------------------------------------------------------
+
+/** Logs the page's browser context into the control panel. */
+async function cpLogin(page) {
+  await page.goto(base + '/index.php?p=admin/login');
+  const ok = await page.eval(`(async function(){
+    var info = await (await fetch('/index.php?p=actions/users/session-info', {headers:{Accept:'application/json'}})).json();
+    var body = new FormData();
+    body.append('loginName', ${JSON.stringify(cpUser || '')});
+    body.append('password', ${JSON.stringify(cpPassword || '')});
+    body.append(info.csrfTokenName || 'CRAFT_CSRF_TOKEN', info.csrfTokenValue);
+    var res = await fetch('/index.php?p=actions/users/login', {method:'POST', body:body, headers:{Accept:'application/json'}});
+    return res.ok;
+  })()`);
+  expect(ok, 'control-panel login failed');
+}
+
+const NEW_ROW = `document.querySelector('#cck-categories-list .cck-category-row:last-child, .cck-categories-group .cck-categories-list .cck-category-row:last-child')`;
+const switchState = (label) => `(function(){
+  var row = ${NEW_ROW};
+  var field = Array.from(row.querySelectorAll('.field')).find(function(f){return f.textContent.indexOf(${JSON.stringify(label)}) !== -1 && f.querySelector('.lightswitch')});
+  var ls = field.querySelector('.lightswitch');
+  return {on: ls.classList.contains('on'), value: ls.querySelector('input').value, name: ls.querySelector('input').name};
+})()`;
+const clickSwitch = (label) => `(function(){
+  var row = ${NEW_ROW};
+  var field = Array.from(row.querySelectorAll('.field')).find(function(f){return f.textContent.indexOf(${JSON.stringify(label)}) !== -1 && f.querySelector('.lightswitch')});
+  field.querySelector('.lightswitch').click();
+})()`;
+
+if (cpUser && cpPassword) {
+  check('release: a newly added category\'s switches work before saving, and their state is saved', async (page) => {
+    await cpLogin(page);
+    const key = 'ccf_browser_' + Date.now().toString(36);
+
+    await page.goto(base + '/index.php?p=admin/cookie-consent-flow/settings');
+    const before = await page.eval(`document.querySelectorAll('.cck-categories-group .cck-categories-list .cck-category-row').length`);
+    await page.eval(`document.querySelector('.cck-categories-group .cck-add-category').click()`);
+    expect(await page.eval(`document.querySelectorAll('.cck-categories-group .cck-categories-list .cck-category-row').length`) === before + 1, 'no row added');
+
+    await page.eval(`(function(){
+      var row = ${NEW_ROW};
+      row.querySelector('input[name$="[key]"]').value = ${JSON.stringify(key)};
+      row.querySelector('input[name$="[label]"]').value = 'Browser test';
+    })()`);
+
+    for (const label of ['Enabled by default', 'Always on (locked)']) {
+      const off = await page.eval(switchState(label));
+      expect(!off.on && off.value !== '1', `${label} starts on: ` + JSON.stringify(off));
+      await page.eval(clickSwitch(label));
+      const on = await page.eval(switchState(label));
+      expect(on.on && on.value === '1', `${label} did not respond to a click without a reload: ` + JSON.stringify(on));
+    }
+
+    // Save the real form, then reload.
+    await page.eval(`document.querySelector('.cck-categories-group').closest('form').requestSubmit()`);
+    await sleep(1500);
+    await page.goto(base + '/index.php?p=admin/cookie-consent-flow/settings');
+
+    const saved = await page.eval(`(function(){
+      var row = Array.from(document.querySelectorAll('.cck-categories-group .cck-categories-list .cck-category-row')).find(function(r){return r.querySelector('input[name$="[key]"]').value === ${JSON.stringify(key)}});
+      if (!row) return null;
+      return Array.from(row.querySelectorAll('.lightswitch')).map(function(ls){return ls.classList.contains('on')});
+    })()`);
+    try {
+      expect(saved !== null, 'the new category was not saved');
+      expect(saved.length === 2 && saved.every(Boolean), 'switch state not saved: ' + JSON.stringify(saved));
+    } finally {
+      // Remove the test category again.
+      await page.eval(`(function(){
+        var row = Array.from(document.querySelectorAll('.cck-categories-group .cck-categories-list .cck-category-row')).find(function(r){return r.querySelector('input[name$="[key]"]').value === ${JSON.stringify(key)}});
+        if (row) { row.querySelector('.cck-remove-category').click(); document.querySelector('.cck-categories-group').closest('form').requestSubmit(); }
+      })()`);
+      await sleep(1500);
+    }
+  });
+}
 
 // ---------------------------------------------------------------------------
 

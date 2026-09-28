@@ -124,6 +124,13 @@
           var newRow = tmp.firstElementChild;
           categoriesList.appendChild(newRow);
           bindRemove(newRow);
+          // The row's "Enabled by default" and "Always on" switches are
+          // Craft.LightSwitch widgets, which Craft only constructs for markup
+          // present at page load — <template> content is not. Without this
+          // they ignored every click until the page was saved and reloaded.
+          if (window.Craft && typeof window.Craft.initUiElements === 'function' && window.jQuery) {
+            window.Craft.initUiElements(window.jQuery(newRow));
+          }
           // Focus first input in new row
           var firstInput = newRow.querySelector('input[type="text"]');
           if (firstInput) firstInput.focus();

@@ -117,7 +117,7 @@ site — they change settings and create users):
 php tests/integration/run.php /path/to/project            # database checks
 php tests/integration/http.php http://host /path/to/project
 php tests/integration/cp.php http://host /path/to/project admin password
-node tests/browser/run.mjs http://host /path/to/project    # headless Chrome
+node tests/browser/run.mjs http://host /path/to/project [admin password]  # headless Chrome; CP checks need the admin
 ```
 
 `http.php`, `cp.php` and `run.mjs` need the fixture templates from
