@@ -116,8 +116,8 @@ Each category has a key, a label, a description and two options:
 
 When a visitor accepts, rejects or saves their choice, it is stored in their
 browser and restored on later visits. They are asked again when their consent
-expires (180 days by default, and `0` turns expiry off) or when you use
-**Invalidate Existing Consent**.
+expires (180 days by default, at most 36,500, and `0` turns expiry off) or
+when you use **Invalidate Existing Consent**.
 
 ## Blocking scripts and iframes
 
@@ -230,8 +230,11 @@ return [
 ];
 ```
 
-Only name a header your proxy always sets itself. If the country is unknown,
-the banner is shown. The answer is remembered for the browser tab.
+Only name a header your proxy always sets itself, and make sure visitors
+can't reach your server without going through the proxy. Otherwise they can
+send the header themselves and choose their own country. If the country is
+unknown, or the lookup fails or takes longer than 4 seconds, the banner is
+shown. The answer is remembered for the browser tab.
 
 Developers can add another country source by implementing
 `GeoProviderInterface` and registering it in `config/app.php`:
@@ -249,6 +252,10 @@ Developers can add another country source by implementing
     ],
 ],
 ```
+
+A provider that throws, whether while it is being created or while it looks
+up a country, is skipped and the error is logged. The next provider is asked
+instead.
 
 ## Consent records
 
@@ -271,7 +278,8 @@ category, and can filter by site, outcome, source, category, country, policy
 version and date range. You can export the filtered records as CSV or
 JSON, up to 100,000 records per export.
 
-Set a retention period (365 days by default, and `0` keeps records forever)
+Set a retention period (365 days by default, at most 36,500, and `0` keeps
+records forever)
 under **Settings → Consent Logging**, then delete older records with:
 
 ```bash
@@ -314,6 +322,23 @@ sites the user has access to in Craft; global settings apply to every site.
 {% for cookie in craft.cookieConsent.cookies('analytics') %}…{% endfor %}
 ```
 
+The other Twig helpers:
+
+- `renderBanner()` renders the banner where you call it, instead of before
+  `</body>`. The banner is then not added a second time.
+- `consentModeScript()` outputs the Consent Mode snippet, for when
+  **Auto-inject into `<head>`** is off (see
+  [Google Consent Mode](#google-consent-mode)).
+- `cookiesByCategory()` returns the documented cookies grouped by category
+  key.
+- `categories()` returns the current site's categories, and `settings()` its
+  effective settings.
+- `isBannerEnabled()` says whether the banner is switched on for the site. It
+  does not say whether a given visitor will see it.
+- `countryCode()` returns the country the request resolved to, or null. Don't
+  use it in output that can be cached, because the first visitor's country
+  would then be served to everyone.
+
 ```js
 CookieConsent.hasConsent('analytics');
 CookieConsent.getConsentState();
@@ -351,13 +376,17 @@ saved.
 | Name | Where | Purpose |
 | --- | --- | --- |
 | `cck_consent_{siteId}` | localStorage, or a first-party cookie (365 days) if localStorage can't be written | The visitor's decision |
-| `cck_consent_{siteId}_pending` | localStorage | A decision not yet recorded on the server |
+| `cck_consent_{siteId}_pending` | localStorage, or a first-party cookie (365 days) if localStorage can't be written | A decision not yet recorded on the server |
 | `cck_reported_{siteId}` | localStorage | Cookie names reported in the last day |
 | `cck_geo_{siteId}_{policyVersion}` | sessionStorage | The geo-targeting answer for the tab |
 | `cck_visitor_{siteId}` | `httpOnly` cookie (1 year) | Visitor ID, set only when a record is written |
 
 Recording a decision also starts a Craft session (`CraftSessionId` and the
-CSRF cookie). Nothing is stored before the visitor decides.
+CSRF cookie). Before the visitor decides, the only thing stored is the
+geo-targeting answer, in sessionStorage, when geo-targeting is on: it holds
+`show` or `hide`, nothing about the visitor, and saves a lookup on every page
+view in that tab. With geo-targeting off, nothing is stored before a
+decision.
 
 ## Caching and proxies
 

@@ -73,6 +73,21 @@ function action(string $route): string
 }
 
 /** A fresh anonymous session: cookie jar plus CSRF token. */
+/**
+ * Empties the rate-limit buckets and, when the current one-minute window is
+ * nearly over, waits for the next. Throttle counts in fixed windows, so a
+ * loop that straddled a boundary split its requests across two buckets and
+ * never reached the limit it was checking.
+ */
+function freshWindow(): void
+{
+    if (time() % 60 > 40) {
+        sleep(61 - time() % 60);
+    }
+
+    Craft::$app->getCache()->flush();
+}
+
 function session(): array
 {
     $jar  = tempnam(sys_get_temp_dir(), 'ccfjar');
@@ -271,7 +286,7 @@ $check('L15: with logging off no visitor cookie is set', function () {
 // ---------------------------------------------------------------------------
 
 $check('H2: on Craft\'s default trustedHosts, forged X-Forwarded-For values are capped per proxy address', function () {
-    Craft::$app->getCache()->flush();
+    freshWindow();
     $session = session();
     $codes   = [];
 
@@ -289,7 +304,7 @@ $check('H2: on Craft\'s default trustedHosts, forged X-Forwarded-For values are 
 });
 
 $check('H2: one claimed client is still limited to 20 per minute', function () {
-    Craft::$app->getCache()->flush();
+    freshWindow();
     $session = session();
     $codes   = [];
 
@@ -304,7 +319,7 @@ $check('H2: one claimed client is still limited to 20 per minute', function () {
 $check('H2 (final audit): behind a trusted proxy, a spoofed Client-IP does not mint buckets', function () use ($root) {
     $flag = $root . '/trusted-hosts.flag';
     touch($flag);
-    Craft::$app->getCache()->flush();
+    freshWindow();
 
     try {
         $session = session();
@@ -321,7 +336,7 @@ $check('H2 (final audit): behind a trusted proxy, a spoofed Client-IP does not m
         expect(($counts[200] ?? 0) === 20 && ($counts[429] ?? 0) === 5, 'status codes ' . json_encode($counts));
 
         // …while X-Forwarded-For from the trusted proxy identifies each visitor.
-        Craft::$app->getCache()->flush();
+        freshWindow();
         $ok = 0;
         for ($i = 1; $i <= 30; $i++) {
             $ok += postJson('cookie-consent-flow/consent/save', ['action' => 'reject_all'], $session, ['X-Forwarded-For' => "198.51.100.{$i}"])['status'] === 200 ? 1 : 0;
@@ -329,7 +344,7 @@ $check('H2 (final audit): behind a trusted proxy, a spoofed Client-IP does not m
         expect($ok === 30, "real visitors behind the proxy were limited together ({$ok}/30)");
     } finally {
         unlink($flag);
-        Craft::$app->getCache()->flush();
+        freshWindow();
     }
 });
 
@@ -345,7 +360,7 @@ $check('final: the record carries the policy version the visitor was shown', fun
 });
 
 $check('final: a geo provider configured through pluginConfigs is actually used', function () use ($root) {
-    Craft::$app->getCache()->flush();
+    freshWindow();
     $file = $root . '/config/app.php';
     file_put_contents($file, "<?php\nreturn ['components' => ['plugins' => ['pluginConfigs' => ['cookie-consent-flow' => ['components' => ['geo' => ['providers' => [['class' => sfsinfotech\\craftcookieconsentflow\\geo\\HeaderGeoProvider::class, 'headers' => ['X-Test-Country']]]]]]]]]];\n");
     settings(['geoEnabled' => true, 'geoTargetCountries' => ['DE']]);
@@ -373,7 +388,7 @@ $check('final: a script: privacy URL stored directly in the database is never re
 });
 
 $check('L21: the geo endpoint is rate limited and fails open when limited', function () {
-    Craft::$app->getCache()->flush();
+    freshWindow();
     $last = null;
 
     for ($i = 0; $i < 31; $i++) {
@@ -383,7 +398,7 @@ $check('L21: the geo endpoint is rate limited and fails open when limited', func
     expect($last['status'] === 429, 'status ' . $last['status']);
     expect(json_decode($last['body'], true)['show'] === true, 'a limited visitor must be shown the banner');
     expect(str_contains(implode(',', $last['headers']['cache-control'] ?? []), 'no-store'), 'cacheable');
-    Craft::$app->getCache()->flush();
+    freshWindow();
 });
 
 // ---------------------------------------------------------------------------
@@ -391,7 +406,7 @@ $check('L21: the geo endpoint is rate limited and fails open when limited', func
 // ---------------------------------------------------------------------------
 
 $check('M2: with no trusted header configured, a forged country header is ignored', function () {
-    Craft::$app->getCache()->flush();
+    freshWindow();
     settings(['geoEnabled' => true, 'geoTargetCountries' => ['DE']]);
 
     try {
@@ -405,7 +420,7 @@ $check('M2: with no trusted header configured, a forged country header is ignore
 });
 
 $check('M2 / L29: a header named in config/cookie-consent-flow.php is the only one believed', function () use ($root) {
-    Craft::$app->getCache()->flush();
+    freshWindow();
     $file = $root . '/config/cookie-consent-flow.php';
     file_put_contents($file, "<?php\nreturn ['geoCountryHeader' => 'CF-IPCountry', 'bannerHeading' => 'not here'];\n");
     settings(['geoEnabled' => true, 'geoTargetCountries' => ['DE']]);
