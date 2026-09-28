@@ -435,6 +435,18 @@ function createEnvironment(options) {
 
   window.addEventListener = document.addEventListener;
 
+  // Timers that run only when a test says so, so a timeout can be exercised
+  // without waiting for it (and without real timers keeping node alive).
+  var timers = [];
+  window.setTimeout = function (fn, ms) {
+    timers.push({ fn: fn, ms: ms, done: false });
+
+    return timers.length;
+  };
+  window.clearTimeout = function (id) {
+    if (timers[id - 1]) timers[id - 1].done = true;
+  };
+
   function CustomEvent(type, init) {
     this.type = type;
     this.detail = init && init.detail;
@@ -446,7 +458,19 @@ function createEnvironment(options) {
     document: document,
     CustomEvent: CustomEvent,
     cookies: cookies,
-    setCookie: function (name, value) { cookies[name] = value; }
+    setCookie: function (name, value) { cookies[name] = value; },
+    /** The pending timers' delays. */
+    pendingTimers: function () {
+      return timers.filter(function (t) { return !t.done; }).map(function (t) { return t.ms; });
+    },
+    /** Fires every pending timer, as if its delay had passed. */
+    runTimers: function () {
+      timers.forEach(function (t) {
+        if (t.done) return;
+        t.done = true;
+        t.fn();
+      });
+    }
   };
 }
 

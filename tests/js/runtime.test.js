@@ -1024,6 +1024,40 @@ function geoPending(answer) {
 
 const NOT_TARGETED = { show: false, country: 'US' };
 
+test('release: a geo lookup that never answers shows the banner after the timeout', async () => {
+  const { page, answer } = geoPending(NOT_TARGETED);
+  await settle();
+
+  assert.strictEqual(page.banner.hidden, true, 'precondition: waiting on the lookup');
+  assert.deepStrictEqual(page.env.pendingTimers(), [4000], 'a 4 s timeout guards the lookup');
+
+  page.env.runTimers();
+  await settle();
+
+  assert.strictEqual(page.banner.hidden, false, 'a stalled lookup must fail open');
+  assert.strictEqual(page.activatedScript(), null, 'a timeout is not permission to run optional content');
+  assert.strictEqual(page.gatedFrame.getAttribute('src'), null);
+  assert.strictEqual(page.session.cck_geo_1_1, undefined, 'a timeout is not cached as an answer');
+
+  // The answer arrives late: ignored, so it cannot bypass the banner the visitor is looking at.
+  await answer();
+  assert.strictEqual(page.banner.hidden, false);
+  assert.strictEqual(page.consent.isGeoBypassed(), false, 'a late "not targeted" answer bypassed the banner');
+  assert.strictEqual(page.activatedScript(), null, 'a late answer activated optional content');
+});
+
+test('release: a prompt geo answer clears the timeout', async () => {
+  const { page, answer } = geoPending(NOT_TARGETED);
+  await settle();
+  await answer();
+
+  assert.deepStrictEqual(page.env.pendingTimers(), [], 'the timeout outlived the answer');
+  page.env.runTimers();
+  await settle();
+  assert.strictEqual(page.banner.hidden, true, 'the timeout overrode a real answer');
+  assert.strictEqual(page.consent.isGeoBypassed(), true);
+});
+
 test('M1: geo pending → reject → a late "not targeted" answer activates nothing', async () => {
   const { page, answer } = geoPending(NOT_TARGETED);
   await settle();
@@ -1855,6 +1889,94 @@ test('final: withdrawing consent unloads iframes activated under it', async () =
 
   page.consent.resetConsent();
   assert.strictEqual(page.gatedFrame.getAttribute('src'), 'about:blank', 'reset unloads it too');
+});
+
+test('release: with Craft\'s CSRF protection off, a decision is saved without asking for a token', async () => {
+  // Plugin::runtimeCsrfUrl() leaves csrfUrl out exactly when Craft enforces no
+  // CSRF check, so the endpoint accepts the request either way.
+  const page = boot({ config: { csrfUrl: null }, routes: { '/consent/save': saved } });
+  await settle();
+
+  page.consent.acceptAll();
+  await settle();
+
+  assert.strictEqual(page.fetch.to('/users/session-info').length, 0, 'asked for a token Craft does not issue');
+  const posts = page.fetch.to('/consent/save');
+  assert.strictEqual(posts.length, 1, 'the decision was not sent exactly once');
+  assert.strictEqual(posts[0].init.headers['X-CSRF-Token'], undefined, 'sent a token header it does not have');
+  assert.strictEqual(page.storage.cck_consent_1_pending, undefined, 'the save stayed queued for a retry');
+});
+
+test('release: with CSRF protection on, a missing token still holds the save back for a retry', async () => {
+  const page = boot({
+    routes: { '/users/session-info': () => jsonResponse(200, {}), '/consent/save': saved }
+  });
+  await settle();
+
+  page.consent.acceptAll();
+  await settle();
+
+  assert.strictEqual(page.fetch.to('/consent/save').length, 0, 'posted without the token Craft requires');
+  assert.ok(page.storage.cck_consent_1_pending, 'the decision was dropped instead of queued for a retry');
+});
+
+function lockedFrame(doc, src) {
+  const frame = doc.createElement('iframe');
+  frame.setAttribute('data-cck-category', 'necessary');
+  frame.setAttribute('data-cck-src', src);
+  doc.body.appendChild(frame);
+
+  return frame;
+}
+
+test('release: refreshGatedContent() before a decision keeps locked content and still holds optional content', async () => {
+  let initialLocked;
+  const page = boot({
+    routes: { '/consent/save': saved },
+    extra: (doc) => { initialLocked = lockedFrame(doc, 'https://first.test/essential-embed'); }
+  });
+  await settle();
+
+  assert.strictEqual(initialLocked.getAttribute('src'), 'https://first.test/essential-embed', 'precondition: locked content loads on page load');
+  assert.strictEqual(page.gatedFrame.getAttribute('src'), null, 'precondition: optional content waits');
+
+  // A plain refresh, as the README says to call after dynamic updates.
+  page.consent.refreshGatedContent();
+  assert.strictEqual(initialLocked.getAttribute('src'), 'https://first.test/essential-embed', 'a refresh unloaded locked content');
+  assert.strictEqual(page.gatedFrame.getAttribute('src'), null, 'a refresh loaded optional content without consent');
+
+  // An AJAX update appends markup; a Sprig update swaps a region for new markup.
+  const appended = lockedFrame(page.document, 'https://first.test/ajax-embed');
+  gated(page.document, 'analytics', { 'data-cck-src': 'https://analytics.test/ajax.js' });
+  const swapped = page.document.createElement('iframe');
+  swapped.setAttribute('data-cck-category', 'necessary');
+  swapped.setAttribute('data-cck-src', 'https://first.test/sprig-embed');
+  initialLocked.parentNode.replaceChild(swapped, initialLocked);
+  page.consent.refreshGatedContent();
+
+  assert.strictEqual(appended.getAttribute('src'), 'https://first.test/ajax-embed', 'locked content added by AJAX stayed inert');
+  assert.strictEqual(swapped.getAttribute('src'), 'https://first.test/sprig-embed', 'locked content swapped in by Sprig stayed inert');
+  const srcs = () => page.activatedScripts().map((node) => node.getAttribute('src'));
+  assert.ok(srcs().indexOf('https://analytics.test/ajax.js') === -1, 'optional script added by AJAX ran without consent');
+  assert.deepStrictEqual(page.fetch.calls, [], 'and nothing was requested before a decision');
+
+  // Consent is given; a refresh now loads what it allows.
+  page.consent.acceptAll();
+  page.consent.refreshGatedContent();
+  assert.strictEqual(page.gatedFrame.getAttribute('src'), 'https://ads.test/embed');
+  assert.ok(srcs().indexOf('https://analytics.test/ajax.js') !== -1, 'the accepted optional script did not load');
+
+  // Withdrawn again: optional content is held back on the next refresh; locked content is not.
+  page.consent.updateConsent({ analytics: true, marketing: false });
+  const later = page.document.createElement('iframe');
+  later.setAttribute('data-cck-category', 'marketing');
+  later.setAttribute('data-cck-src', 'https://ads.test/later');
+  page.document.body.appendChild(later);
+  page.consent.refreshGatedContent();
+
+  assert.strictEqual(page.gatedFrame.getAttribute('src'), 'about:blank', 'withdrawn content stays unloaded');
+  assert.strictEqual(later.getAttribute('src'), null, 'withdrawn category content added later loaded');
+  assert.strictEqual(appended.getAttribute('src'), 'https://first.test/ajax-embed', 'locked content unloaded by a withdrawal');
 });
 
 test('final: javascript: and data: sources are never activated', async () => {

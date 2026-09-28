@@ -79,4 +79,25 @@ final class BannerInjectionTest extends TestCase
         self::assertSame('</BODY>', substr($html, $pos, $length));
         self::assertSame(1, substr_count(substr($html, $pos), '</BODY>'));
     }
+
+    /**
+     * The runtime is told to fetch a CSRF token exactly when Craft enforces
+     * one. With protection off Craft issues no token and checks none, and a
+     * runtime told to wait for one never recorded a decision.
+     */
+    public function testTheRuntimeIsSentNoTokenEndpointOnlyWhenCraftChecksNoToken(): void
+    {
+        self::assertNull(Plugin::runtimeCsrfUrl(false));
+
+        $source = (string) file_get_contents(dirname(__DIR__, 2) . '/src/Plugin.php');
+        self::assertStringContainsString(
+            '\'csrfUrl\'           => self::runtimeCsrfUrl(Craft::$app->getConfig()->getGeneral()->enableCsrfProtection),',
+            $source,
+            'the runtime config must follow the same setting Craft validates CSRF by'
+        );
+        self::assertStringContainsString(
+            'return $csrfProtectionEnabled ? \\craft\\helpers\\UrlHelper::actionUrl(\'users/session-info\') : null;',
+            $source
+        );
+    }
 }

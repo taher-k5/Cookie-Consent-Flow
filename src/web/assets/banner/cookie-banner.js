@@ -56,6 +56,9 @@
 
   var DAY_MS = 864e5;
 
+  // How long the geo lookup may take before the banner is shown anyway.
+  var GEO_TIMEOUT_MS = 4000;
+
   /**
    * localStorage with a cookie fallback, and every access guarded.
    *
@@ -955,7 +958,11 @@
         return;
       }
 
-      activateGatedContent(this._geoBypass ? this._allCategories() : []);
+      // Before a decision, exactly what init() allowed: locked categories,
+      // which no decision can switch off. An empty list here used to unload
+      // the locked iframes init() had loaded, and left locked content added
+      // after an AJAX or Sprig update inert.
+      activateGatedContent(this._geoBypass ? this._allCategories() : this._lockedCategories());
     },
 
     /* ---------------------------------------------------------------
@@ -1038,13 +1045,43 @@
         return generation !== self._syncGeneration || self.getConsent() !== null;
       };
 
-      fetch(cfg.geoUrl, {
-        credentials: 'same-origin',
-        headers: { Accept: 'application/json' }
-      }).then(function (res) {
+      // A lookup that never answers — a stalled proxy, a CDN holding the
+      // connection — used to keep the banner hidden until the browser gave
+      // up, which can take minutes, and the visitor could not consent in the
+      // meantime. After GEO_TIMEOUT_MS the banner is shown, exactly as for a
+      // failed lookup: the timeout only ever asks, it never grants. It is not
+      // cached, so the next page view tries again, and an answer arriving
+      // after it is ignored — a late "not targeted" must not activate
+      // optional content under a banner the visitor is already looking at.
+      var settled = false;
+      var controller = typeof window.AbortController === 'function' ? new window.AbortController() : null;
+      var timer = typeof window.setTimeout === 'function'
+        ? window.setTimeout(function () {
+            if (settled) return;
+            settled = true;
+            if (controller) {
+              try { controller.abort(); } catch (e) {}
+            }
+            if (isStale()) return;
+
+            self._showBanner();
+          }, GEO_TIMEOUT_MS)
+        : null;
+      var settle = function () {
+        if (settled) return false;
+        settled = true;
+        if (timer !== null && typeof window.clearTimeout === 'function') window.clearTimeout(timer);
+
+        return true;
+      };
+
+      var init = { credentials: 'same-origin', headers: { Accept: 'application/json' } };
+      if (controller) init.signal = controller.signal;
+
+      fetch(cfg.geoUrl, init).then(function (res) {
         return res.ok ? res.json() : { show: true };
       }).then(function (json) {
-        if (isStale()) return;
+        if (!settle() || isStale()) return;
 
         var show = !json || json.show !== false;
         try {
@@ -1054,7 +1091,7 @@
         if (show) self._showBanner();
         else self._applyGeoBypass(json && json.country);
       }).catch(function () {
-        if (isStale()) return;
+        if (!settle() || isStale()) return;
 
         self._showBanner();
       });

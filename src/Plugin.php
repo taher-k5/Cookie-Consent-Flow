@@ -812,7 +812,7 @@ class Plugin extends BasePlugin
             // Craft's own anonymous session endpoint. The runtime reads a
             // fresh CSRF token from here rather than one baked into possibly
             // cached HTML.
-            'csrfUrl'           => \craft\helpers\UrlHelper::actionUrl('users/session-info'),
+            'csrfUrl'           => self::runtimeCsrfUrl(Craft::$app->getConfig()->getGeneral()->enableCsrfProtection),
             'csrfTokenName'     => Craft::$app->getConfig()->getGeneral()->csrfTokenName,
             'allCategories'     => $settings->getCategoryKeys(),
             'lockedCategories'  => $settings->getLockedCategoryKeys(),
@@ -831,6 +831,24 @@ class Plugin extends BasePlugin
                 'signals' => $settings->getCategoryGcmSignals(),
             ],
         ];
+    }
+
+    /**
+     * Where the runtime fetches a CSRF token, or null when Craft enforces
+     * none.
+     *
+     * With `enableCsrfProtection` off, Craft's session endpoint returns no
+     * token and every request's CSRF check passes (Craft sets the request's
+     * `enableCsrfValidation` from that setting, and the consent endpoints
+     * validate through it). The runtime treated the missing token as an
+     * outage, so on such an install no consent was ever recorded — while
+     * refusing to send added no protection, since the server accepts the
+     * request either way. The server stays the enforcement point: whenever
+     * Craft validates CSRF, the runtime is told to fetch a token.
+     */
+    public static function runtimeCsrfUrl(bool $csrfProtectionEnabled): ?string
+    {
+        return $csrfProtectionEnabled ? \craft\helpers\UrlHelper::actionUrl('users/session-info') : null;
     }
 
     /** Marks manual Twig rendering as authoritative for the current request. */
