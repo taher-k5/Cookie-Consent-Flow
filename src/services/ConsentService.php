@@ -38,6 +38,14 @@ class ConsentService extends Component
     public const ACTIONS = ['accept_all', 'reject_all', 'custom'];
 
     /**
+     * The order every record listing uses, newest first. `dateCreated` has
+     * one-second resolution, so it is not a total order by itself; the id
+     * makes it one, so a page boundary never falls between two rows whose
+     * relative order can change from one query to the next.
+     */
+    public const LIST_ORDER = ['dateCreated' => SORT_DESC, 'id' => SORT_DESC];
+
+    /**
      * Records a visitor's consent decision, then announces it.
      *
      * ## Order
@@ -263,7 +271,9 @@ class ConsentService extends Component
 
         $record = ConsentLogRecord::find()
             ->where(['visitorUuid' => $visitorUuid, 'siteId' => $siteId])
-            ->orderBy(['dateCreated' => SORT_DESC])
+            // `dateCreated` has one-second resolution; the id breaks the tie
+            // so two decisions in the same second resolve to the later one.
+            ->orderBy(['dateCreated' => SORT_DESC, 'id' => SORT_DESC])
             ->one();
 
         if (!$record) {
@@ -354,39 +364,6 @@ class ConsentService extends Component
     }
 
     /**
-     * Daily consent totals for the last `$days` days, oldest first — the
-     * dashboard's trend line. Grouped in SQL by date so the result set is at
-     * most one row per day regardless of how many records exist.
-     *
-     * @param array<string, mixed> $filters Optional record filters; see buildQuery().
-     * @return array<int, array{date: string, count: int}>
-     */
-    public function getDailyTrend(?int $siteId, int $days = 30, array $filters = []): array
-    {
-        // UTC, because `dateCreated` is stored in UTC. Built from the server's
-        // local clock, the window silently started or ended hours off on every
-        // install whose configured timezone is not UTC.
-        $since = (new \DateTimeImmutable("-{$days} days", new \DateTimeZone('UTC')))
-            ->format('Y-m-d 00:00:00');
-
-        // The same filters as the rest of the screen: a trend of every record
-        // beside totals for a filtered set would describe two different
-        // datasets under one heading.
-        $rows = $this->buildQuery($siteId, $filters)
-            ->andWhere(['>=', 'dateCreated', $since])
-            ->select(['d' => new Expression('DATE([[dateCreated]])'), 'c' => 'COUNT(*)'])
-            ->groupBy([new Expression('DATE([[dateCreated]])')])
-            ->orderBy(['d' => SORT_ASC])
-            ->asArray()
-            ->all();
-
-        return array_map(
-            static fn(array $row): array => ['date' => (string) $row['d'], 'count' => (int) $row['c']],
-            $rows
-        );
-    }
-
-    /**
      * Returns a paginated list of consent records for the CP log viewer.
      *
      * @param  array<string, mixed> $filters See buildQuery() for the accepted keys.
@@ -405,7 +382,9 @@ class ConsentService extends Component
 
         $total   = (int) (clone $query)->count();
         $records = $query
-            ->orderBy(['dateCreated' => SORT_DESC])
+            // A total order — the export's, too — so records created in the
+            // same second are never repeated or skipped across pages.
+            ->orderBy(self::LIST_ORDER)
             ->limit($perPage)
             ->offset(($page - 1) * $perPage)
             ->all();

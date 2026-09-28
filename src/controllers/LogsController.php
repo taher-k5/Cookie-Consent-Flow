@@ -230,7 +230,7 @@ class LogsController extends Controller
         // request out of memory before a single row was exported.
         $query = Plugin::getInstance()->consent
             ->buildQuery($siteId, $filters)
-            ->orderBy(['dateCreated' => SORT_DESC, 'id' => SORT_DESC])
+            ->orderBy(ConsentService::LIST_ORDER)
             ->limit(self::EXPORT_LIMIT + 1)
             ->asArray();
 
