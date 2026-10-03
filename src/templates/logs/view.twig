@@ -8,47 +8,94 @@
 {% set categories = record.categories|json_decode %}
 {% set recordSite = craft.app.sites.getSiteById(record.siteId) %}
 
+{% set actionLabels = {
+    'accept_all': "Accept All"|t('cookie-consent-flow'),
+    'reject_all': "Reject All"|t('cookie-consent-flow'),
+    'custom':     "Custom"|t('cookie-consent-flow'),
+} %}
+
+{% set sourceLabels = {
+    'banner': "Banner"|t('cookie-consent-flow'),
+    'gpc':    "Global Privacy Control"|t('cookie-consent-flow'),
+    'dnt':    "Do Not Track"|t('cookie-consent-flow'),
+    'api':    "JavaScript API"|t('cookie-consent-flow'),
+} %}
+
+{% set badgeClass = {
+    'accept_all': 'green',
+    'reject_all': 'red',
+}[record.action] ?? 'blue' %}
+
 <div class="ccf-detail-card">
 
-    <h2>Additional Information</h2>
+    <h2>{{ "Record details"|t('cookie-consent-flow') }}</h2>
 
     <table class="data fullwidth">
 
         <tbody>
 
         <tr>
-            <th>ID</th>
+            <th scope="row">{{ "Outcome"|t('cookie-consent-flow') }}</th>
+            <td>
+                <span class="ccf-action-badge ccf-{{ badgeClass }}">
+                    {{ actionLabels[record.action] ?? record.action }}
+                </span>
+            </td>
+        </tr>
+
+        <tr>
+            <th scope="row">{{ "ID"|t('cookie-consent-flow') }}</th>
             <td>{{ record.id }}</td>
         </tr>
 
         <tr>
-            <th>Visitor UUID</th>
-            <td>{{ record.visitorUuid }}</td>
+            <th scope="row">{{ "Visitor ID"|t('cookie-consent-flow') }}</th>
+            <td><code>{{ record.visitorUuid }}</code></td>
         </tr>
 
         <tr>
-            <th>IP Hash</th>
-            <td>{{ record.ipHash }}</td>
+            <th scope="row">{{ "Source"|t('cookie-consent-flow') }}</th>
+            <td>{{ sourceLabels[record.source] ?? record.source ?? '—' }}</td>
         </tr>
 
         <tr>
-            <th>Country</th>
+            <th scope="row">{{ "Policy version"|t('cookie-consent-flow') }}</th>
+            <td>{{ record.policyVersion ?: '—' }}</td>
+        </tr>
+
+        <tr>
+            <th scope="row">{{ "IP Hash"|t('cookie-consent-flow') }}</th>
+            <td>
+                <code>{{ record.ipHash }}</code>
+                {# The hash is of the network (/24 for IPv4, /48 for IPv6),
+                   keyed with this install's security key: it cannot be
+                   reversed, and it matches only other records from the same
+                   network on this install. Records written before 1.0.0 used a
+                   random salt per record and match nothing. #}
+                <p class="light">
+                    {{ "Keyed hash of the visitor’s network (not the full address). It cannot be reversed to an IP address, and matches only records from the same network on this install."|t('cookie-consent-flow') }}
+                </p>
+            </td>
+        </tr>
+
+        <tr>
+            <th scope="row">{{ "Country"|t('cookie-consent-flow') }}</th>
             <td>{{ record.countryCode ?: '—' }}</td>
         </tr>
 
         <tr>
-            <th>Site</th>
+            <th scope="row">{{ "Site"|t('cookie-consent-flow') }}</th>
             <td>{{ recordSite ? recordSite.name : "Deleted Site (ID: {id})"|t('cookie-consent-flow', { id: record.siteId }) }}</td>
         </tr>
 
         <tr>
-            <th>User Agent</th>
-            <td>{{ record.userAgent }}</td>
+            <th scope="row">{{ "User Agent"|t('cookie-consent-flow') }}</th>
+            <td>{{ record.userAgent ?: '—' }}</td>
         </tr>
 
         <tr>
-            <th>Created</th>
-            <td>{{ record.dateCreated|date('Y-m-d H:i:s') }}</td>
+            <th scope="row">{{ "Created"|t('cookie-consent-flow') }}</th>
+            <td>{{ record.dateCreated|datetime('short') }}</td>
         </tr>
 
         </tbody>
@@ -59,23 +106,28 @@
 
 <div class="ccf-detail-card">
 
-    <h2>Accepted Categories</h2>
+    <h2>{{ "Accepted Categories"|t('cookie-consent-flow') }}</h2>
 
-    <div class="ccf-category-list">
-
-        {% for category in categories %}
-            <span class="ccf-category-pill">
-                {{ category|capitalize }}
-            </span>
-        {% endfor %}
-
-    </div>
+    {% if categories is iterable and categories is not empty %}
+        <ul class="ccf-category-list">
+            {% for category in categories %}
+                <li class="ccf-category-pill">
+                    {{ categoryLabels[category] ?? category }}
+                    {% if categoryLabels[category] is not defined %}
+                        <span class="light">({{ "no longer configured"|t('cookie-consent-flow') }})</span>
+                    {% endif %}
+                </li>
+            {% endfor %}
+        </ul>
+    {% else %}
+        <p class="light">{{ "None"|t('cookie-consent-flow') }}</p>
+    {% endif %}
 
 </div>
 
-<div style="margin-top:20px;">
-    <a class="btn" href="{{ cpUrl('cookie-consent-flow/logs') }}">
-        Back to Logs
+<div class="ccf-detail-actions">
+    <a class="btn" href="{{ backUrl }}">
+        {{ "Back to Consent Records"|t('cookie-consent-flow') }}
     </a>
 </div>
 

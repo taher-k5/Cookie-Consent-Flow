@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Unit tests only, deliberately.
+
+  Everything under tests/unit/ exercises logic that is decidable without a
+  database, a request or a running Craft application: consent-signal mapping,
+  geo targeting, retention arithmetic, settings resolution. Those are the parts
+  where a wrong answer is silent — a mis-mapped consent signal or an
+  off-by-one retention cutoff produces no error, just the wrong outcome — so
+  they are the parts worth pinning down in a test rather than in a click-through.
+
+  Integration coverage (controllers, the schema, multi-site persistence, the
+  response hook, the control panel and the browser runtime) needs a real Craft
+  install and database, and lives in tests/integration/ and tests/browser/ —
+  see CLAUDE.md for how to run it against a disposable install.
+-->
+<phpunit xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:noNamespaceSchemaLocation="https://schema.phpunit.de/10.5/phpunit.xsd"
+         bootstrap="tests/bootstrap.php"
+         colors="true"
+         failOnWarning="true"
+         failOnRisky="true"
+         beStrictAboutOutputDuringTests="true">
+    <testsuites>
+        <testsuite name="unit">
+            <directory>tests/unit</directory>
+        </testsuite>
+    </testsuites>
+    <source>
+        <include>
+            <directory>src</directory>
+        </include>
+    </source>
+</phpunit>

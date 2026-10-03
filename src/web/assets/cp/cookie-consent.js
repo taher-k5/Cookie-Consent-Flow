@@ -2,11 +2,14 @@
  * Cookie Consent Flow — Control Panel JavaScript.
  *
  * Handles:
- *  - Settings tab navigation
  *  - Show/hide corner-position field based on layout selection
- *  - Dynamic colour swatches next to colour inputs
- *  - Category row add / remove
- *  - Category index renumbering after remove
+ *  - Icon button groups standing in for layout selects
+ *  - Category row add / remove and index renumbering
+ *  - Navigation selects (site switchers), without inline handlers
+ *  - The Multisite, Cookies and Settings page interactions below
+ *
+ * Tabs are Craft's own (the pages pass `tabs` to the CP layout), so no tab
+ * handling lives here.
  */
 (function () {
   'use strict';
@@ -14,34 +17,25 @@
   document.addEventListener('DOMContentLoaded', function () {
 
     /* ------------------------------------------------------------------
-       Tab navigation (Craft CP tab links anchor to #tab-* divs)
+       Navigation selects — `<select data-cck-navigate>` whose option
+       values are URLs (the dashboard's and records page's site switchers).
+       These used inline `onchange="location.href=this.value"`, which a
+       strict Content-Security-Policy (no 'unsafe-inline') blocks outright,
+       leaving the switcher dead. One listener here replaces them.
     ------------------------------------------------------------------ */
-    var tabLinks  = document.querySelectorAll('#tabs a[href^="#tab-"]');
-    var tabPanels = document.querySelectorAll('#cck-settings > div[id^="tab-"]');
+    document.querySelectorAll('select[data-cck-navigate]').forEach(function (select) {
+      select.addEventListener('change', function () {
+        var url = select.value;
 
-    function showTab(targetId) {
-      tabPanels.forEach(function (panel) {
-        panel.classList.toggle('hidden', panel.id !== targetId.replace('#', ''));
-      });
-    }
-
-    tabLinks.forEach(function (link) {
-      link.addEventListener('click', function (e) {
-        e.preventDefault();
-        showTab(link.getAttribute('href'));
-        history.replaceState(null, '', link.getAttribute('href'));
-        tabLinks.forEach(function (l) { l.classList.remove('sel'); });
-        link.classList.add('sel');
+        // Only same-origin, http(s) targets: the options are server-rendered
+        // CP URLs, and nothing else should be reachable through this.
+        try {
+          var target = new URL(url, window.location.href);
+          if (target.origin !== window.location.origin) return;
+          window.location.href = target.href;
+        } catch (e) {}
       });
     });
-
-    // Activate tab from hash on load
-    if (window.location.hash && document.getElementById(window.location.hash.replace('#', ''))) {
-      var activeLink = document.querySelector('#tabs a[href="' + window.location.hash + '"]');
-      if (activeLink) activeLink.click();
-    } else if (tabLinks.length) {
-      tabLinks[0].classList.add('sel');
-    }
 
     /* ------------------------------------------------------------------
        Corner-position field visibility
@@ -84,41 +78,6 @@
         });
       });
     });
-
-    /* ------------------------------------------------------------------
-       Colour swatches — adds a small coloured square inside each
-       colour text-input so the admin can see the current value at a glance.
-    ------------------------------------------------------------------ */
-    function initColorSwatches() {
-      document.querySelectorAll('.cck-color-input').forEach(function (input) {
-        // Wrap in position:relative container if not already
-        var wrap = input.parentElement;
-        if (!wrap.classList.contains('cck-field-wrap')) {
-          var newWrap = document.createElement('div');
-          newWrap.className = 'cck-field-wrap';
-          input.parentNode.insertBefore(newWrap, input);
-          newWrap.appendChild(input);
-          wrap = newWrap;
-        }
-
-        var swatch = wrap.querySelector('.cck-color-swatch');
-        if (!swatch) {
-          swatch = document.createElement('span');
-          swatch.className = 'cck-color-swatch';
-          wrap.appendChild(swatch);
-        }
-
-        function update() {
-          swatch.style.background = input.value || 'transparent';
-        }
-
-        update();
-        input.addEventListener('input', update);
-        input.addEventListener('change', update);
-      });
-    }
-
-    initColorSwatches();
 
     /* ------------------------------------------------------------------
        Category rows — add / remove
@@ -165,7 +124,13 @@
           var newRow = tmp.firstElementChild;
           categoriesList.appendChild(newRow);
           bindRemove(newRow);
-          initColorSwatches();
+          // The row's "Enabled by default" and "Always on" switches are
+          // Craft.LightSwitch widgets, which Craft only constructs for markup
+          // present at page load — <template> content is not. Without this
+          // they ignored every click until the page was saved and reloaded.
+          if (window.Craft && typeof window.Craft.initUiElements === 'function' && window.jQuery) {
+            window.Craft.initUiElements(window.jQuery(newRow));
+          }
           // Focus first input in new row
           var firstInput = newRow.querySelector('input[type="text"]');
           if (firstInput) firstInput.focus();
@@ -325,7 +290,7 @@
             if (listItem) listItem.remove();
           }).catch(function () {
             dismissBtn.disabled = false;
-            Craft.cp.displayError('An error occurred.');
+            Craft.cp.displayError(cckT('An error occurred.'));
           });
         }
       });
@@ -792,11 +757,11 @@
 
       Craft.sendActionRequest('POST', action, {data: data})
         .then(function (response) {
-          Craft.cp.displaySuccess((response.data && response.data.message) || 'Done.');
+          Craft.cp.displaySuccess((response.data && response.data.message) || cckT('Done.'));
           window.location.reload();
         })
         .catch(function (error) {
-          var msg = (error.response && error.response.data && error.response.data.message) || 'An error occurred.';
+          var msg = (error.response && error.response.data && error.response.data.message) || cckT('An error occurred.');
           Craft.cp.displayError(msg);
         });
     }
@@ -805,7 +770,7 @@
       btn.addEventListener('click', function () {
         var siteId = btn.getAttribute('data-reset-site');
         cckConfirmAndSend(
-          'Remove every override for this site and return it to Global Settings?',
+          cckT('Remove every override for this site and return it to Global Settings?'),
           'cookie-consent-flow/settings/reset-multi-site-override',
           {siteId: siteId}
         );
@@ -820,12 +785,33 @@
         if (!fromSiteId) return;
 
         cckConfirmAndSend(
-          'Replace this site’s overrides with a copy of the selected site’s? This cannot be undone.',
+          cckT('Replace this site’s overrides with a copy of the selected site’s? This cannot be undone.'),
           'cookie-consent-flow/settings/copy-multi-site-override',
           {fromSiteId: fromSiteId, toSiteId: toSiteId}
         );
       });
     });
+
+    /* ------------------------------------------------------------------
+       Invalidate existing consent
+
+       A button rather than a submit control: the Settings page is one form
+       posting to settings/save, so a second submit inside it would have to
+       fight over the `action` parameter. The confirm step is not ceremony —
+       this asks the site's entire audience to consent again and cannot be
+       undone.
+    ------------------------------------------------------------------ */
+    var invalidateBtn = document.getElementById('cck-invalidate-consent');
+
+    if (invalidateBtn) {
+      invalidateBtn.addEventListener('click', function () {
+        cckConfirmAndSend(
+          invalidateBtn.getAttribute('data-confirm'),
+          invalidateBtn.getAttribute('data-action'),
+          {}
+        );
+      });
+    }
 
     /* ------------------------------------------------------------------
        Dashboard live preview — Desktop / Tablet / Mobile switcher

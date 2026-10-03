@@ -4,9 +4,27 @@ namespace sfsinfotech\craftcookieconsentflow\migrations;
 
 use craft\db\Migration;
 use craft\helpers\Json;
+use sfsinfotech\craftcookieconsentflow\models\Settings;
 
 /**
- * Install migration — creates all database tables required by Cookie Consent Flow.
+ * Install migration — creates every table and column Cookie Consent Flow needs.
+ *
+ * **This is the single source of truth for the schema, and the single
+ * canonical migration while the plugin is in its build phase.** Nothing has
+ * been published, so schema changes are made here and nowhere else; there
+ * are no incremental migrations. Every helper reconciles an existing table
+ * rather than assuming an empty one, so running {@see reconcile()} against a
+ * database partway to the current schema converges on it instead of failing.
+ *
+ * Once a release is published this convention ends: from the next schema
+ * change, add a timestamped migration that calls reconcile() and bump
+ * `Plugin::$schemaVersion`, because installations will then hold consent
+ * evidence that an uninstall/reinstall would destroy. See CLAUDE.md.
+ *
+ * The two data-migration paths below (`settingsData` JSON blob → relational
+ * columns, and a leftover `categories` column) serve installs of the
+ * development builds published on the `main` branch (schema 1.6.x/1.7.x)
+ * before 1.0.0; they are guarded by column-existence checks.
  */
 class Install extends Migration
 {
@@ -14,7 +32,10 @@ class Install extends Migration
 
     /** Boolean settings columns (nullable on site rows: NULL = inherit from global). */
     private const BOOL_FIELDS = [
-        'bannerEnabled', 'fullWidth', 'shadow', 'fixedPosition', 'geoEnabled', 'logEnabled',
+        'bannerEnabled', 'fullWidth', 'shadow', 'geoEnabled', 'logEnabled',
+        'consentModeEnabled', 'consentModeAutoInject',
+        'consentModeUrlPassthrough', 'consentModeAdsDataRedaction',
+        'respectGpc', 'respectDnt',
     ];
 
     /** Short string settings columns (labels, enums, layout dimensions). */
@@ -26,9 +47,18 @@ class Install extends Migration
         'savePreferencesText', 'closeButtonText',
         'borderRadius', 'padding', 'maxWidth', 'maxHeight',
         'policyVersion',
+        'consentModeType',
     ];
 
-    /** Colour settings columns. */
+    /**
+     * Colour settings columns.
+     *
+     * Width comes from {@see Settings::COLOR_MAX_LENGTH} rather than a literal,
+     * because the model's validation is bounded by the same constant. These
+     * were 30 characters while validation was unbounded, so a legitimate
+     * longer `hsla(...)`/`rgba(...)` value passed the control panel and then
+     * failed at INSERT on strict MySQL and on PostgreSQL.
+     */
     private const COLOR_FIELDS = [
         'bannerBgColor', 'bannerBorderColor', 'overlayColor',
         'headingColor', 'descriptionColor', 'linkColor',
@@ -58,13 +88,28 @@ class Install extends Migration
      * asset is later deleted, Settings::getLogoAsset()/getLogoUrl() just
      * return null for the stale id rather than needing cascade behaviour).
      */
-    private const INT_FIELDS = ['logRetentionDays', 'consentExpiryDays', 'logoAssetId'];
+    private const INT_FIELDS = [
+        'logRetentionDays', 'consentExpiryDays', 'logoAssetId', 'consentModeWaitForUpdate',
+    ];
 
     // Install
 
     public function safeUp(): bool
     {
-        $this->driver = \Craft::$app->getConfig()->getDb()->driver;
+        $this->reconcile();
+
+        return true;
+    }
+
+    /**
+     * Brings the database to the current schema from any earlier state —
+     * nothing at all (a fresh install), or any schema a released or
+     * development build of this plugin left behind. Idempotent: on a current
+     * database it changes nothing.
+     */
+    public function reconcile(): void
+    {
+        $this->driver = $this->db->getDriverName();
 
         $this->_createConsentLogTable();
         $this->_createCategoryTableIfMissing();
@@ -73,14 +118,34 @@ class Install extends Migration
         $this->_migrateLeftoverJsonCategoriesColumn();
         $this->_createCookieDefinitionTableIfMissing();
         $this->_createDetectedCookieTableIfMissing();
-
-        return true;
+        $this->_dropRetiredSettingsColumns();
+        $this->_pruneOrphanedSiteRows();
     }
 
     // Uninstall
 
+    /**
+     * Uninstalling removes every table the plugin created — **including the
+     * consent records**, which are the site's evidence of what its visitors
+     * agreed to. That is Craft's convention for a plugin's own tables, and
+     * the only way to leave no trace behind; it is also irreversible. The
+     * README says so under "Uninstalling" and recommends exporting the
+     * records first; the number of records dropped is written to the Craft
+     * log so the loss is at least recorded.
+     */
     public function safeDown(): bool
     {
+        if ($this->db->tableExists('{{%cookieconsent_log}}')) {
+            $count = (int) (new \craft\db\Query())->from('{{%cookieconsent_log}}')->count('*', $this->db);
+
+            if ($count > 0) {
+                \Craft::warning(
+                    "Uninstalling Cookie Consent Flow deletes {$count} consent record(s). Export them first if they may be needed as evidence.",
+                    __METHOD__
+                );
+            }
+        }
+
         $this->dropTableIfExists('{{%cookieconsent_detected_cookie}}');
         $this->dropTableIfExists('{{%cookieconsent_cookie}}');
         $this->dropTableIfExists('{{%cookieconsent_category}}');
@@ -92,29 +157,73 @@ class Install extends Migration
 
     // Private helpers
 
+    /**
+     * Consent record storage. `source` records how a decision was reached
+     * (banner, a browser privacy signal, or the JavaScript API); `policyVersion`
+     * records what the visitor was consenting *to* at the time.
+     *
+     * Indexes: the records list and every export order by `dateCreated` and
+     * usually filter by site first, so that pair carries the list query; the
+     * standalone `dateCreated` index is what makes retention purging
+     * (`WHERE dateCreated < cutoff`, across all sites) a range scan rather than
+     * a full table scan once the table is large.
+     */
     private function _createConsentLogTable(): void
     {
         if ($this->db->tableExists('{{%cookieconsent_log}}')) {
+            $this->_upgradeConsentLogTable();
             return;
         }
 
         $this->createTable('{{%cookieconsent_log}}', [
-            'id'          => $this->primaryKey(),
-            'visitorUuid' => $this->string(36)->notNull(),
-            'ipHash'      => $this->string(64)->notNull(),
-            'siteId'      => $this->integer()->notNull(),
-            'categories'  => $this->text()->notNull(),
-            'action'      => $this->string(20)->notNull(),
+            'id'            => $this->primaryKey(),
+            'visitorUuid'   => $this->string(36)->notNull(),
+            'ipHash'        => $this->string(64)->notNull(),
+            'siteId'        => $this->integer()->notNull(),
+            'categories'    => $this->text()->notNull(),
+            'action'        => $this->string(20)->notNull(),
             'policyVersion' => $this->string(50)->notNull()->defaultValue(''),
-            'countryCode' => $this->string(2)->null(),
-            'userAgent'   => $this->string(500)->notNull()->defaultValue(''),
-            'dateCreated' => $this->dateTime()->notNull(),
-            'dateUpdated' => $this->dateTime()->notNull(),
-            'uid'         => $this->uid(),
+            'source'        => $this->string(20)->notNull()->defaultValue('banner'),
+            'countryCode'   => $this->string(2)->null(),
+            'userAgent'     => $this->string(500)->notNull()->defaultValue(''),
+            'dateCreated'   => $this->dateTime()->notNull(),
+            'dateUpdated'   => $this->dateTime()->notNull(),
+            'uid'           => $this->uid(),
         ]);
 
         $this->createIndex(null, '{{%cookieconsent_log}}', 'visitorUuid');
         $this->createIndex(null, '{{%cookieconsent_log}}', ['siteId', 'action']);
+        $this->createIndex(null, '{{%cookieconsent_log}}', ['siteId', 'dateCreated']);
+        $this->createIndex(null, '{{%cookieconsent_log}}', 'dateCreated');
+    }
+
+    /**
+     * Reconciles an existing consent table with the current record shape.
+     *
+     * reconcile() converges existing databases as well as creating fresh
+     * ones, so this must do more than return when a table already exists. In particular, 1.6.x
+     * development installs have no `source` column; without this every
+     * consent save after upgrading fails at INSERT time.
+     */
+    private function _upgradeConsentLogTable(): void
+    {
+        $table = '{{%cookieconsent_log}}';
+
+        if (!$this->db->columnExists($table, 'policyVersion')) {
+            $this->addColumn($table, 'policyVersion', $this->string(50)->notNull()->defaultValue(''));
+        }
+
+        if (!$this->db->columnExists($table, 'source')) {
+            $this->addColumn($table, 'source', $this->string(20)->notNull()->defaultValue('banner'));
+        }
+
+        if (!$this->_hasIndex($table, ['siteId', 'dateCreated'])) {
+            $this->createIndex(null, $table, ['siteId', 'dateCreated']);
+        }
+
+        if (!$this->_hasIndex($table, ['dateCreated'])) {
+            $this->createIndex(null, $table, 'dateCreated');
+        }
     }
 
     /**
@@ -122,17 +231,24 @@ class Install extends Migration
      * `cookieconsent_settings` row it belongs to (global or a specific
      * site's override row). A settings row with no category rows inherits
      * categories from global, the same meaning a NULL `categories` column
-     * used to have before this table existed. Created before the settings
-     * table is created (without its FK yet — `cookieconsent_settings` may
-     * not exist yet at this point on a fresh install) before the settings
-     * table is created/upgraded, so any data-migration path below can write
-     * into it immediately. The FK itself is added afterward, once
-     * `cookieconsent_settings` is guaranteed to exist — see
-     * `_addCategoryForeignKeyIfMissing()`.
+     * used to have before this table existed.
+     *
+     * `gcmSignals` is the category's Google Consent Mode v2 mapping, stored as
+     * a JSON array (whole-value in/out, never queried per-element). An empty
+     * or NULL value means the category grants no signal, which is the safe
+     * reading of "nobody has said what this category corresponds to".
+     *
+     * Created before the settings table (without its FK yet —
+     * `cookieconsent_settings` may not exist at this point on a fresh install)
+     * so any data-migration path below can write into it immediately. The FK
+     * is added afterwards by `_addCategoryForeignKeyIfMissing()`.
      */
     private function _createCategoryTableIfMissing(): void
     {
         if ($this->db->tableExists('{{%cookieconsent_category}}')) {
+            if (!$this->db->columnExists('{{%cookieconsent_category}}', 'gcmSignals')) {
+                $this->addColumn('{{%cookieconsent_category}}', 'gcmSignals', $this->text()->null());
+            }
             return;
         }
 
@@ -144,6 +260,7 @@ class Install extends Migration
             'description' => $this->text()->null(),
             'isDefault'   => $this->boolean()->notNull()->defaultValue(false),
             'isLocked'    => $this->boolean()->notNull()->defaultValue(false),
+            'gcmSignals'  => $this->text()->null(),
             'sortOrder'   => $this->integer()->notNull()->defaultValue(0),
             'dateCreated' => $this->dateTime()->notNull(),
             'dateUpdated' => $this->dateTime()->notNull(),
@@ -204,6 +321,47 @@ class Install extends Migration
         if ($this->db->columnExists('{{%cookieconsent_settings}}', 'settingsData')) {
             $this->_upgradeSettingsTableFromJsonBlob();
         }
+
+        // A relational settings table can still be from an earlier schema
+        // version. Add new nullable setting columns in place so existing
+        // values and per-site inheritance remain untouched.
+        foreach ($this->_settingsColumnDefinitions() as $field => $definition) {
+            if (!$this->db->columnExists('{{%cookieconsent_settings}}', $field)) {
+                $this->addColumn('{{%cookieconsent_settings}}', $field, $definition);
+            }
+        }
+
+        $this->_widenColorColumns();
+    }
+
+    /**
+     * Brings colour columns created at the old 30-character width up to
+     * {@see Settings::COLOR_MAX_LENGTH}.
+     *
+     * A column that is merely present is not a column that is wide enough, and
+     * the add-if-missing loop above cannot see the difference — so a database
+     * created before the width changed would keep rejecting the longer
+     * `hsla(...)` values the model now accepts. Widening is loss-free in both
+     * supported drivers, and skipped where the column is already at least this
+     * wide so re-running the migration alters nothing.
+     */
+    private function _widenColorColumns(): void
+    {
+        $columns = $this->db->getSchema()->getTableSchema('{{%cookieconsent_settings}}', true)?->columns ?? [];
+
+        foreach (self::COLOR_FIELDS as $field) {
+            $column = $columns[$field] ?? null;
+
+            if ($column === null || (int) $column->size >= Settings::COLOR_MAX_LENGTH) {
+                continue;
+            }
+
+            $this->alterColumn(
+                '{{%cookieconsent_settings}}',
+                $field,
+                $this->string(Settings::COLOR_MAX_LENGTH)->null()
+            );
+        }
     }
 
     private function _createSettingsTableFresh(): void
@@ -238,7 +396,7 @@ class Install extends Migration
             $columns[$field] = $this->string(255)->null();
         }
         foreach (self::COLOR_FIELDS as $field) {
-            $columns[$field] = $this->string(30)->null();
+            $columns[$field] = $this->string(Settings::COLOR_MAX_LENGTH)->null();
         }
         foreach (self::TEXT_FIELDS as $field) {
             $columns[$field] = $this->text()->null();
@@ -265,7 +423,14 @@ class Install extends Migration
     {
         foreach ($this->_settingsColumnDefinitions() as $field => $definition) {
             if (!$this->db->columnExists('{{%cookieconsent_settings}}', $field)) {
-                $this->addColumn('{{%cookieconsent_settings}}', $field, $definition);
+                // PostgreSQL cannot add a NOT NULL column to a populated table
+                // without a value. Add siteId nullable, populate the legacy
+                // global/site rows below, then make it required.
+                $this->addColumn(
+                    '{{%cookieconsent_settings}}',
+                    $field,
+                    $field === 'siteId' ? $this->integer()->null() : $definition
+                );
             }
         }
 
@@ -313,6 +478,8 @@ class Install extends Migration
         if ($this->db->columnExists('{{%cookieconsent_settings}}', 'settingsData')) {
             $this->dropColumn('{{%cookieconsent_settings}}', 'settingsData');
         }
+
+        $this->alterColumn('{{%cookieconsent_settings}}', 'siteId', $this->integer()->notNull());
 
         if (!$this->_hasUniqueIndexOnSiteId()) {
             $this->createIndex(null, '{{%cookieconsent_settings}}', 'siteId', true);
@@ -367,6 +534,7 @@ class Install extends Migration
                 'description' => (string) ($category['description'] ?? ''),
                 'isDefault'   => !empty($category['default']),
                 'isLocked'    => !empty($category['locked']),
+                'gcmSignals'  => Json::encode(array_values((array) ($category['gcmSignals'] ?? []))),
                 'sortOrder'   => $sortOrder,
                 'dateCreated' => $now,
                 'dateUpdated' => $now,
@@ -407,6 +575,7 @@ class Install extends Migration
         ]);
 
         $this->createIndex(null, '{{%cookieconsent_cookie}}', ['settingsId', 'categoryKey']);
+        $this->createIndex(null, '{{%cookieconsent_cookie}}', 'name');
 
         $this->addForeignKey(
             null,
@@ -425,24 +594,131 @@ class Install extends Migration
      * CookieDetectionController), so the Cookies page can flag anything
      * nobody has documented yet without a developer having to already know
      * it exists. Names only, never values, no visitor identifier.
+     *
+     * `dateCreated` is when a name was first seen and `lastSeen` when it was
+     * most recently seen. `name` compares case-sensitively on both drivers,
+     * because cookie names are case-sensitive: `_GA` and `_ga` are two
+     * cookies. PostgreSQL does this by default; on MySQL the column needs a
+     * binary collation, or the unique index treats them as one.
      */
     private function _createDetectedCookieTableIfMissing(): void
     {
-        if ($this->db->tableExists('{{%cookieconsent_detected_cookie}}')) {
+        $table = '{{%cookieconsent_detected_cookie}}';
+
+        if (!$this->db->tableExists($table)) {
+            $this->createTable($table, [
+                'id'          => $this->primaryKey(),
+                'siteId'      => $this->integer()->notNull(),
+                'name'        => $this->string(255)->notNull(),
+                'isDismissed' => $this->boolean()->notNull()->defaultValue(false),
+                'lastSeen'    => $this->dateTime()->null(),
+                'dateCreated' => $this->dateTime()->notNull(),
+                'dateUpdated' => $this->dateTime()->notNull(),
+                'uid'         => $this->uid(),
+            ]);
+
+            $this->createIndex(null, $table, ['siteId', 'name'], true);
+        } elseif (!$this->db->columnExists($table, 'lastSeen')) {
+            $this->addColumn($table, 'lastSeen', $this->dateTime()->null());
+
+            // Until now "last seen" was dateUpdated, which is the best value
+            // there is for rows recorded before the column existed.
+            // Without touching dateUpdated itself, which is what is being read.
+            $this->update($table, ['lastSeen' => new \yii\db\Expression('[[dateUpdated]]')], '', [], false);
+        }
+
+        $this->_makeDetectedNameCaseSensitive();
+    }
+
+    /**
+     * On MySQL, gives `cookieconsent_detected_cookie.name` the binary
+     * collation of its own character set, unless it already has one.
+     * No-op on PostgreSQL, whose text comparison is already case-sensitive.
+     */
+    private function _makeDetectedNameCaseSensitive(): void
+    {
+        if ($this->driver !== 'mysql') {
             return;
         }
 
-        $this->createTable('{{%cookieconsent_detected_cookie}}', [
-            'id'          => $this->primaryKey(),
-            'siteId'      => $this->integer()->notNull(),
-            'name'        => $this->string(255)->notNull(),
-            'isDismissed' => $this->boolean()->notNull()->defaultValue(false),
-            'dateCreated' => $this->dateTime()->notNull(),
-            'dateUpdated' => $this->dateTime()->notNull(),
-            'uid'         => $this->uid(),
-        ]);
+        $table = $this->db->getSchema()->getRawTableName('{{%cookieconsent_detected_cookie}}');
 
-        $this->createIndex(null, '{{%cookieconsent_detected_cookie}}', ['siteId', 'name'], true);
+        $column = (new \craft\db\Query())
+            ->select(['CHARACTER_SET_NAME', 'COLLATION_NAME'])
+            ->from('information_schema.COLUMNS')
+            ->where([
+                'TABLE_SCHEMA' => new \yii\db\Expression('DATABASE()'),
+                'TABLE_NAME'   => $table,
+                'COLUMN_NAME'  => 'name',
+            ])
+            ->one($this->db);
+
+        if (!$column || str_ends_with((string) $column['COLLATION_NAME'], '_bin')) {
+            return;
+        }
+
+        $charset = preg_replace('/[^a-z0-9_]/i', '', (string) $column['CHARACTER_SET_NAME']) ?: 'utf8mb4';
+
+        $this->execute(sprintf(
+            'ALTER TABLE %s MODIFY %s VARCHAR(255) CHARACTER SET %s COLLATE %s_bin NOT NULL',
+            $this->db->quoteTableName($table),
+            $this->db->quoteColumnName('name'),
+            $charset,
+            $charset
+        ));
+    }
+
+    /**
+     * Removes settings rows (with their categories and cookies) and detected
+     * cookies belonging to sites that no longer exist. They can never be shown
+     * or edited; deletions from now on are cleaned up as they happen (see
+     * Plugin::_registerSiteCleanup()). Consent records are kept as evidence.
+     * Nothing matches on a fresh install.
+     */
+    private function _pruneOrphanedSiteRows(): void
+    {
+        if (!$this->db->tableExists('{{%sites}}') || !$this->db->tableExists('{{%cookieconsent_settings}}')) {
+            return;
+        }
+
+        // Soft-deleted sites count as deleted: their rows are unreachable too.
+        $siteIds = (new \craft\db\Query())->select(['id'])->from('{{%sites}}')->where(['dateDeleted' => null])->column($this->db);
+
+        if ($siteIds === []) {
+            return;
+        }
+
+        $orphaned = (new \craft\db\Query())
+            ->select(['id'])
+            ->from('{{%cookieconsent_settings}}')
+            ->where(['not', ['siteId' => 0]])
+            ->andWhere(['not in', 'siteId', $siteIds])
+            ->column($this->db);
+
+        if ($orphaned !== []) {
+            // Children first: the category foreign key may be missing on the
+            // oldest databases, so the cascade is not relied upon.
+            $this->delete('{{%cookieconsent_category}}', ['settingsId' => $orphaned]);
+            $this->delete('{{%cookieconsent_cookie}}', ['settingsId' => $orphaned]);
+            $this->delete('{{%cookieconsent_settings}}', ['id' => $orphaned]);
+        }
+
+        $this->delete('{{%cookieconsent_detected_cookie}}', ['not in', 'siteId', $siteIds]);
+    }
+
+    /**
+     * Settings columns that no longer mean anything. `fixedPosition` was a
+     * control-panel switch no layout ever read (see Settings::$fixedPosition);
+     * its values carry no information worth keeping.
+     */
+    private function _dropRetiredSettingsColumns(): void
+    {
+        foreach (['fixedPosition'] as $column) {
+            if ($this->db->tableExists('{{%cookieconsent_settings}}')
+                && $this->db->columnExists('{{%cookieconsent_settings}}', $column)) {
+                $this->dropColumn('{{%cookieconsent_settings}}', $column);
+            }
+        }
     }
 
     /**
@@ -488,6 +764,24 @@ class Install extends Migration
     {
         foreach ($this->db->getSchema()->getTableIndexes('{{%cookieconsent_settings}}') as $index) {
             if ($index->isUnique && $index->columnNames === ['siteId']) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /**
+     * Returns whether a table already has an index with the exact columns.
+     * Index names vary by database driver, so column identity is the durable
+     * way to make schema reconciliation idempotent.
+     *
+     * @param string[] $columns
+     */
+    private function _hasIndex(string $table, array $columns): bool
+    {
+        foreach ($this->db->getSchema()->getTableIndexes($table) as $index) {
+            if ($index->columnNames === $columns) {
                 return true;
             }
         }

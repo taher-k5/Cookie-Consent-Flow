@@ -5,8 +5,8 @@ namespace sfsinfotech\craftcookieconsentflow\controllers;
 use Craft;
 use craft\web\Controller;
 use sfsinfotech\craftcookieconsentflow\helpers\ConsentHelper;
+use sfsinfotech\craftcookieconsentflow\helpers\Permissions;
 use sfsinfotech\craftcookieconsentflow\Plugin;
-use yii\web\ForbiddenHttpException;
 use yii\web\Response;
 
 /**
@@ -27,13 +27,7 @@ class DashboardController extends Controller
         // permission rather than leaving it open to any CP user, matching
         // SettingsController/LogsController's posture. Admins always pass
         // checkPermission() regardless, per Craft's own convention.
-        $user = Craft::$app->getUser();
-        if (
-            !$user->checkPermission('cookieConsentFlow:manageSettings') &&
-            !$user->checkPermission('cookieConsentFlow:viewLogs')
-        ) {
-            throw new ForbiddenHttpException('User is not permitted to perform this action.');
-        }
+        Permissions::requireAny(Permissions::MANAGE_SETTINGS, Permissions::VIEW_LOGS);
 
         return true;
     }
@@ -43,7 +37,20 @@ class DashboardController extends Controller
         $this->requireCpRequest();
 
         $plugin = Plugin::getInstance();
-        $site   = ConsentHelper::resolveSiteFromParam(Craft::$app->getRequest()->getParam('site'));
+        $param  = Craft::$app->getRequest()->getParam('site');
+        $site   = ConsentHelper::resolveSiteFromParam(is_string($param) || is_int($param) ? $param : null);
+
+        // Only a site this user may see; with none requested, their first.
+        $accessible = Permissions::accessibleSites();
+        if (!Permissions::canAccessSite((int) $site->id)) {
+            if ($param !== null && $param !== '') {
+                Permissions::requireSite((int) $site->id);
+            }
+            if ($accessible === []) {
+                throw new \yii\web\ForbiddenHttpException('User is not permitted to access any site.');
+            }
+            $site = $accessible[0];
+        }
 
         $settings = $plugin->cookieSettings->getEffectiveSettings($site->id);
 
@@ -59,7 +66,13 @@ class DashboardController extends Controller
             'plugin'      => $plugin,
             'settings'    => $settings,
             'currentSite' => $site,
-            'allSites'    => Craft::$app->getSites()->getAllSites(),
+            'allSites'    => $accessible,
+            // Cached aggregate (see StatisticsService) rather than a fresh
+            // scan — this page is reloaded constantly while an admin is
+            // tuning the banner right next to it.
+            'overview'    => $plugin->statistics->getActionCounts($site->id),
+            'canViewLogs' => Permissions::canAny(Permissions::VIEW_LOGS),
+            'canManageSettings' => Permissions::canAny(Permissions::MANAGE_SETTINGS),
         ]);
     }
 }

@@ -55,15 +55,23 @@ use craft\db\ActiveRecord;
  * @property string|null $padding
  * @property string|null $maxWidth
  * @property string|null $maxHeight
+ * @property string|null $maxHeight
  * @property bool|null   $fullWidth
  * @property bool|null   $shadow
- * @property bool|null   $fixedPosition
  * @property bool|null   $geoEnabled
  * @property string|null $geoTargetCountries JSON-encoded array, whole-value override.
  * @property bool|null   $logEnabled Only meaningful on the global row.
  * @property int|null    $logRetentionDays Only meaningful on the global row.
  * @property int|null    $consentExpiryDays Only meaningful on the global row.
  * @property string|null $policyVersion Only meaningful on the global row.
+ * @property bool|null   $consentModeEnabled
+ * @property string|null $consentModeType 'advanced' | 'basic'.
+ * @property bool|null   $consentModeAutoInject
+ * @property int|null    $consentModeWaitForUpdate Milliseconds; 0 omits wait_for_update.
+ * @property bool|null   $consentModeUrlPassthrough
+ * @property bool|null   $consentModeAdsDataRedaction
+ * @property bool|null   $respectGpc Only meaningful on the global row.
+ * @property bool|null   $respectDnt Only meaningful on the global row.
  * @property string      $dateCreated
  * @property string      $dateUpdated
  * @property string      $uid

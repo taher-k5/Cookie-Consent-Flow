@@ -5,6 +5,7 @@ namespace sfsinfotech\craftcookieconsentflow\controllers;
 use Craft;
 use craft\web\Controller;
 use sfsinfotech\craftcookieconsentflow\helpers\CookieLibrary;
+use sfsinfotech\craftcookieconsentflow\helpers\Permissions;
 use sfsinfotech\craftcookieconsentflow\Plugin;
 use yii\web\Response;
 
@@ -26,9 +27,9 @@ class CookiesController extends Controller
             return false;
         }
 
-        // Same tier as Settings — this content is rendered on every
-        // front-end page for every visitor.
-        $this->requirePermission('cookieConsentFlow:manageSettings');
+        // Same permission as the consolidated Settings form: disclosures are
+        // rendered to every visitor and are part of the site's configuration.
+        Permissions::requireAny(Permissions::MANAGE_SETTINGS);
 
         return true;
     }
@@ -48,13 +49,17 @@ class CookiesController extends Controller
         $plugin = Plugin::getInstance();
         $raw    = Craft::$app->getRequest()->getBodyParam('cookies', []);
 
-        if (!$plugin->cookieDefinitions->saveAll($plugin->cookieSettings->getGlobalSettingsId(), $raw)) {
-            Craft::$app->getSession()->setError(Craft::t('cookie-consent-flow', "Couldn't save cookies."));
+        if (!is_array($raw) || !$plugin->cookieDefinitions->saveAll($plugin->cookieSettings->getGlobalSettingsId(), $raw)) {
+            $errors = is_array($raw) ? $plugin->cookieDefinitions->getValidationErrors() : [];
+
+            Craft::$app->getSession()->setError(trim(
+                Craft::t('cookie-consent-flow', "Couldn't save cookies.") . ' ' . implode(' ', $errors)
+            ));
 
             return $this->renderTemplate('cookie-consent-flow/cookies/index', $this->_templateVars());
         }
 
-        Craft::$app->getSession()->setNotice(Craft::t('cookie-consent-flow', 'Cookies saved.'));
+        Craft::$app->getSession()->setSuccess(Craft::t('cookie-consent-flow', 'Cookies saved.'));
 
         return $this->redirectToPostedUrl();
     }
@@ -86,10 +91,17 @@ class CookiesController extends Controller
     {
         $plugin = Plugin::getInstance();
 
+        $settings   = $plugin->getSettings();
+        $settingsId = $plugin->cookieSettings->getGlobalSettingsId();
+
         return [
-            'settings'     => $plugin->getSettings(),
-            'cookies'      => $plugin->cookieDefinitions->getAll($plugin->cookieSettings->getGlobalSettingsId()),
-            'undocumented' => $plugin->cookieDefinitions->getUndocumented(),
+            'settings'     => $settings,
+            'cookies'      => $plugin->cookieDefinitions->getAll($settingsId),
+            'undocumented' => $plugin->cookieDefinitions->getUndocumentedDetails(),
+            // Disclosures left behind by a renamed or deleted category. They
+            // are not shown to visitors, so an admin has to be told they exist
+            // rather than discovering it from a gap in the preferences modal.
+            'orphaned'     => $plugin->cookieDefinitions->getOrphaned($settingsId, $settings->getCategoryKeys()),
             'library'      => CookieLibrary::getEntries(),
             'plugin'       => $plugin,
         ];

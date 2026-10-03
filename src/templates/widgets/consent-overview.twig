@@ -14,11 +14,11 @@
         </div>
         <div class="cck-widget-stat">
             <div class="cck-widget-stat__number cck-widget-stat__number--green">{{ stats.acceptAll }}</div>
-            <div class="cck-widget-stat__label">{{ "Accepted All"|t('cookie-consent-flow') }}</div>
+            <div class="cck-widget-stat__label">{{ "Accept All"|t('cookie-consent-flow') }}</div>
         </div>
         <div class="cck-widget-stat">
             <div class="cck-widget-stat__number cck-widget-stat__number--red">{{ stats.rejectAll }}</div>
-            <div class="cck-widget-stat__label">{{ "Rejected All"|t('cookie-consent-flow') }}</div>
+            <div class="cck-widget-stat__label">{{ "Reject All"|t('cookie-consent-flow') }}</div>
         </div>
         <div class="cck-widget-stat">
             <div class="cck-widget-stat__number cck-widget-stat__number--blue">{{ stats.custom }}</div>
@@ -27,6 +27,6 @@
     </div>
 
     <p class="cck-widget-link">
-        <a href="{{ logsUrl }}">{{ "View all consent logs"|t('cookie-consent-flow') }} &rarr;</a>
+        <a href="{{ logsUrl }}">{{ "View all consent records"|t('cookie-consent-flow') }} &rarr;</a>
     </p>
 {% endif %}

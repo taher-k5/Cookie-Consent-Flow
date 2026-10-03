@@ -1,0 +1,9 @@
+{# Fixture: the banner placed by hand, plus the footer control. #}
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><title>CCF manual</title></head>
+<body>
+  {{ craft.cookieConsent.renderBanner() }}
+  <footer>{{ craft.cookieConsent.renderPreferencesButton() }}</footer>
+</body>
+</html>

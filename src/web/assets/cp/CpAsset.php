@@ -10,10 +10,11 @@ use craft\web\assets\cp\CpAsset as CraftCpAsset;
  */
 class CpAsset extends AssetBundle
 {
-    public $publishOptions = ['forceCopy' => true];
-
     public function init(): void
     {
+        // Development convenience only — see BannerAsset for the reasoning.
+        $this->publishOptions = ['forceCopy' => \Craft::$app->getConfig()->getGeneral()->devMode];
+
         $this->sourcePath = __DIR__;
 
         $this->depends = [

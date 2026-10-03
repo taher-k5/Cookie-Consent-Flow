@@ -1,0 +1,11 @@
+{# Fixture: a page under a nonce-based script policy, with a nonced inline gated script. #}
+{% header "Content-Security-Policy: script-src 'self' 'nonce-ccfTestNonce'; style-src 'self'; object-src 'none'" %}
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><title>CCF CSP</title></head>
+<body>
+  <script type="text/plain" data-cck-category="analytics" nonce="ccfTestNonce">window.ccfNoncedRan = true;</script>
+  <script type="text/plain" data-cck-category="analytics">window.ccfUnnoncedRan = true;</script>
+  <footer>{{ craft.cookieConsent.renderPreferencesButton() }}</footer>
+</body>
+</html>
