@@ -19,6 +19,7 @@ use craft\web\View;
 use sfsinfotech\craftcookieconsentflow\events\BeforeBannerRenderEvent;
 use sfsinfotech\craftcookieconsentflow\models\Settings;
 use sfsinfotech\craftcookieconsentflow\helpers\ConsentHelper;
+use sfsinfotech\craftcookieconsentflow\helpers\Onboarding;
 use sfsinfotech\craftcookieconsentflow\helpers\Permissions;
 use sfsinfotech\craftcookieconsentflow\helpers\PluginConfig;
 use sfsinfotech\craftcookieconsentflow\services\ConsentModeService;
@@ -30,6 +31,7 @@ use sfsinfotech\craftcookieconsentflow\services\SettingsService;
 use sfsinfotech\craftcookieconsentflow\variables\CookieConsentVariable;
 use sfsinfotech\craftcookieconsentflow\widgets\ConsentWidget;
 use sfsinfotech\craftcookieconsentflow\web\assets\cp\CpAsset;
+use sfsinfotech\craftcookieconsentflow\web\assets\onboarding\OnboardingAsset;
 use yii\base\Event;
 
 /**
@@ -51,6 +53,9 @@ class Plugin extends BasePlugin
 
     /** Whether a Twig call already rendered (or deliberately suppressed) the banner this request. */
     private bool $_bannerHandled = false;
+
+    /** Whether this request's page already has the welcome tour registered. */
+    private bool $_onboardingRegistered = false;
 
     /**
      * Craft compares this against the version stored at install time to decide
@@ -449,7 +454,55 @@ class Plugin extends BasePlugin
                     'window.cckStrings = ' . ConsentHelper::jsonForHtml($this->_cpStrings()) . ';',
                     View::POS_HEAD
                 );
+
+                $this->_registerOnboarding($view);
             }
+        );
+    }
+
+    /**
+     * Offers the welcome tour on the plugin's own pages (see
+     * helpers/Onboarding). The script and its steps are registered for every
+     * user who can open a plugin page, so Settings can replay the tour; it
+     * starts on its own only for a user who has not finished or dismissed it.
+     */
+    private function _registerOnboarding(View $view): void
+    {
+        if ($this->_onboardingRegistered) {
+            return;
+        }
+
+        $request = Craft::$app->getRequest();
+        $user    = Craft::$app->getUser()->getIdentity();
+
+        if ($user === null || $request->getIsActionRequest() || !Onboarding::isPluginPage($request->getPathInfo())) {
+            return;
+        }
+
+        $subnav = self::subnavFor(
+            Permissions::canAny(Permissions::MANAGE_SETTINGS),
+            Permissions::canAny(Permissions::VIEW_LOGS),
+            count(Craft::$app->getSites()->getAllSites()) > 1
+        );
+
+        if ($subnav === []) {
+            return;
+        }
+
+        $this->_onboardingRegistered = true;
+
+        try {
+            $seen = Onboarding::hasSeen($user);
+        } catch (\Throwable $e) {
+            // An unreadable preference must not pester the user on every page.
+            Craft::warning('Cookie Consent Flow could not read the welcome tour preference: ' . $e->getMessage(), __METHOD__);
+            $seen = true;
+        }
+
+        $view->registerAssetBundle(OnboardingAsset::class);
+        $view->registerJs(
+            'window.cckTour = ' . ConsentHelper::jsonForHtml(Onboarding::config($seen, $subnav)) . ';',
+            View::POS_HEAD
         );
     }
 

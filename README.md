@@ -72,6 +72,12 @@ running `composer require`.
 
 The banner is added to every HTML page automatically, just before `</body>`.
 
+The first time each user opens a Cookie Consent page, a short welcome tour
+shows where these screens are, covering only the screens their permissions
+allow. Once they finish or close it, it does not open again for that user. It
+can be replayed with **Replay Tour** at the bottom of
+**Cookie Consent → Settings**.
+
 ## Configuration
 
 Editors manage all settings in the control panel under **Cookie Consent**:

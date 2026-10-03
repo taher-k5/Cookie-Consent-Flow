@@ -26,6 +26,11 @@ in `README.md`; release notes belong in `CHANGELOG.md`.
   within a per-peer cap. Only `X-Forwarded-For` is read, never pass-through
   headers such as `Client-IP`. It fails open on cache failure and logs an
   error. `Throttle::resolveIp()` is also the address the IP hash comes from.
+- `helpers/Onboarding` drives the CP welcome tour (`web/assets/onboarding/`).
+  It is decided per page view, not at install (Craft installs plugins by
+  several paths, most with no browser), and "seen" is the Craft user
+  preference `cookieConsentFlowTourSeen`, so each user sees it once. Steps
+  follow `Plugin::subnavFor()`, so every subnav item needs tour copy.
 - `cookie-banner.js` owns browser state, expiry/policy validation, gating,
   privacy signals, Consent Mode updates, cached-page CSRF, geo resolution, and
   best-effort record/cookie-name sync.

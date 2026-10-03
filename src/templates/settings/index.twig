@@ -239,6 +239,20 @@
 
 </div>{# /#cck-settings #}
 
+<hr>
+<div class="field">
+    <div class="heading">
+        <label>{{ "Welcome Tour"|t('cookie-consent-flow') }}</label>
+    </div>
+    <div class="instructions">
+        <p>{{ "Shows where each part of the plugin is. It opens by itself once for each user, the first time they open the plugin."|t('cookie-consent-flow') }}</p>
+    </div>
+    <div class="input">
+        {# Started by onboarding.js; a button, not a submit, inside the page's one form. #}
+        <button type="button" class="btn" data-cck-tour-replay>{{ "Replay Tour"|t('cookie-consent-flow') }}</button>
+    </div>
+</div>
+
 {% if craft.app.sites.allSites|length > 1 %}
     <hr>
     <p>

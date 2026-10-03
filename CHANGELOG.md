@@ -1,6 +1,6 @@
 # Changelog
 
-## 1.0.0
+## 1.0.0 - 2026-10-03
 
 Initial release version.
 
@@ -18,6 +18,7 @@ Initial release version.
 - Consent expiry and policy invalidation
 - Consent records with filters, statistics, CSV/JSON export and retention
 - Control panel dashboard, dashboard widget and user permissions
+- Welcome tour of the control panel screens, shown once to each user
 - Multisite support with per-site overrides
 - Support for static page caching
 - Keyboard-accessible banner and preference centre
