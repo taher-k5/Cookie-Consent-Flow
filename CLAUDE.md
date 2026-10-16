@@ -35,6 +35,18 @@ in `README.md`; release notes belong in `CHANGELOG.md`.
   OneTrust and Usercentrics do); it is still only a claim the server checks. `consent/id`
   and the save response expose the ID only while the setting is on. Deletion (`DELETE_LOGS`, `records/delete`) is limited to accessible
   sites and logged.
+- User linking (`UserLinkService`, `linkUsers` off by default): the user
+  comes only from Craft's session (never while impersonating). A logged-in
+  decision sets `cookieconsent_log.userId` (FK `SET NULL`); visitor IDs from
+  the validated `cck_visitor_*` cookies are linked in
+  `cookieconsent_user_visitor` (FK `CASCADE`) at login, at a guest's own
+  front-end registration, and at each logged-in decision. A user's records = `userId` match, plus `userId IS NULL` records
+  of linked IDs; IDs linked to other users too are "shared" and never
+  deleted in bulk. At login and registration, each linked ID's latest
+  anonymous record per site, if still valid, gets the user in place
+  (`attachToAccount()`); records are otherwise never updated, so a later
+  `dateUpdated` marks it "Linked at login" (`wasAttached()`). User data in
+  the CP needs `editUsers` or admin.
 - `helpers/PluginConfig` reads `config/cookie-consent-flow.php` — deployment
   facts only (`geoCountryHeader`, `automaticRetention`, `retentionBatchSize`);
   everything editors manage is in the database.
@@ -107,10 +119,12 @@ consent evidence: update `Install.php`, add a timestamped migration
 converge on `Install.php`. The schema version must never go down — Craft
 refuses to apply project config recording a higher version.
 
-- 1.11.0 (release 1.1.0) — `consentScope`, `showConsentId`
-  (`m261016_000000_consent_scope_id`). One migration per release: while a release is
-  unpublished, add its new columns to `Install.php` and keep its single
-  migration, bumping the schema version only so development installs run it.
+- 1.12.0 (release 1.0.5) — consent scope, consent ID, user linking
+  (`m261016_300000_consent_scope_id_users`). One migration per release. While
+  a release is unpublished, add its new schema to `Install.php` and give its
+  single migration a **new timestamp** (plus a schema bump): Craft never runs
+  an applied migration again, so a bump alone would leave development
+  installs without the new columns.
 
 ## Front-end contract
 

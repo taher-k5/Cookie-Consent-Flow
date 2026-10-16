@@ -58,6 +58,32 @@
             </td>
         </tr>
 
+        {% if canViewUsers %}
+            <tr>
+                <th scope="row">{{ "User"|t('cookie-consent-flow') }}</th>
+                <td>
+                    {% if recordUser %}
+                        <a href="{{ recordUser.cpEditUrl }}">{{ recordUser.friendlyName }}</a>
+                        {% if recordAttached %}
+                            <span class="light">({{ "decided as a guest, attached to the account at login or registration on {date}"|t('cookie-consent-flow', { date: record.dateUpdated|datetime('short') }) }})</span>
+                        {% else %}
+                            <span class="light">({{ "decided while logged in"|t('cookie-consent-flow') }})</span>
+                        {% endif %}
+                    {% else %}
+                        <span class="light">{{ "Not logged in"|t('cookie-consent-flow') }}</span>
+                    {% endif %}
+                    {% if linkedUsers is not empty %}
+                        <p class="light">
+                            {{ "This browser was also used by:"|t('cookie-consent-flow') }}
+                            {% for linked in linkedUsers %}
+                                <a href="{{ cpUrl('cookie-consent-flow/logs', { site: 'all', user: linked.id }) }}">{{ linked.friendlyName }}</a>{% if not loop.last %}, {% endif %}
+                            {% endfor %}
+                        </p>
+                    {% endif %}
+                </td>
+            </tr>
+        {% endif %}
+
         <tr>
             <th scope="row">{{ "Source"|t('cookie-consent-flow') }}</th>
             <td>{{ sourceLabels[record.source] ?? record.source ?? '—' }}</td>

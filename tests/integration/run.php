@@ -674,6 +674,141 @@ $check('dsr: deleting a visitor removes only their records, only on the given si
 });
 
 // ---------------------------------------------------------------------------
+// Linking records to logged-in users
+// ---------------------------------------------------------------------------
+
+$check('users: records are found by user, browsers are marked, deletion leaves shared browsers alone', function () use ($plugin) {
+    $service = $plugin->cookieSettings;
+    $links   = $plugin->userLinks;
+    $make    = function (string $name): craft\elements\User {
+        $user = new craft\elements\User(['username' => $name . '-' . bin2hex(random_bytes(3)), 'email' => $name . '-' . bin2hex(random_bytes(3)) . '@example.test']);
+        expect(Craft::$app->getElements()->saveElement($user, false), 'could not create a test user');
+
+        return $user;
+    };
+
+    $anna = $make('anna');
+    $ben  = $make('ben');
+    $own    = craft\helpers\StringHelper::UUID();
+    $shared = craft\helpers\StringHelper::UUID();
+
+    try {
+        expect($service->saveGlobalSettings(['linkUsers' => true]), 'link users');
+        fresh();
+
+        $exact    = insertLog(['visitorUuid' => $own, 'userId' => $anna->id, 'action' => 'accept_all']);
+        $before   = insertLog(['visitorUuid' => $own]);
+        $onShared = insertLog(['visitorUuid' => $shared]);
+        $bens     = insertLog(['visitorUuid' => $shared, 'userId' => $ben->id]);
+
+        $links->link((int) $anna->id, $own);
+        $links->link((int) $anna->id, $own);
+        $links->link((int) $anna->id, $shared);
+        $links->link((int) $ben->id, $shared);
+
+        same(1, (int) (new Query())->from('{{%cookieconsent_user_visitor}}')->where(['userId' => $anna->id, 'visitorUuid' => $own])->count(), 'linked once');
+
+        $ids = $plugin->consent->buildQuery(null, ['userId' => (int) $anna->id])->select(['id'])->column();
+        sort($ids);
+        same([$exact, $before, $onShared], array_map('intval', $ids), 'exact + their browser + shared browser, never another user\'s logged-in record');
+        same(0, (int) $plugin->consent->buildQuery(null, ['userId' => 0])->count(), 'an unknown user matched records');
+
+        same(1, $plugin->consent->deleteUserRecords((int) $anna->id, false, null, dryRun: true), 'exact only');
+        same(2, $plugin->consent->deleteUserRecords((int) $anna->id, true, null, dryRun: true), 'with their own browser, without the shared one');
+        same(2, $plugin->consent->deleteUserRecords((int) $anna->id, true), 'deleted');
+        same(1, logCount(['id' => $onShared]), 'a shared browser\'s record was deleted');
+        same(1, logCount(['id' => $bens]), 'another user\'s record was deleted');
+
+        // Permanently deleting a user: their links go, records stay without them.
+        $kept = insertLog(['visitorUuid' => $shared, 'userId' => $ben->id]);
+        expect(Craft::$app->getElements()->deleteElement($ben, true), 'delete ben');
+        same(null, (new Query())->select(['userId'])->from('{{%cookieconsent_log}}')->where(['id' => $kept])->scalar() ?: null, 'the record still names the deleted user');
+        same(0, (int) (new Query())->from('{{%cookieconsent_user_visitor}}')->where(['userId' => $ben->id])->count(), 'the deleted user\'s links stayed');
+    } finally {
+        $service->saveGlobalSettings(['linkUsers' => false]);
+        fresh();
+        Craft::$app->getDb()->createCommand()->delete('{{%cookieconsent_log}}', ['visitorUuid' => [$own, $shared]])->execute();
+        foreach ([$anna, $ben] as $user) {
+            if (Craft::$app->getUsers()->getUserById((int) $user->id) !== null) {
+                Craft::$app->getElements()->deleteElement($user, true);
+            }
+        }
+    }
+});
+
+$check('users: a guest decision is attached to the account at login, once, in place, only if still in effect', function () use ($plugin) {
+    $service = $plugin->cookieSettings;
+    $links   = $plugin->userLinks;
+    $make    = function (string $name): craft\elements\User {
+        $user = new craft\elements\User(['username' => $name . '-' . bin2hex(random_bytes(3)), 'email' => $name . '-' . bin2hex(random_bytes(3)) . '@example.test']);
+        expect(Craft::$app->getElements()->saveElement($user, false), 'create');
+
+        return $user;
+    };
+    $user   = $make('attach');
+    $other  = $make('other');
+    $id     = craft\helpers\StringHelper::UUID();
+    $stale  = craft\helpers\StringHelper::UUID();
+    $policy = $service->loadSettings()->policyVersion;
+
+    try {
+        expect($service->saveGlobalSettings(['linkUsers' => true]), 'link users');
+        fresh();
+
+        $older  = insertLog(['visitorUuid' => $id, 'action' => 'reject_all', 'policyVersion' => $policy, 'dateCreated' => '2026-01-01 00:00:00', 'dateUpdated' => '2026-01-01 00:00:00']);
+        $latest = insertLog(['visitorUuid' => $id, 'action' => 'accept_all', 'policyVersion' => $policy]);
+        insertLog(['visitorUuid' => $stale, 'action' => 'accept_all', 'policyVersion' => 'old-policy']);
+        $total = logCount();
+
+        sleep(1);
+        same(1, $links->attachToAccount((int) $user->id, [$id, $stale]), 'only the decision in effect');
+        same(0, $links->attachToAccount((int) $user->id, [$id, $stale]), 'attached twice');
+        same(0, $links->attachToAccount((int) $other->id, [$id]), 'another user took a decision already attached');
+
+        $row = (new Query())->from('{{%cookieconsent_log}}')->where(['id' => $latest])->one();
+        same((int) $user->id, (int) $row['userId'], 'attached');
+        expect(sfsinfotech\craftcookieconsentflow\services\UserLinkService::wasAttached($row['dateCreated'], $row['dateUpdated']), 'not marked as attached');
+        same($total, logCount(), 'a record was added');
+        same(null, (new Query())->select(['userId'])->from('{{%cookieconsent_log}}')->where(['id' => $older])->scalar() ?: null, 'an older guest record was attached');
+    } finally {
+        $service->saveGlobalSettings(['linkUsers' => false]);
+        fresh();
+        Craft::$app->getDb()->createCommand()->delete('{{%cookieconsent_log}}', ['visitorUuid' => [$id, $stale]])->execute();
+        foreach ([$user, $other] as $u) {
+            Craft::$app->getElements()->deleteElement($u, true);
+        }
+    }
+});
+
+$check('users: with "delete", a deleted user\'s logged-in records go with them', function () use ($plugin) {
+    $service = $plugin->cookieSettings;
+    $user    = new craft\elements\User(['username' => 'del-' . bin2hex(random_bytes(3)), 'email' => 'del-' . bin2hex(random_bytes(3)) . '@example.test']);
+    expect(Craft::$app->getElements()->saveElement($user, false), 'create');
+    $browser = craft\helpers\StringHelper::UUID();
+
+    try {
+        expect($service->saveGlobalSettings(['linkUsers' => true, 'userDeleteAction' => 'delete']), 'settings');
+        fresh();
+
+        $mine      = insertLog(['visitorUuid' => $browser, 'userId' => $user->id]);
+        $anonymous = insertLog(['visitorUuid' => $browser]);
+
+        expect(Craft::$app->getElements()->deleteElement($user), 'soft delete');
+
+        same(0, logCount(['id' => $mine]), 'the logged-in record was kept');
+        same(1, logCount(['id' => $anonymous]), 'an anonymous record was deleted with the user');
+    } finally {
+        $service->saveGlobalSettings(['linkUsers' => false, 'userDeleteAction' => 'anonymise']);
+        fresh();
+        Craft::$app->getDb()->createCommand()->delete('{{%cookieconsent_log}}', ['visitorUuid' => $browser])->execute();
+        $trashed = craft\elements\User::find()->id($user->id)->trashed(true)->status(null)->one();
+        if ($trashed) {
+            Craft::$app->getElements()->deleteElement($trashed, true);
+        }
+    }
+});
+
+// ---------------------------------------------------------------------------
 // L17 — deleted-site cleanup
 // ---------------------------------------------------------------------------
 

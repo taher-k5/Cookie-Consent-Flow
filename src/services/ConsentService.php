@@ -164,9 +164,17 @@ class ConsentService extends Component
             self::_claimVisitorId($visitorUuid, self::_browserKey());
         }
 
+        // The logged-in user, from Craft's own session, when the site links
+        // records to users. Never taken from the request.
+        $userId = $plugin->userLinks->currentUserId();
+
         $record                = new ConsentLogRecord();
         $record->visitorUuid   = $visitorUuid;
         $record->ipHash        = $ipHash;
+
+        if ($userId !== null && $record->hasAttribute('userId')) {
+            $record->userId = $userId;
+        }
         $record->siteId        = $siteId;
         $record->categories    = Json::encode($categories);
         $record->action        = $action;
@@ -198,6 +206,13 @@ class ConsentService extends Component
             // The cached aggregates expire on their own (StatisticsService
             // TTL); a stale dashboard for a few minutes is the whole cost.
             Craft::warning('Cookie consent statistics could not be invalidated: ' . $e->getMessage(), __METHOD__);
+        }
+
+        // Ties this browser's visitor ID to the user, so their records are
+        // found by it too — including ones made before they logged in, and
+        // after they log out. Best-effort: the record is already saved.
+        if ($userId !== null) {
+            $plugin->userLinks->link($userId, $visitorUuid);
         }
 
         // Notification only: listeners can react (push to a data layer, kick
@@ -363,6 +378,47 @@ class ConsentService extends Component
 
         if ($siteIds !== null) {
             $condition['siteId'] = array_map('intval', $siteIds);
+        }
+
+        if ($dryRun) {
+            return (int) ConsentLogRecord::find()->where($condition)->count();
+        }
+
+        $deleted = (int) ConsentLogRecord::deleteAll($condition);
+
+        if ($deleted > 0) {
+            try {
+                Plugin::getInstance()->statistics->invalidate();
+            } catch (\Throwable $e) {
+                Craft::warning('Cookie consent statistics could not be invalidated: ' . $e->getMessage(), __METHOD__);
+            }
+        }
+
+        return $deleted;
+    }
+
+    /**
+     * Deletes one user's consent records — the erasure side of a data subject
+     * request from a logged-in user.
+     *
+     * Always the records made while they were logged in. With
+     * `$browsersToo`, also the anonymous records of browsers linked to them
+     * only; anonymous records of a browser other users were also seen on are
+     * never deleted this way, since they may be someone else's.
+     *
+     * @param int[]|null $siteIds Sites to delete from; null for every site.
+     * @return int Number of records deleted (or that would be).
+     */
+    public function deleteUserRecords(int $userId, bool $browsersToo = false, ?array $siteIds = null, bool $dryRun = false): int
+    {
+        if ($userId <= 0 || $siteIds === []) {
+            return 0;
+        }
+
+        $condition = ['and', Plugin::getInstance()->userLinks->recordCondition($userId, $browsersToo, false)];
+
+        if ($siteIds !== null) {
+            $condition[] = ['siteId' => array_map('intval', $siteIds)];
         }
 
         if ($dryRun) {
@@ -574,7 +630,7 @@ class ConsentService extends Component
      * silently covered a different set of records than the screen it was
      * launched from would be worse than no export at all.
      *
-     * Accepted filters: `action`, `source`, `policyVersion`, `countryCode`, `visitorUuid`,
+     * Accepted filters: `action`, `source`, `policyVersion`, `countryCode`, `visitorUuid`, `userId`,
      * `category` (records that include this category key), `from` / `to`
      * (dates), `siteIds` (restrict to these sites). Unknown keys and empty
      * values are ignored.
@@ -605,6 +661,16 @@ class ConsentService extends Component
 
         if (!empty($filters['countryCode'])) {
             $query->andWhere(['countryCode' => strtoupper((string) $filters['countryCode'])]);
+        }
+
+        // One user's records: those made while they were logged in, and the
+        // anonymous ones made on their browsers. An unknown user (0) matches
+        // nothing.
+        if (array_key_exists('userId', $filters) && $filters['userId'] !== null && $filters['userId'] !== '') {
+            $userId = (int) $filters['userId'];
+            $query->andWhere($userId > 0
+                ? Plugin::getInstance()->userLinks->recordCondition($userId)
+                : new Expression('1 = 0'));
         }
 
         // Exact match. A value that is not a visitor ID matches nothing,

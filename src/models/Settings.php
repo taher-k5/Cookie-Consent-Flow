@@ -194,6 +194,29 @@ class Settings extends Model
      */
     public bool $showConsentId = false;
 
+    // Linking records to logged-in users
+    /** Linked records stay, without the user, when the user is deleted. */
+    public const USER_DELETE_ANONYMISE = 'anonymise';
+
+    /** Linked records are deleted with the user. */
+    public const USER_DELETE_DELETE = 'delete';
+
+    /**
+     * Links consent records to logged-in Craft users: a decision made while
+     * logged in records the user, and every visitor ID a user's browsers
+     * carry is linked to the user (at login and at each decision), so all of
+     * their records can be found, exported or deleted. Off by default: linked
+     * records are personal data rather than pseudonymous. Global-only.
+     */
+    public bool $linkUsers = false;
+
+    /**
+     * What happens to a user's linked records when the user is deleted:
+     * `anonymise` keeps them, as proof of consent, without the user; `delete`
+     * removes them. Global-only.
+     */
+    public string $userDeleteAction = self::USER_DELETE_ANONYMISE;
+
     // Consent expiry & re-consent
     /**
      * Days after which stored consent is treated as stale and the banner is
@@ -926,12 +949,13 @@ class Settings extends Model
                     'bannerEnabled', 'geoEnabled', 'logEnabled', 'fullWidth', 'shadow',
                     'consentModeEnabled', 'consentModeAutoInject',
                     'consentModeUrlPassthrough', 'consentModeAdsDataRedaction',
-                    'respectGpc', 'respectDnt', 'showConsentId',
+                    'respectGpc', 'respectDnt', 'showConsentId', 'linkUsers',
                 ],
                 'boolean',
             ],
             [['consentModeType'], 'in', 'range' => ['advanced', 'basic']],
             [['consentScope'], 'in', 'range' => [self::CONSENT_SCOPE_SITE, self::CONSENT_SCOPE_GROUP]],
+            [['userDeleteAction'], 'in', 'range' => [self::USER_DELETE_ANONYMISE, self::USER_DELETE_DELETE]],
             [['consentModeWaitForUpdate'], 'integer', 'min' => 0, 'max' => 10000],
             [['bannerLayout'], 'in', 'range' => ['bottom-bar', 'top-bar', 'center-popup', 'corner-popup']],
             [['cornerPosition'], 'in', 'range' => ['bottom-left', 'bottom-right']],

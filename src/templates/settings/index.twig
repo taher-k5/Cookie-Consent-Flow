@@ -97,6 +97,26 @@
         on:   settings.showConsentId,
     }) }}
 
+    {{ forms.lightswitchField({
+        label:        "Link Consent Records to Logged-in Users"|t('cookie-consent-flow'),
+        instructions: "Records a decision made while logged in with the Craft user, and links each browser the user logs in on, so you can find, export or delete all of their records — including ones made before they logged in or registered. Linked records are personal data: mention this in your privacy policy. Anonymous visitors are unaffected."|t('cookie-consent-flow'),
+        id:   'linkUsers',
+        name: 'settings[linkUsers]',
+        on:   settings.linkUsers,
+    }) }}
+
+    {{ forms.selectField({
+        label:        "When a User Is Deleted"|t('cookie-consent-flow'),
+        instructions: "Anonymise keeps the user’s records as proof of consent, without the user, once the user is permanently deleted. Delete removes the records they made while logged in as soon as the user is deleted — moving them to the trash included — and restoring the user does not bring the records back."|t('cookie-consent-flow'),
+        id:      'userDeleteAction',
+        name:    'settings[userDeleteAction]',
+        value:   settings.userDeleteAction,
+        options: [
+            { value: 'anonymise', label: "Anonymise records"|t('cookie-consent-flow') },
+            { value: 'delete',    label: "Delete records"|t('cookie-consent-flow') },
+        ],
+    }) }}
+
 </div>{# /tab-logging #}
 
 {# ── Integrations: Google Consent Mode v2 ──────────────────────────────── #}

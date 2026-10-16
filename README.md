@@ -30,7 +30,8 @@ can be recorded in the control panel.
 - Consent records with filters, statistics, CSV/JSON export and a retention
   period
 - Data subject requests: visitors can see their consent ID, and you can find,
-  export or delete one visitor's records
+  export or delete one visitor's records — or, on sites with user accounts,
+  all of one user's records
 - A dashboard, a Consent Overview dashboard widget and user permissions in
   the control panel
 - Multisite support: global settings with optional per-site overrides, and
@@ -45,8 +46,9 @@ can be recorded in the control panel.
 - Craft CMS `^5.0`
 - PHP `>=8.2.0`
 
-The plugin is tested on Craft 5.0.0 and the current 5.x release. Earlier
-Craft 5 releases have published security advisories, so run the latest 5.x.
+Version 1.0.0 was tested on Craft 5.0.0 and the then-current 5.x release;
+version 1.0.5 has been tested on Craft 5.10. Earlier Craft 5 releases have
+published security advisories, so run the latest 5.x.
 
 ## Installation
 
@@ -311,17 +313,17 @@ link to your privacy policy when one is set.
   loads and visits, as with OneTrust and Usercentrics. Before the visitor's
   first decision it is made in the browser and stored there
   (`cck_cid_{scope}`). Their first record is saved under it. If the server
-  cannot use it (another record already has it), it issues a new ID and the
-  preference centre shows that one instead.
+  cannot use it — another record already has it, and it was not this same
+  browser's — it issues a new ID, and the preference centre shows that one.
+- After the first decision the ID comes from the server, which reads it from
+  the visitor's signed, `httpOnly` cookie (`cck_visitor_{scope}`). It is never
+  written into the page HTML, so page caching is unaffected.
+- The server always decides which ID a record is saved under, so a copied or
+  edited value cannot join another visitor's records.
 - This stores an identifier before the visitor decides, so check the setting
   against your own legal advice. With it off (the default), nothing
   identifying is stored before a decision, and turning it off removes stored
   IDs on the visitor's next page view.
-- The server always decides which ID a record is saved under, so a copied or
-  edited value cannot join another visitor's records.
-- Afterwards it comes from the server, which reads it from the visitor's
-  `httpOnly` cookie. It is never written into the page HTML, so page caching
-  is unaffected.
 - While the setting is on, page scripts can read the ID too (see
   `CookieConsent.getConsentId()` below). It identifies only the visitor's
   consent records.
@@ -347,6 +349,77 @@ php craft cookie-consent-flow/records/delete --visitor=<id> --force=1
 The command also accepts `--site=handle` (or a site ID). Whether to delete
 proof-of-consent records when asked is your legal decision; export them first
 if you may need them.
+
+### Linking records to logged-in users
+
+On a site with front-end accounts (Craft's login and registration; Craft
+Solo allows only one user account, so this needs Craft Team or Pro), turn on
+**Link Consent Records to Logged-in Users** under **Settings → Consent
+Logging** (off by default; consent logging must be on too). The user always
+comes from Craft's own session, and the visitor ID from the plugin's signed
+visitor cookie — never from anything the browser claims. The plugin keeps
+two links:
+
+- A decision made while logged in records the Craft user.
+- Every visitor ID the user's browsers carry is linked to the user: when they
+  register on the front end, when they log in, and at each decision while
+  logged in. A visitor who decided anonymously and then registers or logs in
+  has that earlier decision linked straight away — Craft does not log a newly
+  registered user in by default, so registration links it too.
+  After they clear their cookies, the new visitor ID is linked the next time
+  they are logged in.
+
+A visitor who decided as a guest is not asked again when they log in or
+register — their browser already holds the decision — and that decision is
+**attached to their account**: its latest record on each site gets the user,
+as long as it is still in effect (current policy version, not expired, not
+already another user's). It stays one record, and what was decided, when and
+under which policy is unchanged. Older guest records of the browser are left
+as they were.
+
+Anonymous visitors are unaffected, and nothing is linked while an admin uses
+**Log in as** on a user.
+
+To answer a request from a user, enter their email, username or ID in
+**User** on **Consent Records** (shown to admins, and to users who may edit
+users). Each record is marked:
+
+| Mark | Meaning |
+| --- | --- |
+| **Logged in** | Decided while logged in as this user |
+| **Linked at login** | Decided as a guest, then attached to this user as they logged in or registered |
+| **Their browser** | Decided logged out, on a browser only this user logged in on |
+| **Shared browser** | Decided logged out, on a browser other users also logged in on: it may be someone else's |
+
+Export covers the result, with `userId` and a `match` column giving the mark.
+**Delete records for this user** deletes the **Logged in** and **Linked at
+login** records, and optionally the **Their browser** ones. **Shared
+browser** records are never deleted this way. From the command line:
+
+```bash
+php craft cookie-consent-flow/records/delete --user=anna@example.com --dry-run=1
+php craft cookie-consent-flow/records/delete --user=anna@example.com --include-browsers=1 --force=1
+```
+
+**When a User Is Deleted** chooses what happens to their records:
+
+- **Anonymise records** (default): when the user is permanently deleted, the
+  records stay as proof of consent without the user.
+- **Delete records**: the records linked to them (**Logged in** and **Linked
+  at login**) and their browser links are deleted as soon as the user is
+  deleted, moving them to the trash included. Restoring the user does not
+  bring the records back. Logged-out records of their browsers are left to
+  retention.
+
+Users in the trash can still be searched for and their records deleted.
+Export lists the `userId` column, and the user's `match`, only to those who
+may see users.
+
+Linked records identify a person, so they are personal data rather than
+pseudonymous: mention this in your privacy policy. A browser the user never
+logged in on cannot be linked to them. To those who may see consent records
+and users, each user's account page in the control panel shows how many
+consent records they have, with a link to them.
 
 ## Multisite
 
@@ -424,7 +497,9 @@ Event::on(
   - **Export consent records**
   - **Delete a visitor's consent records**
 
-Being able to view records does not include exporting or deleting them. The control panel
+Being able to view records does not include exporting or deleting them.
+Searching by user, and seeing which user a record belongs to, also needs
+permission to edit users (or an admin account). The control panel
 navigation shows only the pages a user can access. On multisite installs,
 records, exports, the dashboard and site overrides are also limited to the
 sites the user has access to in Craft; global settings apply to every site.

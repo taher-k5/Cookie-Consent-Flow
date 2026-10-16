@@ -16,6 +16,7 @@ use craft\services\UserPermissions;
 use craft\web\twig\variables\CraftVariable;
 use craft\web\UrlManager;
 use craft\web\View;
+use sfsinfotech\craftcookieconsentflow\controllers\LogsController;
 use sfsinfotech\craftcookieconsentflow\events\BeforeBannerRenderEvent;
 use sfsinfotech\craftcookieconsentflow\models\Settings;
 use sfsinfotech\craftcookieconsentflow\helpers\ConsentHelper;
@@ -26,6 +27,7 @@ use sfsinfotech\craftcookieconsentflow\helpers\PluginConfig;
 use sfsinfotech\craftcookieconsentflow\services\ConsentModeService;
 use sfsinfotech\craftcookieconsentflow\services\ConsentService;
 use sfsinfotech\craftcookieconsentflow\services\StatisticsService;
+use sfsinfotech\craftcookieconsentflow\services\UserLinkService;
 use sfsinfotech\craftcookieconsentflow\services\CookieDefinitionService;
 use sfsinfotech\craftcookieconsentflow\services\GeoService;
 use sfsinfotech\craftcookieconsentflow\services\SettingsService;
@@ -72,11 +74,11 @@ class Plugin extends BasePlugin
      * release, every schema change also bumps this and ships a timestamped
      * migration that calls `Install::reconcile()`:
      *
-     * - 1.11.0 (release 1.1.0) — `consentScope` and `showConsentId` settings
-     *   (m261016_000000_consent_scope_id). Development builds of 1.1.0 recorded 1.9.0
-     *   to 1.11.0, so it is 1.11.0 rather than the next minor version.
+     * - 1.12.0 (release 1.0.5) — consent scope, consent ID and user linking
+     *   (m261016_300000_consent_scope_id_users). Development builds of 1.0.5
+     *   recorded 1.9.0 to 1.11.0, so it is 1.12.0 rather than 1.9.0.
      */
-    public string $schemaVersion = '1.11.0';
+    public string $schemaVersion = '1.12.0';
     public bool $hasCpSettings   = true;
     public bool $hasCpSection     = true;
 
@@ -115,6 +117,7 @@ class Plugin extends BasePlugin
         $this->_registerPermissions();
         $this->_registerSiteCleanup();
         $this->_registerGarbageCollection();
+        $this->_registerUserLinking();
 
         $request = Craft::$app->getRequest();
 
@@ -280,6 +283,7 @@ class Plugin extends BasePlugin
                 'cookieSettings'    => ['class' => SettingsService::class],
                 'cookieDefinitions' => ['class' => CookieDefinitionService::class],
                 'statistics'        => ['class' => StatisticsService::class],
+                'userLinks'         => ['class' => UserLinkService::class],
             ],
         ];
     }
@@ -326,6 +330,7 @@ class Plugin extends BasePlugin
                 $event->rules['POST cookie-consent-flow/settings/invalidate-consent']        = 'cookie-consent-flow/settings/invalidate-consent';
                 $event->rules['cookie-consent-flow/logs/export']                             = 'cookie-consent-flow/logs/export';
                 $event->rules['POST cookie-consent-flow/logs/delete-visitor']                = 'cookie-consent-flow/logs/delete-visitor';
+                $event->rules['POST cookie-consent-flow/logs/delete-user']                   = 'cookie-consent-flow/logs/delete-user';
 
             }
     );
@@ -402,6 +407,158 @@ class Plugin extends BasePlugin
                         "Cookie Consent Flow could not remove data for deleted site #{$siteId}: " . $e->getMessage(),
                         __METHOD__
                     );
+                }
+            }
+        );
+    }
+
+    /**
+     * Linking consent records to logged-in users (off unless the site turns
+     * on "Link consent records to logged-in users"; see UserLinkService).
+     *
+     * - **Login and registration:** the browser's visitor IDs are linked to
+     *   the user, and the decision in effect is carried into their account,
+     *   which is what makes a decision made before logging in — or before
+     *   registering — theirs. Not when an admin logs in as the user, or
+     *   creates one in the control panel.
+     * - **User deleted:** with "delete", the records made while the user was
+     *   logged in, and their visitor-ID links, are deleted as the user is —
+     *   moving them to the trash included: Craft's own trash clean-up removes
+     *   users without any event a plugin could act on, so waiting for it
+     *   would leave the records behind. Their IDs are collected before the
+     *   user is deleted and removed after, so a deletion that does not happen
+     *   removes nothing. With "anonymise" the database clears `userId` when
+     *   the user is permanently deleted, and their visitor-ID links go too.
+     * - **User page:** a "Consent records" line, for those who may view them.
+     *
+     * Every handler fails open: none can stop a login, a deletion or a page.
+     */
+    private function _registerUserLinking(): void
+    {
+        Event::on(
+            \yii\web\User::class,
+            \yii\web\User::EVENT_AFTER_LOGIN,
+            function (\yii\web\UserEvent $event): void {
+                try {
+                    $session = Craft::$app->getUser();
+
+                    if (!$this->userLinks->isEnabled() || $event->identity === null || UserLinkService::isImpersonating($session)) {
+                        return;
+                    }
+
+                    $this->userLinks->linkRequestVisitorIds((int) $event->identity->getId());
+                } catch (\Throwable $e) {
+                    Craft::error('Cookie Consent Flow could not link visitor IDs at login: ' . $e->getMessage(), __METHOD__);
+                }
+            }
+        );
+
+        // Registration: a guest creating their own account on the front end
+        // links the browser just as logging in does — the account was made
+        // from that browser, and Craft does not log a newly registered user in
+        // by default (autoLoginAfterAccountActivation is off). An admin
+        // creating a user in the control panel, or a console command, links
+        // nothing.
+        Event::on(
+            \craft\elements\User::class,
+            \craft\base\Element::EVENT_AFTER_SAVE,
+            function (\craft\events\ModelEvent $event): void {
+                try {
+                    $request = Craft::$app->getRequest();
+
+                    if (!$event->isNew || !$request instanceof \craft\web\Request || $request->getIsCpRequest()
+                        || !Craft::$app->getUser()->getIsGuest() || !$this->userLinks->isEnabled()) {
+                        return;
+                    }
+
+                    /** @var \craft\elements\User $user */
+                    $user = $event->sender;
+
+                    if ($user->id && !$user->getIsDraft() && !$user->getIsRevision()) {
+                        $this->userLinks->linkRequestVisitorIds((int) $user->id);
+                    }
+                } catch (\Throwable $e) {
+                    Craft::error('Cookie Consent Flow could not link visitor IDs at registration: ' . $e->getMessage(), __METHOD__);
+                }
+            }
+        );
+
+        $pendingDeletes = [];
+
+        Event::on(
+            \craft\services\Elements::class,
+            \craft\services\Elements::EVENT_BEFORE_DELETE_ELEMENT,
+            function (\craft\events\DeleteElementEvent $event) use (&$pendingDeletes): void {
+                if (!$event->element instanceof \craft\elements\User || !$event->element->id) {
+                    return;
+                }
+
+                try {
+                    $ids = $this->userLinks->recordIdsToDeleteWithUser((int) $event->element->id);
+
+                    // Null when the site keeps records: nothing to do after.
+                    if ($ids !== null) {
+                        $pendingDeletes[(int) $event->element->id] = $ids;
+                    }
+                } catch (\Throwable $e) {
+                    Craft::error('Cookie Consent Flow could not prepare the deletion of a user\'s consent records: ' . $e->getMessage(), __METHOD__);
+                }
+            }
+        );
+
+        Event::on(
+            \craft\services\Elements::class,
+            \craft\services\Elements::EVENT_AFTER_DELETE_ELEMENT,
+            function (\craft\events\ElementEvent $event) use (&$pendingDeletes): void {
+                if (!$event->element instanceof \craft\elements\User) {
+                    return;
+                }
+
+                $userId = (int) $event->element->id;
+
+                if (!array_key_exists($userId, $pendingDeletes)) {
+                    return;
+                }
+
+                $ids = $pendingDeletes[$userId];
+                unset($pendingDeletes[$userId]);
+
+                try {
+                    $deleted = $ids === [] ? 0 : (int) \sfsinfotech\craftcookieconsentflow\records\ConsentLogRecord::deleteAll(['id' => $ids]);
+                    \sfsinfotech\craftcookieconsentflow\records\UserVisitorRecord::deleteAll(['userId' => $userId]);
+
+                    if ($deleted > 0) {
+                        $this->statistics->invalidate();
+                    }
+
+                    Craft::warning("Cookie consent records deleted with user #{$userId}: {$deleted} record(s).", __METHOD__);
+                } catch (\Throwable $e) {
+                    Craft::error('Cookie Consent Flow could not delete a deleted user\'s consent records: ' . $e->getMessage(), __METHOD__);
+                }
+            }
+        );
+
+        Event::on(
+            \craft\elements\User::class,
+            \craft\base\Element::EVENT_DEFINE_METADATA,
+            function (\craft\events\DefineMetadataEvent $event): void {
+                try {
+                    /** @var \craft\elements\User $user */
+                    $user = $event->sender;
+
+                    if (!$user->id || !Craft::$app->getRequest()->getIsCpRequest()
+                        || !Permissions::canAny(Permissions::VIEW_LOGS) || !LogsController::canViewUsers()) {
+                        return;
+                    }
+
+                    $count = (int) $this->consent->buildQuery(null, ['userId' => (int) $user->id] + LogsController::scopeFiltersForCurrentUser())->count();
+
+                    $event->metadata[Craft::t('cookie-consent-flow', 'Consent records')] = \craft\helpers\Html::a(
+                        Craft::t('cookie-consent-flow', '{count, plural, =0{None} =1{# record} other{# records}}', ['count' => $count]),
+                        \craft\helpers\UrlHelper::cpUrl('cookie-consent-flow/logs', ['site' => 'all', 'user' => (string) $user->id])
+                    );
+                } catch (\Throwable $e) {
+                    Craft::warning('Cookie Consent Flow could not count a user\'s consent records: ' . $e->getMessage(), __METHOD__);
                 }
             }
         );

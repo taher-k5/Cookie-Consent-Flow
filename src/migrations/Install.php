@@ -33,7 +33,7 @@ class Install extends Migration
         'bannerEnabled', 'fullWidth', 'shadow', 'geoEnabled', 'logEnabled',
         'consentModeEnabled', 'consentModeAutoInject',
         'consentModeUrlPassthrough', 'consentModeAdsDataRedaction',
-        'respectGpc', 'respectDnt', 'showConsentId',
+        'respectGpc', 'respectDnt', 'showConsentId', 'linkUsers',
     ];
 
     /** Short string settings columns (labels, enums, layout dimensions). */
@@ -47,6 +47,7 @@ class Install extends Migration
         'policyVersion',
         'consentModeType',
         'consentScope',
+        'userDeleteAction',
     ];
 
     /**
@@ -117,6 +118,8 @@ class Install extends Migration
         $this->_migrateLeftoverJsonCategoriesColumn();
         $this->_createCookieDefinitionTableIfMissing();
         $this->_createDetectedCookieTableIfMissing();
+        $this->_createUserVisitorTableIfMissing();
+        $this->_linkConsentLogToUsers();
         $this->_dropRetiredSettingsColumns();
         $this->_pruneOrphanedSiteRows();
     }
@@ -145,6 +148,7 @@ class Install extends Migration
             }
         }
 
+        $this->dropTableIfExists('{{%cookieconsent_user_visitor}}');
         $this->dropTableIfExists('{{%cookieconsent_detected_cookie}}');
         $this->dropTableIfExists('{{%cookieconsent_cookie}}');
         $this->dropTableIfExists('{{%cookieconsent_category}}');
@@ -665,6 +669,73 @@ class Install extends Migration
             $charset,
             $charset
         ));
+    }
+
+    /**
+     * Which visitor IDs (consent IDs) each Craft user's browsers have carried.
+     *
+     * One row per user and visitor ID, written from the user's own session —
+     * at login and at each decision while logged in — so all of a person's
+     * records can be found, including those made logged out on the same
+     * browser and those under a new ID after cookies were cleared. The rows
+     * belong to the user and go with them (`ON DELETE CASCADE`).
+     */
+    private function _createUserVisitorTableIfMissing(): void
+    {
+        $table = '{{%cookieconsent_user_visitor}}';
+
+        if ($this->db->tableExists($table) || !$this->db->tableExists('{{%users}}')) {
+            return;
+        }
+
+        $this->createTable($table, [
+            'id'          => $this->primaryKey(),
+            'userId'      => $this->integer()->notNull(),
+            'visitorUuid' => $this->string(36)->notNull(),
+            'lastLinked'  => $this->dateTime()->notNull(),
+            'dateCreated' => $this->dateTime()->notNull(),
+            'dateUpdated' => $this->dateTime()->notNull(),
+            'uid'         => $this->uid(),
+        ]);
+
+        $this->createIndex(null, $table, ['userId', 'visitorUuid'], true);
+        $this->createIndex(null, $table, 'visitorUuid');
+        $this->addForeignKey(null, $table, ['userId'], '{{%users}}', ['id'], 'CASCADE', null);
+    }
+
+    /**
+     * The consent record's logged-in user: a nullable `userId`, indexed, whose
+     * foreign key clears it when the user is deleted (`ON DELETE SET NULL`).
+     * The record stays, as the proof of consent it is, without the person —
+     * unless the site chose to delete a user's records with them, which
+     * Plugin::_registerUserLinking() does as the user is deleted.
+     */
+    private function _linkConsentLogToUsers(): void
+    {
+        $table = '{{%cookieconsent_log}}';
+
+        if (!$this->db->tableExists($table) || !$this->db->tableExists('{{%users}}')) {
+            return;
+        }
+
+        if (!$this->db->columnExists($table, 'userId')) {
+            $this->addColumn($table, 'userId', $this->integer()->null());
+        }
+
+        if (!$this->_hasIndex($table, ['userId'])) {
+            $this->createIndex(null, $table, 'userId');
+        }
+
+        foreach ($this->db->getSchema()->getTableForeignKeys($table, true) as $fk) {
+            if ($fk->columnNames === ['userId']) {
+                return;
+            }
+        }
+
+        // A userId whose user no longer exists could not take the key.
+        $this->update($table, ['userId' => null], ['and', ['not', ['userId' => null]], ['not in', 'userId', (new \craft\db\Query())->select(['id'])->from('{{%users}}')]], [], false);
+
+        $this->addForeignKey(null, $table, ['userId'], '{{%users}}', ['id'], 'SET NULL', null);
     }
 
     /**

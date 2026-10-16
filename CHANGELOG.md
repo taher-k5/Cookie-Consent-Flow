@@ -1,6 +1,6 @@
 # Changelog
 
-## 1.0.5 - YYYY-MM-DD
+## 1.0.5 - 2026-10-16
 
 ### Features
 
@@ -12,6 +12,10 @@
 - Search consent records by visitor ID, and delete one visitor's records (new
   permission, and the `records/delete` console command)
 - `CookieConsent.getConsentId()` and the `cookieConsent:consentId` event
+- Link Consent Records to Logged-in Users setting: find, export or delete all
+  of a user's records, including those made before they logged in or
+  registered (a guest decision is attached to the account at login), with a
+  choice of anonymising or deleting them when the user is deleted
 
 ### Fixed
 

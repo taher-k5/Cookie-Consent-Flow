@@ -131,7 +131,7 @@ final class SchemaConsistencyTest extends TestCase
      */
     public function testEveryShortStringColumnIsBoundedByTheModel(): void
     {
-        $enums    = ['bannerLayout', 'cornerPosition', 'consentModeType', 'consentScope'];
+        $enums    = ['bannerLayout', 'cornerPosition', 'consentModeType', 'consentScope', 'userDeleteAction'];
         $bounded  = array_merge(Settings::SHORT_TEXT_FIELDS, $enums, ['policyVersion']);
         $columns  = self::migrationConstants()['STRING_FIELDS'];
 
@@ -181,7 +181,7 @@ final class SchemaConsistencyTest extends TestCase
         $files = glob(dirname(__DIR__, 2) . '/src/migrations/*.php') ?: [];
         $incremental = array_values(array_filter($files, static fn(string $file): bool => basename($file) !== 'Install.php'));
 
-        self::assertNotSame([], $incremental, 'release 1.1.0 ships a migration');
+        self::assertNotSame([], $incremental, 'release 1.0.5 ships a migration');
 
         foreach ($incremental as $file) {
             $name = basename($file, '.php');

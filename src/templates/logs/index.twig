@@ -42,6 +42,7 @@
     country:       filters.countryCode ?? null,
     policyVersion: filters.policyVersion ?? null,
     visitor:       filters.visitorUuid ?? null,
+    user:          filters.user ?? null,
     from:          filters.from ?? null,
     to:            filters.to ?? null,
 })|filter(v => v is not null and v != '') %}
@@ -144,6 +145,15 @@
                    maxlength="64" autocomplete="off" spellcheck="false"
                    placeholder="2a5c0cff-…" value="{{ filters.visitorUuid ?? '' }}">
         </div>
+
+        {% if canViewUsers %}
+            <div class="ccf-filter-field ccf-filter-field--visitor">
+                <label for="ccf-filter-user">{{ "User"|t('cookie-consent-flow') }}</label>
+                <input type="text" id="ccf-filter-user" name="user" class="text"
+                       maxlength="255" autocomplete="off" spellcheck="false"
+                       placeholder="{{ 'Email, username or ID'|t('cookie-consent-flow') }}" value="{{ filters.user ?? '' }}">
+            </div>
+        {% endif %}
 
         <div class="ccf-filter-actions">
             <button type="submit" class="btn submit">{{ "Filter"|t('cookie-consent-flow') }}</button>
@@ -277,6 +287,45 @@
     </form>
 {% endif %}
 
+{# ── One user: a data subject request from a logged-in user ──────────── #}
+{% if filters.user ?? false %}
+    {% if filterUser %}
+        <div class="ccf-user-request">
+            <p>
+                {{ "Records of {user}: made while logged in, and made logged out on a browser they logged in on."|t('cookie-consent-flow', { user: filterUser.friendlyName ~ ' (' ~ filterUser.email ~ ')' }) }}
+            </p>
+            <p class="light">
+                <span class="ccf-match ccf-match--user">{{ "Logged in"|t('cookie-consent-flow') }}</span>
+                {{ "decided while logged in."|t('cookie-consent-flow') }}
+                <span class="ccf-match ccf-match--linked">{{ "Linked at login"|t('cookie-consent-flow') }}</span>
+                {{ "decided as a guest, then attached to the account as they logged in or registered."|t('cookie-consent-flow') }}
+                <span class="ccf-match ccf-match--browser">{{ "Their browser"|t('cookie-consent-flow') }}</span>
+                {{ "logged out, on a browser only they logged in on."|t('cookie-consent-flow') }}
+                <span class="ccf-match ccf-match--shared">{{ "Shared browser"|t('cookie-consent-flow') }}</span>
+                {{ "logged out, on a browser other users also logged in on — check before acting on it."|t('cookie-consent-flow') }}
+            </p>
+
+            {% if canDelete and records is not empty and filters|keys|sort == ['user', 'userId'] %}
+                <form method="post" class="ccf-visitor-delete"
+                      data-cck-confirm="{{ 'Delete this user’s consent records? This cannot be undone. Export them first if you need a copy.'|t('cookie-consent-flow') }}">
+                    {{ csrfInput() }}
+                    {{ actionInput('cookie-consent-flow/logs/delete-user') }}
+                    {{ redirectInput(cpUrl('cookie-consent-flow/logs', siteParams|merge({ user: filters.user }))) }}
+                    {{ hiddenInput('userId', filterUser.id) }}
+                    {% if currentSite %}{{ hiddenInput('site', currentSite.handle) }}{% endif %}
+                    <label class="ccf-checkbox-label">
+                        <input type="checkbox" name="includeBrowsers" value="1">
+                        {{ "Also delete the logged-out records of browsers only they used (never shared browsers)"|t('cookie-consent-flow') }}
+                    </label>
+                    <button type="submit" class="btn caution">{{ "Delete records for this user"|t('cookie-consent-flow') }}</button>
+                </form>
+            {% endif %}
+        </div>
+    {% else %}
+        <p class="light">{{ "No user matches “{user}”."|t('cookie-consent-flow', { user: filters.user }) }}</p>
+    {% endif %}
+{% endif %}
+
 {# ── Empty state ─────────────────────────────────────────────────────── #}
 {% if records is empty %}
     <div class="zilch">
@@ -295,6 +344,9 @@
                 {% endif %}
                 <th>{{ "Date"|t('cookie-consent-flow') }}</th>
                 <th>{{ "Visitor UUID"|t('cookie-consent-flow') }}</th>
+                {% if canViewUsers %}
+                    <th>{{ "User"|t('cookie-consent-flow') }}</th>
+                {% endif %}
                 <th>{{ "Outcome"|t('cookie-consent-flow') }}</th>
                 <th>{{ "Source"|t('cookie-consent-flow') }}</th>
                 <th>{{ "Categories"|t('cookie-consent-flow') }}</th>
@@ -332,6 +384,30 @@
                     <td>
                         <code>{{ record.visitorUuid }}</code>
                     </td>
+
+                    {% if canViewUsers %}
+                        <td>
+                            {% set recordUser = record.userId ? (users[record.userId] ?? null) : null %}
+                            {% if recordUser %}
+                                <a href="{{ recordUser.cpEditUrl }}">{{ recordUser.friendlyName }}</a>
+                            {% elseif record.userId %}
+                                <span class="light">{{ "Deleted user"|t('cookie-consent-flow') }}</span>
+                            {% else %}
+                                <span class="light">—</span>
+                            {% endif %}
+                            {% set match = matchTypes[record.id] ?? null %}
+                            {% if match %}
+                                <span class="ccf-match ccf-match--{{ match }}">
+                                    {{- {
+                                        user: "Logged in"|t('cookie-consent-flow'),
+                                        linked: "Linked at login"|t('cookie-consent-flow'),
+                                        browser: "Their browser"|t('cookie-consent-flow'),
+                                        shared: "Shared browser"|t('cookie-consent-flow'),
+                                    }[match] -}}
+                                </span>
+                            {% endif %}
+                        </td>
+                    {% endif %}
 
                     <td>
                         <span class="ccf-action-badge ccf-{{ badgeClass }}">
