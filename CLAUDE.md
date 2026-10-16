@@ -23,6 +23,18 @@ in `README.md`; release notes belong in `CHANGELOG.md`.
   set through `EVENT_RESOLVE_CONSENT_SCOPE`. The browser storage key, the
   visitor cookie and the `<head>` replay all use the scope key; records keep
   the real site ID. Resolution failures fall back to the per-site scope.
+- Data subject requests: `ConsentHelper::normalizeVisitorId()` is the one
+  gate for every visitor ID from outside (records search, deletion, the
+  browser-made ID). With `showConsentId` on, the runtime makes an ID in memory
+  before the first decision and posts it; `ConsentService::acceptsRequestedVisitorId()`
+  takes it only if no record has it, or this browser claimed it (a cached
+  HMAC of its CSRF cookie, else session, from its own earlier save: a retry
+  whose response was lost). Never by network: a CDN or carrier gives many
+  visitors one IP hash.
+  The runtime keeps it in `cck_cid_<scope>` from the first page view (as
+  OneTrust and Usercentrics do); it is still only a claim the server checks. `consent/id`
+  and the save response expose the ID only while the setting is on. Deletion (`DELETE_LOGS`, `records/delete`) is limited to accessible
+  sites and logged.
 - `helpers/PluginConfig` reads `config/cookie-consent-flow.php` — deployment
   facts only (`geoCountryHeader`, `automaticRetention`, `retentionBatchSize`);
   everything editors manage is in the database.
@@ -95,7 +107,10 @@ consent evidence: update `Install.php`, add a timestamped migration
 converge on `Install.php`. The schema version must never go down — Craft
 refuses to apply project config recording a higher version.
 
-- 1.9.0 — `consentScope` (`m261016_000000_consent_scope`).
+- 1.11.0 (release 1.1.0) — `consentScope`, `showConsentId`
+  (`m261016_000000_consent_scope_id`). One migration per release: while a release is
+  unpublished, add its new columns to `Install.php` and keep its single
+  migration, bumping the schema version only so development installs run it.
 
 ## Front-end contract
 
@@ -119,6 +134,7 @@ composer test       # PHPUnit
 composer test-js    # front-end runtime harness (node, no dependencies)
 composer check-all  # both
 php craft cookie-consent-flow/retention/clear --dry-run=1
+php craft cookie-consent-flow/records/delete --visitor=<id> --dry-run=1
 ```
 
 The unit bootstrap uses the nearest Craft Composer autoloader and a temporary

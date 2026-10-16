@@ -235,6 +235,35 @@
       {% endfor %}
     </div>{# /.cck-categories #}
 
+    {# Consent ID — the anonymous ID this visitor's records carry, so they can
+       quote it in a request to see or delete them. The element is identical
+       for every visitor and starts hidden and empty: the runtime fills in the
+       ID on the visitor's own device, so no ID ever reaches cacheable HTML. #}
+    {% if settings.showConsentId and settings.logEnabled and not isPreview %}
+      <div class="cck-consent-id" data-cck-consent-id hidden
+           data-cck-copied="{{ 'Copied'|t('cookie-consent-flow')|e('html_attr') }}"
+           data-cck-copy-failed="{{ 'Select the ID and copy it.'|t('cookie-consent-flow')|e('html_attr') }}">
+        <p class="cck-consent-id__row">
+          <span class="cck-consent-id__label">{{ "Your consent ID"|t('cookie-consent-flow') }}</span>
+          {# A span, not <code>: themes style <code> globally (Bootstrap makes it
+             pink-red), and the ID should look the same on every site. #}
+          <span class="cck-consent-id__value" data-cck-consent-id-value></span>
+          <button type="button" class="cck-consent-id__copy" data-cck-action="copy-consent-id">
+            {{- "Copy"|t('cookie-consent-flow') -}}
+          </button>
+          <span class="cck-visually-hidden" data-cck-consent-id-status role="status" aria-live="polite"></span>
+        </p>
+        <p class="cck-consent-id__note">
+          {{- "Quote this ID if you ask us for, or to delete, your consent records."|t('cookie-consent-flow') -}}
+          {%- if settings.safePrivacyPolicyUrl %}
+            <a href="{{ settings.safePrivacyPolicyUrl|e('html_attr') }}" class="cck-consent-id__link" target="_blank" rel="noopener noreferrer">
+              {{- settings.privacyPolicyLinkText -}}
+            </a>
+          {%- endif -%}
+        </p>
+      </div>
+    {% endif %}
+
     {# Footer #}
     <div class="cck-preferences__footer">
       <button

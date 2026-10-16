@@ -77,6 +77,8 @@ class ConsentService extends Component
      * @param  string[] $categories Category keys the visitor accepted.
      * @param  string   $source     How the decision was reached — one of the SOURCE_* constants.
      * @param  ?string  $policyVersion The policy version the visitor's page showed; null for the current one.
+     * @param  ?string  $requestedVisitorId A visitor ID the browser made before the decision, so it could
+     *                                      show it; see {@see acceptsRequestedVisitorId()}.
      * @return array{visitorUuid: ?string, action: string, categories: string[], siteId: int, recorded: bool, recordId: ?int}
      * @throws \InvalidArgumentException for an unknown action.
      * @throws \RuntimeException when logging is on and the record cannot be saved.
@@ -87,8 +89,13 @@ class ConsentService extends Component
      */
     public const POLICY_VERSION_PATTERN = '/^[A-Za-z0-9._:\-]{1,50}$/D';
 
-    public function saveConsent(string $action, array $categories, string $source = self::SOURCE_BANNER, ?string $policyVersion = null): array
-    {
+    public function saveConsent(
+        string $action,
+        array $categories,
+        string $source = self::SOURCE_BANNER,
+        ?string $policyVersion = null,
+        ?string $requestedVisitorId = null,
+    ): array {
         if (!in_array($action, self::ACTIONS, true)) {
             throw new \InvalidArgumentException("Unknown consent action '{$action}'.");
         }
@@ -138,15 +145,28 @@ class ConsentService extends Component
             $visitorUuid = $request->getCookies()->getValue(ConsentScope::forSite($siteId)->visitorCookieName());
         }
 
+        $ipHash = ConsentHelper::hashIp(
+            $request instanceof \craft\web\Request ? Throttle::resolveIp($request) : ''
+        );
+
+        // The cookie, when there is one, always decides. Without it, an ID
+        // the browser made and already showed the visitor is used, if it is
+        // safe to; otherwise a new one is issued, as it always was.
         if (!is_string($visitorUuid) || !preg_match('/^[0-9a-f-]{36}$/iD', $visitorUuid)) {
-            $visitorUuid = ConsentHelper::generateVisitorUuid();
+            $requested   = ConsentHelper::normalizeVisitorId($requestedVisitorId);
+            $visitorUuid = $settings->showConsentId && $requested !== null
+                && $this->acceptsRequestedVisitorId($requested, self::_browserKey())
+                ? $requested
+                : ConsentHelper::generateVisitorUuid();
+        }
+
+        if ($settings->showConsentId) {
+            self::_claimVisitorId($visitorUuid, self::_browserKey());
         }
 
         $record                = new ConsentLogRecord();
         $record->visitorUuid   = $visitorUuid;
-        $record->ipHash        = ConsentHelper::hashIp(
-            $request instanceof \craft\web\Request ? Throttle::resolveIp($request) : ''
-        );
+        $record->ipHash        = $ipHash;
         $record->siteId        = $siteId;
         $record->categories    = Json::encode($categories);
         $record->action        = $action;
@@ -210,6 +230,156 @@ class ConsentService extends Component
             'recorded'    => true,
             'recordId'    => (int) $record->id,
         ];
+    }
+
+    /**
+     * Whether a visitor ID made by the browser may be used for a record.
+     *
+     * With "Show consent ID" on, the runtime makes an ID before the visitor
+     * decides, shows it, and sends it with the decision. It is only a claim,
+     * so it is accepted only when it cannot attach a record to somebody else's
+     * history: the ID is new, or this same browser already saved a record
+     * under it — a retry of its own decision whose response, and visitor
+     * cookie, was lost.
+     *
+     * "This same browser" is its Craft CSRF cookie (or, without one, its
+     * session): httpOnly, set before the first save, and held by no other
+     * browser. The network is deliberately not the test: everyone behind one
+     * CDN, office or mobile carrier shares it. Anything else gets a new ID from
+     * the server, and the runtime shows that one instead.
+     */
+    public function acceptsRequestedVisitorId(string $visitorId, ?string $browserKey): bool
+    {
+        $visitorId = ConsentHelper::normalizeVisitorId($visitorId);
+
+        if ($visitorId === null) {
+            return false;
+        }
+
+        if (self::claimMatches(self::_claimFor($visitorId), $browserKey)) {
+            return true;
+        }
+
+        return !ConsentLogRecord::find()->where(['visitorUuid' => $visitorId])->exists();
+    }
+
+    /**
+     * Whether a stored claim on a visitor ID belongs to this browser. No key,
+     * or no claim, matches nothing.
+     */
+    public static function claimMatches(mixed $claim, ?string $browserKey): bool
+    {
+        return is_string($claim) && $browserKey !== null && $browserKey !== '' && hash_equals($claim, $browserKey);
+    }
+
+    /** How long a browser's claim on its visitor ID lasts — longer than the runtime keeps retrying. */
+    private const CLAIM_TTL = 30 * 86400;
+
+    private static function _claimCacheKey(string $visitorId): string
+    {
+        return 'cookieConsentFlow.visitorClaim.' . $visitorId;
+    }
+
+    /**
+     * A keyed hash identifying this browser, from its CSRF cookie or else its
+     * session — never the raw value — or null when it has neither.
+     */
+    private static function _browserKey(): ?string
+    {
+        try {
+            $request = Craft::$app->getRequest();
+
+            if (!$request instanceof \craft\web\Request) {
+                return null;
+            }
+
+            $secret = hash_hmac('sha256', 'cookie-consent-flow:visitor-claim', ConsentHelper::installSecret());
+            $csrf   = $request->getCookies()->getValue($request->csrfParam);
+
+            if (is_string($csrf) && $csrf !== '') {
+                return hash_hmac('sha256', 'csrf|' . $csrf, $secret);
+            }
+
+            $session = Craft::$app->getSession();
+
+            if ($session->getHasSessionId() && $session->getId() !== '') {
+                return hash_hmac('sha256', 'session|' . $session->getId(), $secret);
+            }
+        } catch (\Throwable) {
+        }
+
+        return null;
+    }
+
+    private static function _claimFor(string $visitorId): mixed
+    {
+        try {
+            return Craft::$app->getCache()->get(self::_claimCacheKey($visitorId));
+        } catch (\Throwable) {
+            return null;
+        }
+    }
+
+    /**
+     * Records that this browser saved a record under `$visitorId`, so a
+     * retry of that save can keep the ID the visitor was shown. A cache
+     * failure only means such a retry gets a new ID.
+     */
+    private static function _claimVisitorId(string $visitorId, ?string $browserKey): void
+    {
+        if ($browserKey === null) {
+            return;
+        }
+
+        try {
+            Craft::$app->getCache()->set(self::_claimCacheKey($visitorId), $browserKey, self::CLAIM_TTL);
+        } catch (\Throwable $e) {
+            Craft::warning('Cookie consent could not record the visitor ID claim: ' . $e->getMessage(), __METHOD__);
+        }
+    }
+
+    /**
+     * Deletes every consent record carrying one visitor ID — the erasure side
+     * of a data subject request.
+     *
+     * Whether to honour such a request for proof-of-consent records is the
+     * site's legal decision; this only makes it possible. Restricted to
+     * `$siteIds` when given (the sites the requesting user may access), so a
+     * user can never remove another site's evidence.
+     *
+     * @param int[]|null $siteIds Sites to delete from; null for every site.
+     * @param bool       $dryRun  Count what would be deleted without deleting it.
+     * @return int Number of records deleted (or that would be).
+     */
+    public function deleteVisitorRecords(string $visitorId, ?array $siteIds = null, bool $dryRun = false): int
+    {
+        $visitorId = ConsentHelper::normalizeVisitorId($visitorId);
+
+        if ($visitorId === null || $siteIds === []) {
+            return 0;
+        }
+
+        $condition = ['visitorUuid' => $visitorId];
+
+        if ($siteIds !== null) {
+            $condition['siteId'] = array_map('intval', $siteIds);
+        }
+
+        if ($dryRun) {
+            return (int) ConsentLogRecord::find()->where($condition)->count();
+        }
+
+        $deleted = (int) ConsentLogRecord::deleteAll($condition);
+
+        if ($deleted > 0) {
+            try {
+                Plugin::getInstance()->statistics->invalidate();
+            } catch (\Throwable $e) {
+                Craft::warning('Cookie consent statistics could not be invalidated: ' . $e->getMessage(), __METHOD__);
+            }
+        }
+
+        return $deleted;
     }
 
     /**
@@ -404,7 +574,7 @@ class ConsentService extends Component
      * silently covered a different set of records than the screen it was
      * launched from would be worse than no export at all.
      *
-     * Accepted filters: `action`, `source`, `policyVersion`, `countryCode`,
+     * Accepted filters: `action`, `source`, `policyVersion`, `countryCode`, `visitorUuid`,
      * `category` (records that include this category key), `from` / `to`
      * (dates), `siteIds` (restrict to these sites). Unknown keys and empty
      * values are ignored.
@@ -435,6 +605,14 @@ class ConsentService extends Component
 
         if (!empty($filters['countryCode'])) {
             $query->andWhere(['countryCode' => strtoupper((string) $filters['countryCode'])]);
+        }
+
+        // Exact match. A value that is not a visitor ID matches nothing,
+        // rather than being dropped: a search that silently showed every
+        // record would look like an answer to an access request.
+        if (array_key_exists('visitorUuid', $filters) && $filters['visitorUuid'] !== null && $filters['visitorUuid'] !== '') {
+            $visitorId = ConsentHelper::normalizeVisitorId($filters['visitorUuid']);
+            $query->andWhere($visitorId !== null ? ['visitorUuid' => $visitorId] : new Expression('1 = 0'));
         }
 
         if (($from = $this->_normalizeDate($filters['from'] ?? null, '00:00:00')) !== null) {

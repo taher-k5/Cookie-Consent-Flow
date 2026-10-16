@@ -122,6 +122,7 @@ class LogsController extends Controller
             // Retained for templates/links written against the old variable name.
             'filter'      => $filters['action'] ?? '',
             'canExport'   => Permissions::canAny(Permissions::EXPORT_LOGS),
+            'canDelete'   => Permissions::canAny(Permissions::DELETE_LOGS),
             'actions'     => ConsentService::ACTIONS,
             'sources'     => ConsentService::SOURCES,
             'categories'  => $plugin->cookieSettings->getEffectiveSettings($site?->id)->categories,
@@ -154,7 +155,7 @@ class LogsController extends Controller
         $request    = Craft::$app->getRequest();
         $backParams = [];
 
-        foreach (['site', 'filter', 'source', 'category', 'policyVersion', 'country', 'from', 'to', 'page'] as $key) {
+        foreach (['site', 'filter', 'source', 'category', 'policyVersion', 'country', 'visitor', 'from', 'to', 'page'] as $key) {
             $value = $request->getQueryParam($key);
 
             if (is_string($value) && $value !== '') {
@@ -173,7 +174,74 @@ class LogsController extends Controller
             'record'         => $record,
             'backUrl'        => \craft\helpers\UrlHelper::cpUrl('cookie-consent-flow/logs', $backParams),
             'categoryLabels' => $labels,
+            'canDelete'      => Permissions::canAny(Permissions::DELETE_LOGS),
         ]);
+    }
+
+    /**
+     * Deletes every consent record of one visitor ID — the erasure side of a
+     * data subject request.
+     *
+     * Limited to the sites this user may access, exactly like viewing: the
+     * same ID can carry records on several sites (one site group sharing
+     * consent), and a user restricted to one site must not remove another
+     * site's evidence. Records of a deleted site belong to no site permission,
+     * so only an admin removes those. A posted `site` narrows it to that one
+     * site, matching the list the deletion was started from.
+     *
+     * The result never mentions records on sites the user cannot access —
+     * not even how many there are.
+     *
+     * Each deletion is written to the Craft log with the acting user, because
+     * the records themselves no longer exist to show it happened.
+     */
+    public function actionDeleteVisitor(): Response
+    {
+        $this->requireCpRequest();
+        $this->requirePostRequest();
+        Permissions::requireAny(Permissions::DELETE_LOGS);
+
+        $request   = Craft::$app->getRequest();
+        $visitorId = ConsentHelper::normalizeVisitorId($request->getRequiredBodyParam('visitorId'));
+
+        if ($visitorId === null) {
+            throw new BadRequestHttpException('Invalid visitor ID.');
+        }
+
+        $isAdmin = Craft::$app->getUser()->getIdentity()?->admin ?? false;
+        $site    = $this->_resolveSite($request->getBodyParam('site'));
+        $siteIds = $site !== null
+            ? [(int) $site->id]
+            : self::deletableSiteIds($isAdmin, Permissions::accessibleSiteIds());
+
+        $deleted = Plugin::getInstance()->consent->deleteVisitorRecords($visitorId, $siteIds);
+
+        Craft::warning(
+            "Cookie consent records deleted for visitor {$visitorId}: {$deleted} record(s)"
+            . ($siteIds === null ? ' on every site' : ' on site(s) #' . implode(', #', $siteIds))
+            . ', by user #' . (Craft::$app->getUser()->getId() ?? 0),
+            __METHOD__
+        );
+
+        $message = Craft::t('cookie-consent-flow', 'Deleted {count, plural, =1{# consent record} other{# consent records}} for this visitor.', [
+            'count' => $deleted,
+        ]);
+
+        Craft::$app->getSession()->setSuccess($message);
+
+        return $this->redirectToPostedUrl(null, 'cookie-consent-flow/logs');
+    }
+
+    /**
+     * The sites a deletion may reach: every site, including deleted ones,
+     * for an admin; otherwise the sites the user may access.
+     *
+     * @param  int[] $accessibleSiteIds
+     * @return int[]|null Null for every site.
+     */
+    public static function deletableSiteIds(bool $isAdmin, array $accessibleSiteIds): ?array
+    {
+        return $isAdmin ? null : array_values(array_map('intval', $accessibleSiteIds));
     }
 
     /**
@@ -520,6 +588,13 @@ class LogsController extends Controller
         $country = is_string($country) ? strtoupper(trim($country)) : '';
         if (preg_match('/^[A-Z]{2}$/D', $country)) {
             $filters['countryCode'] = $country;
+        }
+
+        // Kept even when it is not a visitor ID, so the search shows no
+        // records instead of quietly showing all of them.
+        $visitor = trim($str($request->getParam('visitor', '')));
+        if ($visitor !== '') {
+            $filters['visitorUuid'] = ConsentHelper::normalizeVisitorId($visitor) ?? $visitor;
         }
 
         // The site restriction is deliberately not added here: these are

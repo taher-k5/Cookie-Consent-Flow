@@ -28,6 +28,28 @@ class ConsentHelper
     }
 
     /**
+     * The shape of a visitor ID: a lower-case UUID (any version — IDs issued
+     * by {@see generateVisitorUuid()} do not all carry the v4 nibble).
+     */
+    public const VISITOR_ID_PATTERN = '/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/D';
+
+    /**
+     * A visitor ID as typed or posted, lower-cased and trimmed, or null when
+     * it is not one. Used for every visitor ID that arrives from outside —
+     * a records search, a deletion request, a browser-made ID.
+     */
+    public static function normalizeVisitorId(mixed $value): ?string
+    {
+        if (!is_string($value)) {
+            return null;
+        }
+
+        $value = strtolower(trim($value));
+
+        return preg_match(self::VISITOR_ID_PATTERN, $value) ? $value : null;
+    }
+
+    /**
      * A pseudonymous, keyed hash of the network a consent decision came from.
      * The raw IP is never stored, and neither is the full address in any
      * reversible form.

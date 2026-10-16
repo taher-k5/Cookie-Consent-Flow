@@ -29,7 +29,7 @@ class SettingsService extends Component
         'bannerEnabled', 'fullWidth', 'shadow', 'geoEnabled', 'logEnabled',
         'consentModeEnabled', 'consentModeAutoInject',
         'consentModeUrlPassthrough', 'consentModeAdsDataRedaction',
-        'respectGpc', 'respectDnt',
+        'respectGpc', 'respectDnt', 'showConsentId',
     ];
 
     /** JSON-encoded array settings fields (whole-value in/out). */
@@ -675,7 +675,7 @@ class SettingsService extends Component
             $this->_columnOverridableFields(),
             [
                 'logEnabled', 'logRetentionDays', 'consentExpiryDays', 'policyVersion',
-                'respectGpc', 'respectDnt', 'consentScope',
+                'respectGpc', 'respectDnt', 'consentScope', 'showConsentId',
             ]
         );
     }

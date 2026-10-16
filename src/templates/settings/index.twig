@@ -89,6 +89,14 @@
         max:    constant('sfsinfotech\\craftcookieconsentflow\\models\\Settings::DAYS_MAX'),
     }) }}
 
+    {{ forms.lightswitchField({
+        label:        "Show Consent ID to Visitors"|t('cookie-consent-flow'),
+        instructions: "Shows visitors the ID their consent records are saved under, with a copy button, in the preference centre. They can quote it to ask for or delete their records, and you can find the records by searching Consent Records for it. The ID is kept in the visitor’s browser from their first page view, so it stays the same across visits, and page scripts can read it while this is on."|t('cookie-consent-flow'),
+        id:   'showConsentId',
+        name: 'settings[showConsentId]',
+        on:   settings.showConsentId,
+    }) }}
+
 </div>{# /tab-logging #}
 
 {# ── Integrations: Google Consent Mode v2 ──────────────────────────────── #}

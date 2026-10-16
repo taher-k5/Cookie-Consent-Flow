@@ -50,7 +50,12 @@
 
         <tr>
             <th scope="row">{{ "Visitor ID"|t('cookie-consent-flow') }}</th>
-            <td><code>{{ record.visitorUuid }}</code></td>
+            <td>
+                <code>{{ record.visitorUuid }}</code>
+                <a class="ccf-visitor-link" href="{{ cpUrl('cookie-consent-flow/logs', { site: 'all', visitor: record.visitorUuid }) }}">
+                    {{- "All records for this visitor"|t('cookie-consent-flow') -}}
+                </a>
+            </td>
         </tr>
 
         <tr>
@@ -129,6 +134,17 @@
     <a class="btn" href="{{ backUrl }}">
         {{ "Back to Consent Records"|t('cookie-consent-flow') }}
     </a>
+
+    {% if canDelete %}
+        <form method="post" class="ccf-visitor-delete ccf-visitor-delete--inline"
+              data-cck-confirm="{{ 'Delete every consent record for this visitor, not only this one? This cannot be undone. Export them first if you need a copy.'|t('cookie-consent-flow') }}">
+            {{ csrfInput() }}
+            {{ actionInput('cookie-consent-flow/logs/delete-visitor') }}
+            {{ redirectInput(cpUrl('cookie-consent-flow/logs', { site: 'all', visitor: record.visitorUuid })) }}
+            {{ hiddenInput('visitorId', record.visitorUuid) }}
+            <button type="submit" class="btn caution">{{ "Delete records for this visitor"|t('cookie-consent-flow') }}</button>
+        </form>
+    {% endif %}
 </div>
 
 {% endblock %}

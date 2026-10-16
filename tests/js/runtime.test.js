@@ -202,6 +202,9 @@ function boot(options) {
   // nothing — which would make every assertion below pass for the wrong reason.
   env.window.fetch = fetch;
 
+  // Browser APIs a test supplies (crypto, clipboard), or takes away.
+  Object.assign(env.window, options.window || {});
+
   const load = function () {
     new Function('window', 'document', 'fetch', 'CustomEvent', RUNTIME)(
       env.window,
@@ -2365,6 +2368,362 @@ test('final: buttons work where Element.closest is unavailable', async () => {
   await settle();
 
   assert.strictEqual(page.consent.getConsent().action, 'accept_all');
+});
+
+
+// ---------------------------------------------------------------------------
+// Consent ID: shown to the visitor so they can make a data subject request
+// ---------------------------------------------------------------------------
+
+const ID_A = '11111111-2222-4333-8444-555555555555';
+const ID_B = '99999999-8888-4777-8666-555555555555';
+const SHOW_ID = { showConsentId: true, consentIdUrl: '/actions/cookie-consent-flow/consent/id' };
+const CRYPTO = { crypto: { randomUUID: () => ID_A } };
+
+function withConsentIdBlock(doc) {
+  const block = doc.createElement('div');
+  block.setAttribute('data-cck-consent-id', '');
+  block.setAttribute('data-cck-copied', 'Copied');
+  block.setAttribute('data-cck-copy-failed', 'Copy failed');
+  block.hidden = true;
+
+  const value = doc.createElement('code');
+  value.setAttribute('data-cck-consent-id-value', '');
+  block.appendChild(value);
+
+  const copy = doc.createElement('button');
+  copy.setAttribute('data-cck-action', 'copy-consent-id');
+  copy.textContent = 'Copy';
+  block.appendChild(copy);
+
+  const status = doc.createElement('span');
+  status.setAttribute('data-cck-consent-id-status', '');
+  block.appendChild(status);
+
+  doc.body.appendChild(block);
+}
+
+function shownId(page) {
+  const block = page.document.querySelector('[data-cck-consent-id]');
+
+  return block.hidden ? null : page.document.querySelector('[data-cck-consent-id-value]').textContent;
+}
+
+test('consent id: off by default — nothing made, fetched, shown or sent', async () => {
+  const page = boot({ window: CRYPTO, extra: withConsentIdBlock, routes: { '/consent/save': () => jsonResponse(200, { visitorId: ID_B }) } });
+  await settle();
+
+  assert.strictEqual(await page.consent.getConsentId(), null);
+
+  page.consent.acceptAll();
+  await settle();
+
+  assert.strictEqual(shownId(page), null);
+  assert.strictEqual(page.fetch.bodyTo('/consent/save')[0].visitorId, undefined);
+  assert.deepStrictEqual(page.fetch.to('/consent/id'), []);
+});
+
+test('consent id: shown before the first decision, with no request, and only the ID stored', async () => {
+  const page = boot({ config: SHOW_ID, window: CRYPTO, extra: withConsentIdBlock });
+  await settle();
+
+  assert.strictEqual(shownId(page), ID_A);
+  assert.deepStrictEqual(page.fetch.calls, [], 'no request before the visitor decides');
+  assert.deepStrictEqual(Object.keys(page.storage), ['cck_cid_1'], 'nothing but the ID');
+});
+
+test('consent id: off — nothing at all is stored before a decision', async () => {
+  const page = boot({ window: CRYPTO, extra: withConsentIdBlock });
+  await settle();
+
+  assert.deepStrictEqual(Object.keys(page.storage), []);
+});
+
+test('consent id: sent with the first decision, and the server\'s answer is what is shown', async () => {
+  const page = boot({ config: SHOW_ID, window: CRYPTO, extra: withConsentIdBlock, routes: { '/consent/save': () => jsonResponse(200, { visitorId: ID_B }) } });
+  await settle();
+
+  page.consent.acceptAll();
+  await settle();
+
+  assert.strictEqual(page.fetch.bodyTo('/consent/save')[0].visitorId, ID_A);
+  assert.strictEqual(shownId(page), ID_B, 'the ID the record was saved under');
+  assert.strictEqual(await page.consent.getConsentId(), ID_B);
+  assert.deepStrictEqual(page.fetch.to('/consent/id'), [], 'no lookup once the server has answered');
+});
+
+test('consent id: a later decision on the same page sends no ID — the cookie decides', async () => {
+  const page = boot({ config: SHOW_ID, window: CRYPTO, extra: withConsentIdBlock, routes: { '/consent/save': () => jsonResponse(200, { visitorId: ID_A }) } });
+  await settle();
+
+  page.consent.acceptAll();
+  await settle();
+  page.consent.rejectAll();
+  await settle();
+
+  assert.strictEqual(page.fetch.bodyTo('/consent/save')[1].visitorId, undefined);
+});
+
+test('consent id: a retried decision asks for the same ID', async () => {
+  const failing = boot({ config: SHOW_ID, window: CRYPTO, routes: { '/consent/save': () => jsonResponse(500, {}) } });
+  await settle();
+  failing.consent.acceptAll();
+  await settle();
+
+  const queued = JSON.parse(failing.storage[PENDING]);
+  assert.strictEqual(queued.visitorId, ID_A, 'kept with the queued decision');
+
+  const retry = boot({
+    config: SHOW_ID,
+    window: { crypto: { randomUUID: () => ID_B } },
+    storage: { cck_consent_1: JSON.parse(failing.storage.cck_consent_1), [PENDING]: queued },
+    routes: { '/consent/save': () => jsonResponse(200, { visitorId: ID_A }) }
+  });
+  await settle();
+
+  assert.strictEqual(retry.fetch.bodyTo('/consent/save')[0].visitorId, ID_A);
+});
+
+test('consent id: after a decision it is fetched when the preference centre opens', async () => {
+  const page = boot({
+    config: SHOW_ID,
+    window: CRYPTO,
+    extra: withConsentIdBlock,
+    storage: { cck_consent_1: validDecision() },
+    routes: { '/consent/id': () => jsonResponse(200, { id: ID_B }) }
+  });
+  await settle();
+
+  assert.strictEqual(shownId(page), null, 'not made, because the server has one');
+  assert.deepStrictEqual(page.fetch.to('/consent/id'), [], 'and not fetched until needed');
+
+  page.consent.openPreferences();
+  await settle();
+
+  assert.strictEqual(shownId(page), ID_B);
+  assert.strictEqual(page.fetch.to('/consent/id').length, 1);
+
+  page.consent.closePreferences();
+  page.consent.openPreferences();
+  await settle();
+  assert.strictEqual(page.fetch.to('/consent/id').length, 1, 'fetched once');
+});
+
+test('consent id: a decision without a visitor cookie gets a made ID for its next record', async () => {
+  const page = boot({
+    config: SHOW_ID,
+    window: CRYPTO,
+    extra: withConsentIdBlock,
+    storage: { cck_consent_1: validDecision() },
+    routes: { '/consent/id': () => jsonResponse(200, { id: null }), '/consent/save': () => jsonResponse(200, { visitorId: ID_A }) }
+  });
+  await settle();
+
+  assert.strictEqual(await page.consent.getConsentId(), ID_A);
+
+  page.consent.rejectAll();
+  await settle();
+  assert.strictEqual(page.fetch.bodyTo('/consent/save')[0].visitorId, ID_A);
+});
+
+test('consent id: a made ID gives way to the visitor cookie the server still holds', async () => {
+  // Storage was cleared, but the httpOnly visitor cookie was not.
+  const page = boot({ config: SHOW_ID, window: CRYPTO, extra: withConsentIdBlock, routes: { '/consent/id': () => jsonResponse(200, { id: ID_B }) } });
+  await settle();
+
+  assert.strictEqual(shownId(page), ID_A);
+
+  page.consent.openPreferences();
+  await settle();
+
+  assert.strictEqual(shownId(page), ID_B);
+});
+
+test('consent id: without a random generator it appears once the server has issued one', async () => {
+  const page = boot({ config: SHOW_ID, window: { crypto: undefined }, extra: withConsentIdBlock, routes: { '/consent/save': () => jsonResponse(200, { visitorId: ID_B }) } });
+  await settle();
+
+  assert.strictEqual(shownId(page), null);
+
+  page.consent.acceptAll();
+  await settle();
+
+  assert.strictEqual(page.fetch.bodyTo('/consent/save')[0].visitorId, undefined);
+  assert.strictEqual(shownId(page), ID_B);
+});
+
+test('consent id: getRandomValues makes a valid version-4 ID', async () => {
+  const page = boot({
+    config: SHOW_ID,
+    window: { crypto: { getRandomValues: (bytes) => { for (let i = 0; i < bytes.length; i++) bytes[i] = 255; return bytes; } } },
+    extra: withConsentIdBlock
+  });
+  await settle();
+
+  assert.strictEqual(shownId(page), 'ffffffff-ffff-4fff-bfff-ffffffffffff');
+});
+
+test('consent id: anything that is not a visitor ID is ignored', async () => {
+  const page = boot({
+    config: SHOW_ID,
+    window: { crypto: { randomUUID: () => '<img src=x onerror=alert(1)>' } },
+    extra: withConsentIdBlock,
+    routes: { '/consent/save': () => jsonResponse(200, { visitorId: 'not-an-id' }) }
+  });
+  await settle();
+
+  page.consent.acceptAll();
+  await settle();
+
+  assert.strictEqual(shownId(page), null);
+  assert.strictEqual(page.fetch.bodyTo('/consent/save')[0].visitorId, undefined);
+});
+
+test('consent id: copy writes the ID to the clipboard and says so', async () => {
+  let written = null;
+  const page = boot({
+    config: SHOW_ID,
+    window: Object.assign({ navigator: { clipboard: { writeText: (text) => { written = text; return Promise.resolve(); } } } }, CRYPTO),
+    extra: withConsentIdBlock
+  });
+  await settle();
+
+  page.consent.copyConsentId();
+  await settle();
+
+  assert.strictEqual(written, ID_A);
+  assert.strictEqual(page.document.querySelector('[data-cck-consent-id-status]').textContent, 'Copied');
+
+  const button = page.document.querySelector('[data-cck-action="copy-consent-id"]');
+  assert.strictEqual(button.textContent, 'Copied', 'the button says so where the visitor is looking');
+  assert.deepStrictEqual(page.env.pendingTimers(), [2000], 'for two seconds');
+
+  page.env.runTimers();
+
+  assert.strictEqual(button.textContent, 'Copy', 'then reads Copy again');
+  assert.strictEqual(page.document.querySelector('[data-cck-consent-id-status]').textContent, '');
+});
+
+test('consent id: copying again restarts the two seconds instead of stacking', async () => {
+  const page = boot({
+    config: SHOW_ID,
+    window: Object.assign({ navigator: { clipboard: { writeText: () => Promise.resolve() } } }, CRYPTO),
+    extra: withConsentIdBlock
+  });
+  await settle();
+
+  page.consent.copyConsentId();
+  await settle();
+  page.consent.copyConsentId();
+  await settle();
+
+  assert.deepStrictEqual(page.env.pendingTimers(), [2000], 'one timer');
+  page.env.runTimers();
+  assert.strictEqual(page.document.querySelector('[data-cck-action="copy-consent-id"]').textContent, 'Copy');
+});
+
+test('consent id: a failed copy does not claim it was copied', async () => {
+  const page = boot({
+    config: SHOW_ID,
+    window: Object.assign({ navigator: { clipboard: { writeText: () => Promise.reject(new Error('denied')) } } }, CRYPTO),
+    extra: withConsentIdBlock
+  });
+  await settle();
+
+  page.consent.copyConsentId();
+  await settle();
+
+  assert.strictEqual(page.document.querySelector('[data-cck-action="copy-consent-id"]').textContent, 'Copy');
+  assert.strictEqual(page.document.querySelector('[data-cck-consent-id-status]').textContent, 'Copy failed');
+});
+
+test('remembered id: stored on the first page view, with no request', async () => {
+  const page = boot({ config: SHOW_ID, window: CRYPTO, extra: withConsentIdBlock });
+  await settle();
+
+  assert.strictEqual(JSON.parse(page.storage.cck_cid_1), ID_A);
+  assert.deepStrictEqual(page.fetch.calls, []);
+});
+
+test('remembered id: the same ID on the next page, and it is the one sent', async () => {
+  const page = boot({
+    config: SHOW_ID,
+    window: { crypto: { randomUUID: () => ID_B } },
+    extra: withConsentIdBlock,
+    storage: { cck_cid_1: ID_A },
+    routes: { '/consent/save': () => jsonResponse(200, { visitorId: ID_A }) }
+  });
+  await settle();
+
+  assert.strictEqual(shownId(page), ID_A, 'not a new one');
+
+  page.consent.acceptAll();
+  await settle();
+
+  assert.strictEqual(page.fetch.bodyTo('/consent/save')[0].visitorId, ID_A);
+});
+
+test('remembered id: the server\'s answer replaces it', async () => {
+  const page = boot({
+    config: SHOW_ID,
+    window: CRYPTO,
+    extra: withConsentIdBlock,
+    routes: { '/consent/save': () => jsonResponse(200, { visitorId: ID_B }) }
+  });
+  await settle();
+
+  page.consent.acceptAll();
+  await settle();
+
+  assert.strictEqual(JSON.parse(page.storage.cck_cid_1), ID_B);
+  assert.strictEqual(shownId(page), ID_B);
+});
+
+test('remembered id: a tampered value is not used', async () => {
+  const page = boot({ config: SHOW_ID, window: CRYPTO, extra: withConsentIdBlock, storage: { cck_cid_1: '<b>x</b>' } });
+  await settle();
+
+  assert.strictEqual(shownId(page), ID_A);
+  assert.strictEqual(JSON.parse(page.storage.cck_cid_1), ID_A);
+});
+
+test('remembered id: a remembered ID is still checked against the server once', async () => {
+  const page = boot({
+    config: SHOW_ID,
+    window: CRYPTO,
+    extra: withConsentIdBlock,
+    storage: { cck_cid_1: ID_A, cck_consent_1: validDecision() },
+    routes: { '/consent/id': () => jsonResponse(200, { id: ID_B }) }
+  });
+  await settle();
+
+  assert.strictEqual(shownId(page), ID_A);
+
+  page.consent.openPreferences();
+  await settle();
+
+  assert.strictEqual(shownId(page), ID_B, 'the visitor cookie decides');
+  assert.strictEqual(JSON.parse(page.storage.cck_cid_1), ID_B);
+});
+
+test('remembered id: kept per scope, and the other setting\'s key is removed', async () => {
+  const page = boot({
+    config: Object.assign({ staleScopeKeys: ['1'] }, SHOW_ID, GROUP),
+    window: CRYPTO,
+    extra: withConsentIdBlock,
+    storage: { cck_cid_1: ID_B }
+  });
+  await settle();
+
+  assert.strictEqual(page.storage.cck_cid_1, undefined);
+  assert.strictEqual(JSON.parse(page.storage.cck_cid_g2), ID_A);
+});
+
+test('remembered id: turning Show Consent ID off removes it', async () => {
+  const page = boot({ window: CRYPTO, storage: { cck_cid_1: ID_A } });
+  await settle();
+
+  assert.strictEqual(page.storage.cck_cid_1, undefined);
 });
 
 // ---------------------------------------------------------------------------

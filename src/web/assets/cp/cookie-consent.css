@@ -1178,6 +1178,36 @@
     margin-top:20px;
 }
 
+/* Visitor ID search: a UUID needs the room. */
+.ccf-filter-field--visitor {
+    flex-basis: 300px;
+    max-width: 340px;
+}
+
+/* One visitor's records: the erasure action sits above them. */
+.ccf-visitor-delete {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    margin: 0 0 16px;
+}
+
+.ccf-visitor-delete p {
+    margin: 0;
+}
+
+.ccf-visitor-delete--inline {
+    display: inline-flex;
+    margin: 0 0 0 8px;
+}
+
+.ccf-visitor-link {
+    margin-inline-start: 8px;
+    font-size: 12px;
+}
+
 .cck-detected-list__seen {
     margin-inline-start:8px;
     font-size:12px;

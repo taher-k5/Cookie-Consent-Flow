@@ -599,6 +599,80 @@ if ($second !== null) {
     });
 }
 
+$check('multisite: each site\'s runtime posts to its own site, not the primary', function () {
+    foreach (Craft::$app->getSites()->getAllSites() as $site) {
+        if (!$site->hasUrls || !$site->getBaseUrl()) {
+            continue;
+        }
+
+        $url = Plugin::siteActionUrl('cookie-consent-flow/consent/save', (int) $site->id);
+        expect(str_starts_with($url, rtrim($site->getBaseUrl(), '/') . '/'), "{$site->handle}: {$url} is not on " . $site->getBaseUrl());
+        expect(str_contains($url, 'cookie-consent-flow/consent/save'), "{$site->handle}: {$url}");
+    }
+});
+
+// ---------------------------------------------------------------------------
+// Data subject requests — one visitor's records
+// ---------------------------------------------------------------------------
+
+$check('dsr: a browser-made visitor ID is used only when it cannot join another history', function () use ($plugin) {
+    $mine  = craft\helpers\StringHelper::UUID();
+    $other = craft\helpers\StringHelper::UUID();
+
+    // Same network for both: the network is deliberately not what decides.
+    insertLog(['visitorUuid' => $mine]);
+    insertLog(['visitorUuid' => $other]);
+    Craft::$app->getCache()->set('cookieConsentFlow.visitorClaim.' . $mine, 'browser-a', 60);
+
+    try {
+        expect($plugin->consent->acceptsRequestedVisitorId(craft\helpers\StringHelper::UUID(), null), 'a new ID is refused');
+        expect($plugin->consent->acceptsRequestedVisitorId($mine, 'browser-a'), 'a retry from the same browser is refused');
+        expect(!$plugin->consent->acceptsRequestedVisitorId($mine, 'browser-b'), 'another browser took a claimed ID');
+        expect(!$plugin->consent->acceptsRequestedVisitorId($other, 'browser-a'), 'an unclaimed used ID was accepted');
+        expect(!$plugin->consent->acceptsRequestedVisitorId($mine, null), 'no browser key matched a claim');
+        expect(!$plugin->consent->acceptsRequestedVisitorId('%', 'browser-a'), 'a non-ID was accepted');
+    } finally {
+        Craft::$app->getCache()->delete('cookieConsentFlow.visitorClaim.' . $mine);
+        Craft::$app->getDb()->createCommand()->delete('{{%cookieconsent_log}}', ['visitorUuid' => [$mine, $other]])->execute();
+    }
+});
+
+$check('dsr: the records search finds exactly one visitor, and a non-ID finds nothing', function () use ($plugin) {
+    $id = craft\helpers\StringHelper::UUID();
+    insertLog(['visitorUuid' => $id]);
+    insertLog(['visitorUuid' => $id]);
+    insertLog([]);
+
+    try {
+        same(2, (int) $plugin->consent->buildQuery(null, ['visitorUuid' => strtoupper($id)])->count(), 'exact, case-insensitive');
+        same(0, (int) $plugin->consent->buildQuery(null, ['visitorUuid' => '%'])->count(), 'a wildcard matched records');
+        same(0, (int) $plugin->consent->buildQuery(null, ['visitorUuid' => substr($id, 0, 8)])->count(), 'a prefix matched records');
+    } finally {
+        Craft::$app->getDb()->createCommand()->delete('{{%cookieconsent_log}}', ['visitorUuid' => $id])->execute();
+    }
+});
+
+$check('dsr: deleting a visitor removes only their records, only on the given sites', function () use ($plugin) {
+    $id      = craft\helpers\StringHelper::UUID();
+    $primary = (int) $GLOBALS['primary']->id;
+    $kept    = insertLog([]);
+
+    insertLog(['visitorUuid' => $id, 'siteId' => $primary]);
+    insertLog(['visitorUuid' => $id, 'siteId' => 987001]);
+
+    try {
+        same(1, $plugin->consent->deleteVisitorRecords($id, [$primary], dryRun: true), 'dry run counts');
+        same(2, logCount(['visitorUuid' => $id]), 'a dry run deleted');
+        same(0, $plugin->consent->deleteVisitorRecords($id, []), 'no sites deleted something');
+        same(1, $plugin->consent->deleteVisitorRecords($id, [$primary]), 'deleted on the given site');
+        same(1, logCount(['visitorUuid' => $id]), 'the other site\'s record was kept');
+        same(1, $plugin->consent->deleteVisitorRecords($id), 'every site');
+        same(1, logCount(['id' => $kept]), 'another visitor\'s record was deleted');
+    } finally {
+        Craft::$app->getDb()->createCommand()->delete('{{%cookieconsent_log}}', ['or', ['visitorUuid' => $id], ['id' => $kept]])->execute();
+    }
+});
+
 // ---------------------------------------------------------------------------
 // L17 — deleted-site cleanup
 // ---------------------------------------------------------------------------

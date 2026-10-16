@@ -41,6 +41,7 @@
     category:      filters.category ?? null,
     country:       filters.countryCode ?? null,
     policyVersion: filters.policyVersion ?? null,
+    visitor:       filters.visitorUuid ?? null,
     from:          filters.from ?? null,
     to:            filters.to ?? null,
 })|filter(v => v is not null and v != '') %}
@@ -135,6 +136,13 @@
             <label for="ccf-filter-version">{{ "Policy version"|t('cookie-consent-flow') }}</label>
             <input type="text" id="ccf-filter-version" name="policyVersion" class="text"
                    value="{{ filters.policyVersion ?? '' }}">
+        </div>
+
+        <div class="ccf-filter-field ccf-filter-field--visitor">
+            <label for="ccf-filter-visitor">{{ "Visitor ID"|t('cookie-consent-flow') }}</label>
+            <input type="text" id="ccf-filter-visitor" name="visitor" class="text code"
+                   maxlength="64" autocomplete="off" spellcheck="false"
+                   placeholder="2a5c0cff-…" value="{{ filters.visitorUuid ?? '' }}">
         </div>
 
         <div class="ccf-filter-actions">
@@ -239,6 +247,34 @@
         {% endfor %}
     </div>
 </section>
+{% endif %}
+
+{# ── One visitor: a data subject request ─────────────────────────────── #}
+{# Searching by visitor ID is how an access request is answered (the export
+   above then covers exactly this visitor), and how an erasure request is
+   carried out. Deleting is its own permission, and reaches only the sites
+   this user may access. #}
+{# Offered only when the visitor ID is the one filter, so the list on screen
+   is exactly what is deleted: this visitor, on the selected site or on
+   every site this user may access. #}
+{% set visitorId = filters.visitorUuid ?? null %}
+{% if visitorId and canDelete and records is not empty and filters|keys == ['visitorUuid'] %}
+    <form method="post" class="ccf-visitor-delete"
+          data-cck-confirm="{{ 'Delete every consent record shown for this visitor? This cannot be undone. Export them first if you need a copy.'|t('cookie-consent-flow') }}">
+        {{ csrfInput() }}
+        {{ actionInput('cookie-consent-flow/logs/delete-visitor') }}
+        {{ redirectInput(cpUrl('cookie-consent-flow/logs', siteParams|merge({ visitor: visitorId }))) }}
+        {{ hiddenInput('visitorId', visitorId) }}
+        {% if currentSite %}{{ hiddenInput('site', currentSite.handle) }}{% endif %}
+        <p class="light">
+            {% if currentSite %}
+                {{ "Showing every record of visitor {id} on {site}."|t('cookie-consent-flow', { id: visitorId, site: currentSite.name }) }}
+            {% else %}
+                {{ "Showing every record of visitor {id} that you can access."|t('cookie-consent-flow', { id: visitorId }) }}
+            {% endif %}
+        </p>
+        <button type="submit" class="btn caution">{{ "Delete records for this visitor"|t('cookie-consent-flow') }}</button>
+    </form>
 {% endif %}
 
 {# ── Empty state ─────────────────────────────────────────────────────── #}

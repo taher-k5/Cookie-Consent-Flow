@@ -213,6 +213,41 @@ $check('consent: a CSRF-protected save succeeds and returns no visitor identifie
     expect(stripos($cookie, 'httponly') !== false, 'visitor cookie not httpOnly');
 });
 
+$check('consent id: off, the ID endpoint answers null and the save carries no ID', function () {
+    settings(['showConsentId' => false]);
+
+    $session = session();
+    postJson('cookie-consent-flow/consent/save', ['action' => 'reject_all', 'categories' => []], $session);
+    $id = http('GET', action('cookie-consent-flow/consent/id'), ['Accept' => 'application/json'], null, $session[0]);
+
+    expect(json_decode($id['body'], true) === ['id' => null], 'ID readable while off: ' . $id['body']);
+    expect(str_contains(implode(' ', $id['headers']['cache-control'] ?? []), 'no-store'), 'ID response is cacheable');
+});
+
+$check('consent id: on, the shown ID is the record\'s, the cookie\'s and the endpoint\'s', function () {
+    settings(['showConsentId' => true]);
+
+    try {
+        $session = session();
+        $made    = '0f0f0f0f-1111-4222-8333-' . substr(bin2hex(random_bytes(6)), 0, 12);
+        $save    = postJson('cookie-consent-flow/consent/save', ['action' => 'reject_all', 'categories' => [], 'visitorId' => $made], $session);
+        $json    = json_decode($save['body'], true);
+
+        expect(($json['visitorId'] ?? null) === $made, 'the browser\'s ID was not used: ' . $save['body']);
+        expect(str_contains(implode("\n", $save['headers']['set-cookie'] ?? []), $made), 'the cookie carries another ID');
+
+        $id = http('GET', action('cookie-consent-flow/consent/id'), ['Accept' => 'application/json'], null, $session[0]);
+        expect((json_decode($id['body'], true)['id'] ?? null) === $made, 'endpoint: ' . $id['body']);
+
+        // A second browser claiming the same ID from another network is not
+        // given it. (Same machine here, so only the format rule is checked.)
+        $again = postJson('cookie-consent-flow/consent/save', ['action' => 'custom', 'categories' => [], 'visitorId' => 'nonsense'], session());
+        expect((json_decode($again['body'], true)['visitorId'] ?? '') !== 'nonsense', 'a non-ID was echoed back');
+    } finally {
+        settings(['showConsentId' => false]);
+    }
+});
+
 $check('consent: a missing token is refused with invalid_csrf', function () {
     [$jar] = session();
     $response = http('POST', action('cookie-consent-flow/consent/save'), ['Accept' => 'application/json', 'Content-Type' => 'application/json'], '{"action":"accept_all"}', $jar);

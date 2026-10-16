@@ -182,6 +182,18 @@ class Settings extends Model
     public bool $logEnabled       = true;
     public int  $logRetentionDays = 365;
 
+    /**
+     * Shows visitors their consent ID (the anonymous visitor ID their records
+     * carry) in the preference centre, with a copy button, so they can quote
+     * it in an access or erasure request. The ID is kept in the browser
+     * (`cck_cid_<scope>`) from the first page view, so it stays the same
+     * across page loads and visits, as OneTrust and Usercentrics do. Off by
+     * default: it stores an identifier before a decision, and makes the ID
+     * readable by page scripts. Has no effect while logging is off, when no
+     * ID exists. Global-only.
+     */
+    public bool $showConsentId = false;
+
     // Consent expiry & re-consent
     /**
      * Days after which stored consent is treated as stale and the banner is
@@ -914,7 +926,7 @@ class Settings extends Model
                     'bannerEnabled', 'geoEnabled', 'logEnabled', 'fullWidth', 'shadow',
                     'consentModeEnabled', 'consentModeAutoInject',
                     'consentModeUrlPassthrough', 'consentModeAdsDataRedaction',
-                    'respectGpc', 'respectDnt',
+                    'respectGpc', 'respectDnt', 'showConsentId',
                 ],
                 'boolean',
             ],

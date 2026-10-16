@@ -29,6 +29,8 @@ can be recorded in the control panel.
   changes
 - Consent records with filters, statistics, CSV/JSON export and a retention
   period
+- Data subject requests: visitors can see their consent ID, and you can find,
+  export or delete one visitor's records
 - A dashboard, a Consent Overview dashboard widget and user permissions in
   the control panel
 - Multisite support: global settings with optional per-site overrides, and
@@ -87,7 +89,7 @@ Editors manage all settings in the control panel under **Cookie Consent**:
 | --- | --- |
 | **Banner** | Layout, content, colours, and geo-targeting |
 | **Cookies** | The cookies listed for each category, and detected cookies |
-| **Settings** | Categories, consent logging and retention, Google Consent Mode, privacy signals, consent expiry, consent scope (multisite), and **Invalidate Existing Consent** |
+| **Settings** | Categories, consent logging, retention and the visitor's consent ID, Google Consent Mode, privacy signals, consent expiry, consent scope (multisite), and **Invalidate Existing Consent** |
 | **Multisite** | Per-site overrides (shown only on multisite installs) |
 | **Consent Records** | Consent history, statistics and exports |
 
@@ -282,8 +284,8 @@ hash and the user agent.
 
 **Consent Records** shows outcome totals and acceptance rates for each
 category, and can filter by site, outcome, source, category, country, policy
-version and date range. You can export the filtered records as CSV or
-JSON, up to 100,000 records per export.
+version, date range and visitor ID. You can export the filtered records as CSV
+or JSON, up to 100,000 records per export.
 
 Set a retention period (365 days by default, at most 36,500, and `0` keeps
 records forever)
@@ -296,6 +298,55 @@ php craft cookie-consent-flow/retention/clear --force=1
 
 The command also accepts `--days=N` and `--site=handle` (or a site ID). You can also set
 `automaticRetention` to `true` to have Craft's garbage collection delete them.
+
+### Data subject requests
+
+Records are pseudonymous: the only link between a person and their records is
+the visitor ID. To let visitors find theirs, turn on **Show Consent ID to
+Visitors** under **Settings → Consent Logging** (off by default). The
+preference centre then shows "Your consent ID" with a **Copy** button, and a
+link to your privacy policy when one is set.
+
+- The ID is shown from the first page view and stays the same across page
+  loads and visits, as with OneTrust and Usercentrics. Before the visitor's
+  first decision it is made in the browser and stored there
+  (`cck_cid_{scope}`). Their first record is saved under it. If the server
+  cannot use it (another record already has it), it issues a new ID and the
+  preference centre shows that one instead.
+- This stores an identifier before the visitor decides, so check the setting
+  against your own legal advice. With it off (the default), nothing
+  identifying is stored before a decision, and turning it off removes stored
+  IDs on the visitor's next page view.
+- The server always decides which ID a record is saved under, so a copied or
+  edited value cannot join another visitor's records.
+- Afterwards it comes from the server, which reads it from the visitor's
+  `httpOnly` cookie. It is never written into the page HTML, so page caching
+  is unaffected.
+- While the setting is on, page scripts can read the ID too (see
+  `CookieConsent.getConsentId()` below). It identifies only the visitor's
+  consent records.
+- The ID belongs to one browser. A visitor who used another browser or
+  device, or cleared their cookies, has another ID for those records.
+
+When a visitor quotes their ID:
+
+- **Access:** paste it into **Visitor ID** on **Consent Records** and export
+  the result.
+- **Erasure:** with the **Delete a visitor's consent records** permission,
+  search for the ID and click **Delete records for this visitor**. It
+  deletes the records shown: on the selected site, or on every site you can
+  access. A record's page offers the same for every site you can access.
+  Records on other sites are never deleted, and each deletion is written to
+  the Craft log. From the command line:
+
+```bash
+php craft cookie-consent-flow/records/delete --visitor=<id> --dry-run=1
+php craft cookie-consent-flow/records/delete --visitor=<id> --force=1
+```
+
+The command also accepts `--site=handle` (or a site ID). Whether to delete
+proof-of-consent records when asked is your legal decision; export them first
+if you may need them.
 
 ## Multisite
 
@@ -371,8 +422,9 @@ Event::on(
 - **Manage cookie consent configuration**
 - **View consent records**
   - **Export consent records**
+  - **Delete a visitor's consent records**
 
-Being able to view records does not include exporting them. The control panel
+Being able to view records does not include exporting or deleting them. The control panel
 navigation shows only the pages a user can access. On multisite installs,
 records, exports, the dashboard and site overrides are also limited to the
 sites the user has access to in Craft; global settings apply to every site.
@@ -410,6 +462,7 @@ CookieConsent.openPreferences();
 CookieConsent.updateConsent({ analytics: true, marketing: false });
 CookieConsent.resetConsent();
 CookieConsent.onReady(function (decision) { /* null if undecided */ });
+CookieConsent.getConsentId().then(function (id) { /* null unless Show Consent ID is on */ });
 
 document.addEventListener('cookieConsent:changed', function (event) {
   console.log(event.detail);
@@ -417,15 +470,16 @@ document.addEventListener('cookieConsent:changed', function (event) {
 ```
 
 The events are `ready`, `loaded`, `shown`, `suppressed`, `preferences`,
-`changed`, `accepted`, `rejected`, `custom`, `reset` and `syncFailed`, each
-prefixed with `cookieConsent:`.
+`changed`, `accepted`, `rejected`, `custom`, `reset`, `syncFailed` and
+`consentId` (the visitor's consent ID became known), each prefixed with
+`cookieConsent:`.
 
 Pages may be cached, so don't use a visitor's consent state to change
 server-rendered HTML. Check consent in the browser instead.
 
 Buttons you add yourself work with `data-cck-action`, set to `accept-all`,
-`reject-all`, `open-preferences`, `close-preferences`, `save-preferences` or
-`reset-consent`.
+`reject-all`, `open-preferences`, `close-preferences`, `save-preferences`,
+`reset-consent` or `copy-consent-id`.
 
 Resetting consent removes the decision from the browser and asks again. The
 visitor ID cookie is `httpOnly` and stays, so later records remain linked to
@@ -445,31 +499,38 @@ decision (see [Multisite](#sharing-consent-across-a-site-group)).
 | `cck_reported_{siteId}` | localStorage | Cookie names reported in the last day |
 | `cck_geo_{siteId}_{policyVersion}` | sessionStorage | The geo-targeting answer for the tab |
 | `cck_visitor_{scope}` | `httpOnly` cookie (1 year) | Visitor ID, set only when a record is written |
+| `cck_cid_{scope}` | localStorage, or a first-party cookie (365 days) if localStorage can't be written | The consent ID shown to the visitor; only with **Show Consent ID to Visitors** on |
 
 `{scope}` is the site ID by default, and `g{groupId}` when
 **Consent Scope** is **Per site group** (see
 [Multisite](#sharing-consent-across-a-site-group)).
 
 Recording a decision also starts a Craft session (`CraftSessionId` and the
-CSRF cookie). Before the visitor decides, the only thing stored is the
-geo-targeting answer, in sessionStorage, when geo-targeting is on: it holds
-`show` or `hide`, nothing about the visitor, and saves a lookup on every page
-view in that tab. With geo-targeting off, nothing is stored before a
-decision.
+CSRF cookie). Before the visitor decides, only two things can be stored:
+
+- the geo-targeting answer, in sessionStorage, when geo-targeting is on. It
+  holds `show` or `hide`, nothing about the visitor, and saves a lookup on
+  every page view in that tab;
+- the consent ID, when **Show Consent ID to Visitors** is on.
+
+With both off, nothing is stored before a decision.
 
 ## Caching and proxies
 
 The injected HTML is the same for every visitor. Exclude these URLs from your
-page cache:
+page cache. The plugin's own endpoints are requested on each site's base URL
+(for example `/en/actions/cookie-consent-flow/consent/save`), so exclude them
+under every site's path:
 
 - `actions/cookie-consent-flow/consent/save`
 - `actions/cookie-consent-flow/consent/geo`
 - `actions/cookie-consent-flow/consent/status`
+- `actions/cookie-consent-flow/consent/id`
 - `actions/cookie-consent-flow/cookie-detection/report`
 - `actions/users/session-info`
 
-These endpoints are rate limited per visitor, per minute: 20 saves, 30 status
-and 30 geo requests, and 10 cookie reports of at most 100 names each. Behind a
+These endpoints are rate limited per visitor, per minute: 20 saves, 30 status,
+30 consent ID and 30 geo requests, and 10 cookie reports of at most 100 names each. Behind a
 CDN or load balancer,
 list its IP ranges in Craft's `trustedHosts` so each visitor is identified
 exactly; without it, visitors are told apart by the forwarded address within

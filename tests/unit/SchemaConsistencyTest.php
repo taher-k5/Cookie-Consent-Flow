@@ -181,7 +181,7 @@ final class SchemaConsistencyTest extends TestCase
         $files = glob(dirname(__DIR__, 2) . '/src/migrations/*.php') ?: [];
         $incremental = array_values(array_filter($files, static fn(string $file): bool => basename($file) !== 'Install.php'));
 
-        self::assertNotSame([], $incremental, 'the 1.9.0 schema change ships a migration');
+        self::assertNotSame([], $incremental, 'release 1.1.0 ships a migration');
 
         foreach ($incremental as $file) {
             $name = basename($file, '.php');

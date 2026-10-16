@@ -25,6 +25,12 @@ class Permissions
     public const EXPORT_LOGS = 'cookieConsentFlow:exportLogs';
 
     /**
+     * Delete one visitor's consent records (an erasure request). Neither
+     * viewing nor exporting implies it: it destroys consent evidence.
+     */
+    public const DELETE_LOGS = 'cookieConsentFlow:deleteLogs';
+
+    /**
      * Whether the current user holds any of the given permissions. Admins
      * always pass, per Craft's own convention.
      */
@@ -123,6 +129,7 @@ class Permissions
                 'label'  => $t('View consent records'),
                 'nested' => [
                     self::EXPORT_LOGS => ['label' => $t('Export consent records')],
+                    self::DELETE_LOGS => ['label' => $t('Delete a visitor’s consent records')],
                 ],
             ],
         ];

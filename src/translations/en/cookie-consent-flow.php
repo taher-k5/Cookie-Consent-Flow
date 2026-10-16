@@ -413,4 +413,20 @@ return [
     'Welcome Tour' => 'Welcome Tour',
     'Shows where each part of the plugin is. It opens by itself once for each user, the first time they open the plugin.' => 'Shows where each part of the plugin is. It opens by itself once for each user, the first time they open the plugin.',
     'Replay Tour' => 'Replay Tour',
+
+    // Data subject requests
+    'Delete a visitor’s consent records' => 'Delete a visitor’s consent records',
+    'Deleted {count, plural, =1{# consent record} other{# consent records}} for this visitor.' => 'Deleted {count, plural, =1{# consent record} other{# consent records}} for this visitor.',
+    'Delete every consent record shown for this visitor? This cannot be undone. Export them first if you need a copy.' => 'Delete every consent record shown for this visitor? This cannot be undone. Export them first if you need a copy.',
+    'Showing every record of visitor {id} on {site}.' => 'Showing every record of visitor {id} on {site}.',
+    'Delete every consent record for this visitor, not only this one? This cannot be undone. Export them first if you need a copy.' => 'Delete every consent record for this visitor, not only this one? This cannot be undone. Export them first if you need a copy.',
+    'Showing every record of visitor {id} that you can access.' => 'Showing every record of visitor {id} that you can access.',
+    'Delete records for this visitor' => 'Delete records for this visitor',
+    'All records for this visitor' => 'All records for this visitor',
+    'Show Consent ID to Visitors' => 'Show Consent ID to Visitors',
+    'Shows visitors the ID their consent records are saved under, with a copy button, in the preference centre. They can quote it to ask for or delete their records, and you can find the records by searching Consent Records for it. The ID is kept in the visitor’s browser from their first page view, so it stays the same across visits, and page scripts can read it while this is on.' => 'Shows visitors the ID their consent records are saved under, with a copy button, in the preference centre. They can quote it to ask for or delete their records, and you can find the records by searching Consent Records for it. The ID is kept in the visitor’s browser from their first page view, so it stays the same across visits, and page scripts can read it while this is on.',
+    'Your consent ID' => 'Your consent ID',
+    'Copied' => 'Copied',
+    'Select the ID and copy it.' => 'Select the ID and copy it.',
+    'Quote this ID if you ask us for, or to delete, your consent records.' => 'Quote this ID if you ask us for, or to delete, your consent records.',
 ];

@@ -326,14 +326,35 @@ final class ValidationTest extends TestCase
     public function testWellFormedPayloadPassesThrough(): void
     {
         self::assertSame(
-            ['action' => 'custom', 'categories' => ['analytics'], 'source' => 'gpc', 'policyVersion' => '2026-09-26.110005'],
+            ['action' => 'custom', 'categories' => ['analytics'], 'source' => 'gpc', 'policyVersion' => '2026-09-26.110005', 'visitorId' => null],
             ConsentController::validatePayload('custom', ['analytics'], 'gpc', '2026-09-26.110005')
         );
         self::assertSame(
-            ['action' => 'reject_all', 'categories' => [], 'source' => 'banner', 'policyVersion' => null],
+            ['action' => 'reject_all', 'categories' => [], 'source' => 'banner', 'policyVersion' => null, 'visitorId' => null],
             ConsentController::validatePayload('reject_all', null, 'somewhere-else'),
             'no categories, an unknown source and no policy version (older runtimes) are all acceptable'
         );
+    }
+
+    /**
+     * The ID the browser made before the decision. A wrong type is a
+     * malformed request; a string that is not a visitor ID is only dropped,
+     * because refusing it would lose the decision it came with.
+     */
+    public function testTheBrowsersVisitorIdIsNormalisedOrDropped(): void
+    {
+        $id = '2a5c0cff-91b3-4e2d-a7f0-3c1d9e8b4a21';
+
+        self::assertSame($id, ConsentController::validatePayload('custom', [], 'banner', null, strtoupper($id))['visitorId']);
+        self::assertSame($id, ConsentController::validatePayload('custom', [], 'banner', null, " {$id} ")['visitorId']);
+
+        foreach (['', 'not-an-id', str_repeat('a', 36), $id . 'x', $id . ';', '2a5c0cff91b34e2da7f03c1d9e8b4a21'] as $bad) {
+            self::assertNull(ConsentController::validatePayload('custom', [], 'banner', null, $bad)['visitorId'], json_encode($bad));
+        }
+
+        foreach ([[$id], 7, true] as $bad) {
+            self::assertSame(['error' => 'invalid_visitor_id'], ConsentController::validatePayload('custom', [], 'banner', null, $bad), json_encode($bad));
+        }
     }
 
     /**

@@ -72,9 +72,11 @@ class Plugin extends BasePlugin
      * release, every schema change also bumps this and ships a timestamped
      * migration that calls `Install::reconcile()`:
      *
-     * - 1.9.0 — `consentScope` setting (m261016_000000_consent_scope).
+     * - 1.11.0 (release 1.1.0) — `consentScope` and `showConsentId` settings
+     *   (m261016_000000_consent_scope_id). Development builds of 1.1.0 recorded 1.9.0
+     *   to 1.11.0, so it is 1.11.0 rather than the next minor version.
      */
-    public string $schemaVersion = '1.9.0';
+    public string $schemaVersion = '1.11.0';
     public bool $hasCpSettings   = true;
     public bool $hasCpSection     = true;
 
@@ -323,6 +325,7 @@ class Plugin extends BasePlugin
                 $event->rules['POST cookie-consent-flow/settings/copy-multi-site-override']  = 'cookie-consent-flow/settings/copy-multi-site-override';
                 $event->rules['POST cookie-consent-flow/settings/invalidate-consent']        = 'cookie-consent-flow/settings/invalidate-consent';
                 $event->rules['cookie-consent-flow/logs/export']                             = 'cookie-consent-flow/logs/export';
+                $event->rules['POST cookie-consent-flow/logs/delete-visitor']                = 'cookie-consent-flow/logs/delete-visitor';
 
             }
     );
@@ -872,9 +875,12 @@ class Plugin extends BasePlugin
         $scope  = ConsentScope::forSite($siteId);
 
         return [
-            'saveUrl'           => \craft\helpers\UrlHelper::actionUrl('cookie-consent-flow/consent/save'),
-            'reportCookiesUrl'  => \craft\helpers\UrlHelper::actionUrl('cookie-consent-flow/cookie-detection/report'),
-            'geoUrl'            => \craft\helpers\UrlHelper::actionUrl('cookie-consent-flow/consent/geo'),
+            // On this site's own base URL, so each request is handled as this
+            // site: see siteActionUrl().
+            'saveUrl'           => self::siteActionUrl('cookie-consent-flow/consent/save', $siteId),
+            'reportCookiesUrl'  => self::siteActionUrl('cookie-consent-flow/cookie-detection/report', $siteId),
+            'geoUrl'            => self::siteActionUrl('cookie-consent-flow/consent/geo', $siteId),
+            'consentIdUrl'      => self::siteActionUrl('cookie-consent-flow/consent/id', $siteId),
             // Craft's own anonymous session endpoint. The runtime reads a
             // fresh CSRF token from here rather than one baked into possibly
             // cached HTML.
@@ -897,6 +903,10 @@ class Plugin extends BasePlugin
             'geoEnabled'        => $settings->geoEnabled && !empty($settings->geoTargetCountries),
             'respectGpc'        => $settings->respectGpc,
             'respectDnt'        => $settings->respectDnt,
+            // Whether the preference centre shows the visitor their consent
+            // ID. The ID itself is never here: the runtime makes or fetches
+            // it on the visitor's own device.
+            'showConsentId'     => $settings->showConsentId && $settings->logEnabled,
             // Applied by the runtime through the CSSOM; see Settings::getCssVarMap().
             'cssVars'           => $settings->getCssVarMap(),
             'consentMode'       => [
@@ -905,6 +915,97 @@ class Plugin extends BasePlugin
                 'signals' => $settings->getCategoryGcmSignals(),
             ],
         ];
+    }
+
+    /**
+     * An action URL that Craft handles as the given site.
+     *
+     * Craft decides which site a request belongs to from its URL. On a
+     * multisite install whose sites differ by path — `example.com/` and
+     * `example.com/uk/` — a request to `/actions/…` was handled as the
+     * primary site, whichever site the visitor was on: a decision made on
+     * the UK site was checked against the primary site's categories,
+     * recorded against the primary site, and its geo answer and cookie
+     * report used the primary site's settings.
+     *
+     * The URL is Craft's own `actionUrl()` — the host and scheme the page was
+     * served on, the install's subfolder, and the script-name format, exactly
+     * as before — with the site's path put in front of the action trigger
+     * (`/uk/actions/…`, or `?p=uk/actions/…`). Craft strips that path again
+     * before looking for the action. A site at the root of its host gets
+     * `actionUrl()` unchanged.
+     */
+    public static function siteActionUrl(string $route, int $siteId): string
+    {
+        $actionUrl = \craft\helpers\UrlHelper::actionUrl($route);
+
+        try {
+            $general = Craft::$app->getConfig()->getGeneral();
+            $site    = Craft::$app->getSites()->getSiteById($siteId);
+
+            if ($general->headlessMode || $site === null || !$site->hasUrls) {
+                return $actionUrl;
+            }
+
+            $sitePath = self::siteBasePath($site->getBaseUrl(), Craft::$app->getRequest()->getBaseUrl());
+
+            return self::insertSitePath($actionUrl, $general->actionTrigger . '/' . trim($route, '/'), $sitePath);
+        } catch (\Throwable $e) {
+            Craft::warning('Cookie Consent Flow could not build a site action URL: ' . $e->getMessage(), __METHOD__);
+
+            return $actionUrl;
+        }
+    }
+
+    /**
+     * A site's base path below the install's own (`/sub/uk/` under `/sub` is
+     * `uk`), or '' for a site at the root — or one whose base URL has no
+     * path, or does not sit under the install.
+     */
+    public static function siteBasePath(?string $siteBaseUrl, ?string $requestBaseUrl): string
+    {
+        $path = trim((string) parse_url((string) $siteBaseUrl, PHP_URL_PATH), '/');
+        $base = trim((string) parse_url((string) $requestBaseUrl, PHP_URL_PATH), '/');
+
+        if ($path === '') {
+            return '';
+        }
+
+        if ($base !== '') {
+            if ($path === $base) {
+                return '';
+            }
+
+            if (!str_starts_with($path . '/', $base . '/')) {
+                return '';
+            }
+
+            $path = substr($path, strlen($base) + 1);
+        }
+
+        // Only plain path segments, so nothing about the URL can be changed
+        // beyond where the request is routed.
+        return preg_match('#^[A-Za-z0-9._~\-]+(/[A-Za-z0-9._~\-]+)*$#D', $path) ? $path : '';
+    }
+
+    /**
+     * Puts the site path in front of the action in a URL from `actionUrl()`,
+     * whichever form it has (`…/actions/x` or `…?p=actions/x`). Returns the
+     * URL unchanged when there is no path, or the action cannot be found.
+     */
+    public static function insertSitePath(string $actionUrl, string $action, string $sitePath): string
+    {
+        if ($sitePath === '') {
+            return $actionUrl;
+        }
+
+        $pos = strpos($actionUrl, $action);
+
+        if ($pos === false) {
+            return $actionUrl;
+        }
+
+        return substr($actionUrl, 0, $pos) . $sitePath . '/' . substr($actionUrl, $pos);
     }
 
     /**

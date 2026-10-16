@@ -33,7 +33,7 @@ class Install extends Migration
         'bannerEnabled', 'fullWidth', 'shadow', 'geoEnabled', 'logEnabled',
         'consentModeEnabled', 'consentModeAutoInject',
         'consentModeUrlPassthrough', 'consentModeAdsDataRedaction',
-        'respectGpc', 'respectDnt',
+        'respectGpc', 'respectDnt', 'showConsentId',
     ];
 
     /** Short string settings columns (labels, enums, layout dimensions). */

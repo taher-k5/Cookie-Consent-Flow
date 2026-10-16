@@ -54,6 +54,16 @@
   var LEGACY_STORAGE_KEY = 'cck_consent';
   var LEGACY_VISITOR_KEY = 'cck_visitor';
 
+  /**
+   * Where the consent ID is kept while the site shows it, so it stays the
+   * same across page loads and visits. Namespaced by consent scope like the
+   * decision.
+   */
+  var CONSENT_ID_KEY = 'cck_cid';
+
+  /** How long the Copy button reads "Copied". */
+  var COPIED_MS = 2000;
+
   var DAY_MS = 864e5;
 
   // How long the geo lookup may take before the banner is shown anyway.
@@ -169,6 +179,45 @@
       } catch (e) {}
     }
   };
+
+  /* ------------------------------------------------------------------
+     Visitor IDs
+  ------------------------------------------------------------------ */
+
+  /** A visitor ID as the server stores them: a lower-case UUID. */
+  function isVisitorId(value) {
+    return typeof value === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(value);
+  }
+
+  /**
+   * A random (version 4) UUID from the browser's cryptographic generator, or
+   * null where there is none — the ID is then shown once the server has
+   * issued one.
+   */
+  function makeVisitorId() {
+    var c = window.crypto;
+
+    try {
+      if (c && typeof c.randomUUID === 'function') {
+        var id = String(c.randomUUID()).toLowerCase();
+        if (isVisitorId(id)) return id;
+      }
+
+      if (c && typeof c.getRandomValues === 'function') {
+        var b = new Uint8Array(16);
+        c.getRandomValues(b);
+        b[6] = (b[6] & 0x0f) | 0x40;
+        b[8] = (b[8] & 0x3f) | 0x80;
+
+        var hex = '';
+        for (var i = 0; i < 16; i++) hex += (b[i] < 16 ? '0' : '') + b[i].toString(16);
+
+        return hex.slice(0, 8) + '-' + hex.slice(8, 12) + '-' + hex.slice(12, 16) + '-' + hex.slice(16, 20) + '-' + hex.slice(20);
+      }
+    } catch (e) {}
+
+    return null;
+  }
 
   /* ------------------------------------------------------------------
      Small helpers
@@ -596,6 +645,7 @@
     _bannerPreviousFocus: null,
     _storageKey: LEGACY_STORAGE_KEY,
     _visitorKey: LEGACY_VISITOR_KEY,
+    _consentIdKey: CONSENT_ID_KEY,
     _csrfToken: null,
     /** The in-flight token request, shared by every caller that needs one. */
     _csrfPromise: null,
@@ -627,6 +677,23 @@
      * see _sync() and resetConsent().
      */
     _syncGeneration: 0,
+
+    /**
+     * The visitor's consent ID — the anonymous ID their consent records carry —
+     * when the site shows it (`showConsentId`). Null until known.
+     *
+     * Before a first decision there is no ID on the server, so one is made
+     * here, kept in the browser (`cck_cid_<scope>`) so it stays the same
+     * across page loads, shown, and sent with the decision — as OneTrust and
+     * Usercentrics do. `_consentIdPending` marks such an ID: the server
+     * confirms it, or issues another, when the decision is recorded. The
+     * server is the source of truth throughout: it reads the ID from the
+     * visitor's httpOnly cookie, and the kept copy follows its answer.
+     */
+    _consentId: null,
+    _consentIdPending: false,
+    _consentIdChecked: false,
+    _consentIdRequest: null,
 
     /* ---------------------------------------------------------------
        Initialisation
@@ -671,6 +738,7 @@
       this._config = config || {};
       this._resolveStorageKeys();
       this._applyCssVars();
+      this._bindConsentId();
 
       // Bound unconditionally, including when consent already exists: a
       // persistent "manage preferences" or "reset" control rendered anywhere
@@ -819,6 +887,7 @@
 
       this._storageKey = LEGACY_STORAGE_KEY + '_' + scope;
       this._visitorKey = LEGACY_VISITOR_KEY + '_' + scope;
+      this._consentIdKey = CONSENT_ID_KEY + '_' + scope;
 
       // A decision stored under this site's key for the other Consent Scope
       // setting predates the last change of that setting. Left in place it
@@ -832,6 +901,7 @@
           var staleKey = LEGACY_STORAGE_KEY + '_' + stale[i];
           if (Store.get(staleKey) !== null) Store.remove(staleKey);
           if (Store.get(staleKey + '_pending') !== null) Store.remove(staleKey + '_pending');
+          if (Store.get(CONSENT_ID_KEY + '_' + stale[i]) !== null) Store.remove(CONSENT_ID_KEY + '_' + stale[i]);
         }
       }
 
@@ -1434,6 +1504,9 @@
       // the hidden dialog.
       if (!modal.hidden) return;
 
+      // Filled in when it arrives; the preference centre does not wait for it.
+      if (this._config.showConsentId) this.getConsentId();
+
       this._previousFocus = document.activeElement;
 
       modal.hidden = false;
@@ -1749,15 +1822,30 @@
       // shared scope still knows where it belongs.
       if (entry.siteId === undefined && cfg.siteId !== undefined) entry.siteId = cfg.siteId;
 
+      // The ID this browser made and showed before the decision, so the
+      // record is saved under the ID the visitor was given. Kept with the
+      // queued decision, so a retry asks for the same one.
+      if (entry.visitorId === undefined && cfg.showConsentId && this._consentIdPending && this._consentId) {
+        entry.visitorId = this._consentId;
+      }
+
       Store.set(pendingKey, entry);
 
-      this._post(cfg.saveUrl, {
+      var payload = {
         action: data.action,
         categories: data.categories,
         source: data.source,
         policyVersion: data.policyVersion
-      }, { keepalive: true })
-        .then(function () {
+      };
+      if (isVisitorId(entry.visitorId)) payload.visitorId = entry.visitorId;
+
+      this._post(cfg.saveUrl, payload, { keepalive: true })
+        .then(function (json) {
+          // The ID the record was saved under — the one shown, or a new one
+          // the server issued instead. It is the visitor's whatever happened
+          // to the decision since, so it is taken even from a stale request.
+          if (cfg.showConsentId && json && isVisitorId(json.visitorId)) self._setConsentId(json.visitorId, false);
+
           if (generation !== self._syncGeneration) return;
 
           // The visitor identifier lives only in the server's httpOnly
@@ -2118,6 +2206,191 @@
     },
 
     /* ---------------------------------------------------------------
+       Consent ID
+    --------------------------------------------------------------- */
+
+    /**
+     * Before a first decision, makes the ID the visitor is shown and their
+     * first record will carry. Afterwards the ID is the server's, fetched
+     * when it is first needed.
+     */
+    _bindConsentId: function () {
+      var cfg = this._config;
+
+      // Not shown (any more): nothing of the ID may stay on the device.
+      if (!cfg.showConsentId) {
+        if (Store.get(this._consentIdKey) !== null) Store.remove(this._consentIdKey);
+
+        return;
+      }
+
+      // Remembered from an earlier page: the same ID as before. Treated as
+      // made here until the server has confirmed it, because the server's
+      // visitor cookie — if there is one — is what records actually carry.
+      var remembered = Store.get(this._consentIdKey);
+
+      if (isVisitorId(remembered)) {
+        this._setConsentId(remembered, true);
+      } else if (!this.getConsent()) {
+        this._setConsentId(makeVisitorId(), true);
+      }
+    },
+
+    /**
+     * Resolves with the visitor's consent ID, or null when the site does not
+     * show it or none can be had. Before a first decision this is the ID made
+     * for the visitor, which their first record will carry.
+     *
+     * The ID identifies the visitor's consent records, so it is readable only
+     * on sites that chose to show it.
+     */
+    getConsentId: function () {
+      var self = this;
+      var cfg = this._config;
+
+      if (!cfg.showConsentId) return Promise.resolve(null);
+
+      // A made ID is checked against the server once: the browser may still
+      // hold a visitor cookie from before its stored decision was cleared,
+      // and that cookie — not the made ID — is what the next record carries.
+      if (this._consentId && (!this._consentIdPending || this._consentIdChecked)) return Promise.resolve(this._consentId);
+      if (this._consentIdRequest) return this._consentIdRequest;
+
+      if (!cfg.consentIdUrl || !window.fetch) {
+        this._consentIdChecked = true;
+        if (!this._consentId) this._setConsentId(makeVisitorId(), true);
+
+        return Promise.resolve(this._consentId);
+      }
+
+      this._consentIdRequest = fetch(cfg.consentIdUrl, { credentials: 'same-origin', headers: { Accept: 'application/json' } })
+        .then(function (res) { return res.ok ? res.json() : null; })
+        .catch(function () { return null; })
+        .then(function (json) {
+          self._consentIdRequest = null;
+          self._consentIdChecked = true;
+
+          // A decision recorded meanwhile may already have supplied it.
+          if (self._consentId && !self._consentIdPending) return self._consentId;
+
+          if (json && isVisitorId(json.id)) {
+            self._setConsentId(json.id, false);
+          } else if (!self._consentId) {
+            // No visitor cookie (cleared, or the decision predates logging):
+            // the next record gets an ID made here, as on a first visit.
+            self._setConsentId(makeVisitorId(), true);
+          }
+
+          return self._consentId;
+        });
+
+      return this._consentIdRequest;
+    },
+
+    /** Copies the consent ID to the clipboard, and says whether it worked. */
+    copyConsentId: function () {
+      var self = this;
+      var id = this._consentId;
+      if (!id) return;
+
+      var done = function (ok) {
+        self._consentIdStatus(ok ? 'copied' : 'copy-failed');
+        if (ok) self._showCopied();
+      };
+
+      try {
+        if (window.navigator && window.navigator.clipboard && typeof window.navigator.clipboard.writeText === 'function') {
+          window.navigator.clipboard.writeText(id).then(function () { done(true); }, function () { done(self._copySelection()); });
+
+          return;
+        }
+      } catch (e) {}
+
+      done(this._copySelection());
+    },
+
+    /** The clipboard fallback for browsers without the asynchronous API. */
+    _copySelection: function () {
+      var value = document.querySelector('[data-cck-consent-id-value]');
+
+      try {
+        var range = document.createRange();
+        range.selectNodeContents(value);
+        var selection = window.getSelection();
+        selection.removeAllRanges();
+        selection.addRange(range);
+
+        return document.execCommand('copy') === true;
+      } catch (e) {
+        return false;
+      }
+    },
+
+    /** How long the Copy button says "Copied" before it reads "Copy" again. */
+    _copiedTimer: null,
+
+    /**
+     * Shows "Copied" on the button itself for two seconds, where the visitor
+     * is looking; the status line says the same to a screen reader. A second
+     * click restarts the two seconds rather than stacking timers.
+     */
+    _showCopied: function () {
+      var self = this;
+      var block = document.querySelector('[data-cck-consent-id]');
+      var button = document.querySelector('[data-cck-action="copy-consent-id"]');
+      if (!block || !button) return;
+
+      if (button.getAttribute('data-cck-label') === null) {
+        button.setAttribute('data-cck-label', button.textContent);
+      }
+
+      button.textContent = block.getAttribute('data-cck-copied') || button.getAttribute('data-cck-label');
+      if (button.classList) button.classList.add('is-copied');
+
+      if (this._copiedTimer !== null && typeof window.clearTimeout === 'function') window.clearTimeout(this._copiedTimer);
+      if (typeof window.setTimeout !== 'function') return;
+
+      this._copiedTimer = window.setTimeout(function () {
+        self._copiedTimer = null;
+        button.textContent = button.getAttribute('data-cck-label');
+        if (button.classList) button.classList.remove('is-copied');
+        self._consentIdStatus(null);
+      }, COPIED_MS);
+    },
+
+    _consentIdStatus: function (state) {
+      var block = document.querySelector('[data-cck-consent-id]');
+      var status = document.querySelector('[data-cck-consent-id-status]');
+      if (!block || !status) return;
+
+      status.textContent = state ? (block.getAttribute('data-cck-' + state) || '') : '';
+    },
+
+    _setConsentId: function (id, pending) {
+      if (!this._config.showConsentId || !isVisitorId(id)) return;
+
+      this._consentId = id;
+      this._consentIdPending = !!pending;
+
+      // Kept, so the visitor sees the same ID on the next page — always the
+      // latest: the server's once it has answered.
+      if (Store.get(this._consentIdKey) !== id) {
+        Store.set(this._consentIdKey, id);
+      }
+
+      // Announced whether or not the preference centre shows it, so a site
+      // that places the ID itself hears about it too.
+      this._emit('consentId', { id: id });
+
+      var block = document.querySelector('[data-cck-consent-id]');
+      var value = document.querySelector('[data-cck-consent-id-value]');
+      if (!block || !value) return;
+
+      value.textContent = id;
+      block.hidden = false;
+    },
+
+    /* ---------------------------------------------------------------
        Event delegation
     --------------------------------------------------------------- */
 
@@ -2134,7 +2407,8 @@
           'open-preferences': 'openPreferences',
           'close-preferences': 'closePreferences',
           'save-preferences': 'savePreferences',
-          'reset-consent': 'resetConsent'
+          'reset-consent': 'resetConsent',
+          'copy-consent-id': 'copyConsentId'
         };
         var method = handlers[btn.getAttribute('data-cck-action')];
 
