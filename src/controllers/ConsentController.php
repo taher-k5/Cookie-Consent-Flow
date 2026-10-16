@@ -4,7 +4,7 @@ namespace sfsinfotech\craftcookieconsentflow\controllers;
 
 use Craft;
 use craft\web\Controller;
-use sfsinfotech\craftcookieconsentflow\helpers\ConsentHelper;
+use sfsinfotech\craftcookieconsentflow\helpers\ConsentScope;
 use sfsinfotech\craftcookieconsentflow\helpers\Throttle;
 use sfsinfotech\craftcookieconsentflow\Plugin;
 use sfsinfotech\craftcookieconsentflow\services\ConsentService;
@@ -149,11 +149,12 @@ class ConsentController extends Controller
         // identifier is issued: a year-long tracking cookie with nothing to
         // link would be exactly the kind of cookie this plugin is for.
         //
-        // First-party and namespaced by site, so a shared-origin multi-site
-        // install never lets one site inherit another's visitor identity.
+        // First-party and namespaced by consent scope, so a shared-origin
+        // multi-site install never lets one site inherit the visitor identity
+        // of a site it does not share decisions with.
         if ($result['recorded'] && $result['visitorUuid'] !== null) {
             $response->getCookies()->add(new \yii\web\Cookie([
-                'name'     => ConsentHelper::visitorCookieName($result['siteId']),
+                'name'     => ConsentScope::forSite((int) $result['siteId'])->visitorCookieName(),
                 'value'    => $result['visitorUuid'],
                 'expire'   => time() + 365 * 24 * 3600,
                 'httpOnly' => true,
@@ -237,7 +238,7 @@ class ConsentController extends Controller
         $request = Craft::$app->getRequest();
         $siteId  = Craft::$app->getSites()->getCurrentSite()->id;
 
-        $visitorUuid = $request->getCookies()->getValue(ConsentHelper::visitorCookieName($siteId));
+        $visitorUuid = $request->getCookies()->getValue(ConsentScope::forSite((int) $siteId)->visitorCookieName());
 
         if (!is_string($visitorUuid) || $visitorUuid === '') {
             return $this->_uncached($this->asJson(['consent' => null]));

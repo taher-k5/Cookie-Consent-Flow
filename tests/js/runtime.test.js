@@ -887,6 +887,285 @@ test('regression: storage is namespaced per site', async () => {
   assert.strictEqual(page.storage.cck_consent_1, undefined, 'and not another');
 });
 
+// ---------------------------------------------------------------------------
+// Consent scope: sites of one group sharing a decision
+// ---------------------------------------------------------------------------
+
+const GROUP = { siteId: 1, scopeKey: 'g2', scopeShared: true };
+
+test('scope: the per-site scope keeps the site-ID key it always had', async () => {
+  const page = boot({ config: { siteId: 4, scopeKey: '4', scopeShared: false }, routes: { '/consent/save': () => jsonResponse(200, {}) } });
+  await settle();
+
+  page.consent.acceptAll();
+  await settle();
+
+  assert.ok(page.storage.cck_consent_4);
+  assert.strictEqual(JSON.parse(page.storage.cck_consent_4).offered, undefined, 'nothing new is stored outside a shared scope');
+});
+
+test('scope: a group scope stores the decision under the group key', async () => {
+  const page = boot({ config: GROUP, routes: { '/consent/save': () => jsonResponse(200, {}) } });
+  await settle();
+
+  page.consent.acceptAll();
+  await settle();
+
+  assert.ok(page.storage.cck_consent_g2, 'written under the group');
+  assert.strictEqual(page.storage.cck_consent_1, undefined, 'and not under the site');
+  assert.deepStrictEqual(JSON.parse(page.storage.cck_consent_g2).offered, ['analytics', 'marketing'], 'the optional categories asked about');
+});
+
+test('scope: a decision made on another site of the group is honoured', async () => {
+  const page = boot({
+    config: Object.assign({}, GROUP, { siteId: 3 }),
+    storage: { cck_consent_g2: validDecision({ offered: ['necessary', 'analytics', 'marketing'] }) }
+  });
+  await settle();
+
+  assert.strictEqual(page.consent.hasStoredConsent(), true);
+  assert.strictEqual(page.banner.hidden, true, 'the visitor is not asked again on another language');
+});
+
+test('scope: a site with an optional category the shared decision never offered asks again', async () => {
+  const page = boot({
+    config: Object.assign({}, GROUP, { allCategories: ['necessary', 'analytics', 'marketing', 'video'] }),
+    storage: { cck_consent_g2: validDecision({ offered: ['necessary', 'analytics', 'marketing'] }) }
+  });
+  await settle();
+
+  assert.strictEqual(page.consent.hasStoredConsent(), false);
+  assert.strictEqual(page.banner.hidden, false, 'the visitor is asked about video rather than it staying silently denied');
+  assert.deepStrictEqual(page.fetch.calls, [], 'and nothing is reported before they answer');
+});
+
+test('scope: a site with fewer categories keeps the shared decision and drops the rest', async () => {
+  const page = boot({
+    config: Object.assign({}, GROUP, { allCategories: ['necessary', 'analytics'] }),
+    storage: { cck_consent_g2: validDecision({ offered: ['necessary', 'analytics', 'marketing', 'video'], categories: ['necessary', 'analytics', 'video'] }) }
+  });
+  await settle();
+
+  assert.deepStrictEqual(page.consent.getConsent().categories, ['necessary', 'analytics']);
+});
+
+test('scope: an uncovered locked category does not ask again', async () => {
+  const page = boot({
+    config: Object.assign({}, GROUP, { allCategories: ['necessary', 'security', 'analytics'], lockedCategories: ['necessary', 'security'] }),
+    storage: { cck_consent_g2: validDecision({ offered: ['necessary', 'analytics'], categories: ['necessary'] }) }
+  });
+  await settle();
+
+  assert.strictEqual(page.consent.hasStoredConsent(), true, 'a locked category is on whatever was asked');
+  assert.ok(page.consent.getConsent().categories.indexOf('security') !== -1);
+});
+
+test('scope: a category locked where the visitor decided is asked about where it is optional', async () => {
+  // Locked on the deciding site, so the visitor had no say in it there.
+  const page = boot({
+    config: Object.assign({}, GROUP, { allCategories: ['necessary', 'functional', 'analytics'], lockedCategories: ['necessary'] }),
+    storage: { cck_consent_g2: validDecision({ offered: ['analytics'], categories: ['necessary', 'functional', 'analytics'] }) }
+  });
+  await settle();
+
+  assert.strictEqual(page.consent.hasStoredConsent(), false);
+  assert.strictEqual(page.banner.hidden, false);
+});
+
+test('scope: a decision queued on another site of the group is not sent from this one', async () => {
+  const page = boot({
+    config: Object.assign({}, GROUP, { siteId: 3 }),
+    storage: {
+      cck_consent_g2: validDecision({ offered: ['analytics', 'marketing'] }),
+      cck_consent_g2_pending: validDecision({ offered: ['analytics', 'marketing'], siteId: 1, syncAttempts: 1 })
+    },
+    routes: { '/consent/save': () => jsonResponse(200, { success: true }) }
+  });
+  await settle();
+
+  assert.deepStrictEqual(page.fetch.to('/consent/save'), [], 'it would be recorded against the wrong site');
+  assert.strictEqual(JSON.parse(page.storage.cck_consent_g2_pending).syncAttempts, 1, 'kept, untouched, for its own site');
+});
+
+test('scope: a decision queued on this site is retried here, and remembers its site', async () => {
+  const page = boot({
+    config: GROUP,
+    storage: {
+      cck_consent_g2: validDecision({ offered: ['analytics', 'marketing'] }),
+      cck_consent_g2_pending: validDecision({ offered: ['analytics', 'marketing'], siteId: 1 })
+    },
+    routes: { '/consent/save': () => jsonResponse(500, {}) }
+  });
+  await settle();
+
+  assert.strictEqual(page.fetch.to('/consent/save').length, 1);
+  assert.strictEqual(page.fetch.bodyTo('/consent/save')[0].siteId, undefined, 'the site is never posted');
+  assert.strictEqual(JSON.parse(page.storage.cck_consent_g2_pending).siteId, 1);
+});
+
+test('scope: a new decision queues with the site it was made on', async () => {
+  const page = boot({ config: Object.assign({}, GROUP, { siteId: 3 }), routes: { '/consent/save': () => jsonResponse(500, {}) } });
+  await settle();
+
+  page.consent.acceptAll();
+  await settle();
+
+  assert.strictEqual(JSON.parse(page.storage.cck_consent_g2_pending).siteId, 3);
+  assert.strictEqual(JSON.parse(page.storage.cck_consent_g2).siteId, undefined, 'the decision itself carries no site');
+});
+
+test('scope: switching to the group scope removes the per-site decision, so switching back cannot revive it', async () => {
+  const page = boot({
+    config: Object.assign({}, GROUP, { staleScopeKeys: ['1'] }),
+    storage: { cck_consent_1: validDecision(), cck_consent_1_pending: validDecision(), cck_consent_3: validDecision() }
+  });
+  await settle();
+
+  assert.strictEqual(page.storage.cck_consent_1, undefined);
+  assert.strictEqual(page.storage.cck_consent_1_pending, undefined);
+  assert.ok(page.storage.cck_consent_3, "another site's key is left alone");
+  assert.strictEqual(page.banner.hidden, false, 'the visitor is asked under the new scope');
+});
+
+test('scope: switching back to per site removes the group decision', async () => {
+  const page = boot({
+    config: { siteId: 1, scopeKey: '1', scopeShared: false, staleScopeKeys: ['g2'] },
+    storage: { cck_consent_g2: validDecision({ offered: ['analytics', 'marketing'] }) }
+  });
+  await settle();
+
+  assert.strictEqual(page.storage.cck_consent_g2, undefined);
+  assert.strictEqual(page.banner.hidden, false);
+});
+
+test('scope: the live key is never treated as stale', async () => {
+  const page = boot({ config: Object.assign({}, GROUP, { staleScopeKeys: ['g2', 'x;y'] }), storage: { cck_consent_g2: validDecision({ offered: ['analytics', 'marketing'] }) } });
+  await settle();
+
+  assert.strictEqual(page.consent.hasStoredConsent(), true);
+});
+
+test('scope: a choice on one site keeps the choices made for other sites of the group', async () => {
+  // Site A asked about analytics and marketing; the visitor accepted both.
+  const page = boot({
+    config: Object.assign({}, GROUP, { siteId: 3, allCategories: ['necessary', 'analytics', 'preferences'] }),
+    storage: { cck_consent_g2: validDecision({ offered: ['analytics', 'marketing'] }) },
+    routes: { '/consent/save': () => jsonResponse(200, {}) }
+  });
+  await settle();
+
+  page.consent.updateConsent({ analytics: false, preferences: true });
+  await settle();
+
+  const stored = JSON.parse(page.storage.cck_consent_g2);
+  assert.deepStrictEqual(stored.offered.slice().sort(), ['analytics', 'marketing', 'preferences']);
+  assert.ok(stored.categories.indexOf('marketing') !== -1, "site A's marketing choice survives");
+  assert.strictEqual(stored.categories.indexOf('analytics'), -1, 'and the choice made here applies');
+  assert.ok(stored.categories.indexOf('preferences') !== -1);
+});
+
+test('scope: reject all withdraws the other sites\' categories too', async () => {
+  const page = boot({
+    config: Object.assign({}, GROUP, { siteId: 3, allCategories: ['necessary', 'analytics'] }),
+    storage: { cck_consent_g2: validDecision({ offered: ['analytics', 'marketing'] }) },
+    routes: { '/consent/save': () => jsonResponse(200, {}) }
+  });
+  await settle();
+
+  page.consent.rejectAll();
+  await settle();
+
+  const stored = JSON.parse(page.storage.cck_consent_g2);
+  assert.deepStrictEqual(stored.categories, ['necessary']);
+  assert.ok(stored.offered.indexOf('marketing') !== -1, 'still asked about, now refused');
+});
+
+test('scope: a category locked here keeps the answer given where it is optional', async () => {
+  // Optional on the other site, where the visitor declined it; locked here.
+  const declined = validDecision({ action: 'custom', offered: ['analytics', 'functional'], categories: ['necessary', 'analytics'] });
+
+  for (const act of ['rejectAll', 'acceptAll']) {
+    const page = boot({
+      config: Object.assign({}, GROUP, { siteId: 3, allCategories: ['necessary', 'functional', 'analytics'], lockedCategories: ['necessary', 'functional'] }),
+      storage: { cck_consent_g2: declined },
+      routes: { '/consent/save': () => jsonResponse(200, {}) }
+    });
+    await settle();
+
+    page.consent[act]();
+    await settle();
+
+    const stored = JSON.parse(page.storage.cck_consent_g2);
+    assert.strictEqual(stored.categories.indexOf('functional'), -1, `${act}: being locked here granted it on the other site`);
+    assert.ok(stored.offered.indexOf('functional') !== -1, `${act}: and it is still answered there`);
+    assert.strictEqual(page.consent.hasConsent('functional'), true, `${act}: while here it stays on`);
+  }
+});
+
+test('scope: two sites with different categories stop asking once each has been answered', async () => {
+  const save = { '/consent/save': () => jsonResponse(200, {}) };
+  const a = boot({ config: Object.assign({}, GROUP, { siteId: 1, allCategories: ['necessary', 'marketing'] }), routes: save });
+  await settle();
+  a.consent.acceptAll();
+  await settle();
+
+  const storage = { cck_consent_g2: JSON.parse(a.storage.cck_consent_g2) };
+  const b = boot({ config: Object.assign({}, GROUP, { siteId: 3, allCategories: ['necessary', 'video'] }), storage: storage, routes: save });
+  await settle();
+  assert.strictEqual(b.banner.hidden, false, 'video was never asked about');
+  b.consent.acceptAll();
+  await settle();
+
+  const back = boot({ config: Object.assign({}, GROUP, { siteId: 1, allCategories: ['necessary', 'marketing'] }), storage: { cck_consent_g2: JSON.parse(b.storage.cck_consent_g2) } });
+  await settle();
+  assert.strictEqual(back.banner.hidden, true, 'returning to the first site does not ask again');
+  assert.strictEqual(back.consent.hasConsent('marketing'), true);
+});
+
+test('scope: an expired shared decision is not carried into a new one', async () => {
+  const page = boot({
+    config: Object.assign({}, GROUP, { siteId: 3, allCategories: ['necessary', 'analytics'] }),
+    storage: { cck_consent_g2: validDecision({ offered: ['analytics', 'marketing'], timestamp: Date.now() - 200 * 864e5 }) },
+    routes: { '/consent/save': () => jsonResponse(200, {}) }
+  });
+  await settle();
+
+  page.consent.acceptAll();
+  await settle();
+
+  const stored = JSON.parse(page.storage.cck_consent_g2);
+  assert.deepStrictEqual(stored.offered, ['analytics']);
+  assert.strictEqual(stored.categories.indexOf('marketing'), -1);
+});
+
+test('scope: the offered list is not consulted outside a shared scope', async () => {
+  const page = boot({ storage: { cck_consent_1: validDecision({ offered: ['necessary'] }) } });
+  await settle();
+
+  assert.strictEqual(page.consent.hasStoredConsent(), true, 'per-site behaviour is unchanged');
+});
+
+test('scope: an invalid scope key falls back to the site ID', async () => {
+  const page = boot({ config: { siteId: 5, scopeKey: 'a;b=c' }, routes: { '/consent/save': () => jsonResponse(200, {}) } });
+  await settle();
+
+  page.consent.acceptAll();
+  await settle();
+
+  assert.ok(page.storage.cck_consent_5);
+});
+
+test('scope: the geo cache and cookie report stay per site', async () => {
+  const page = boot({ config: GROUP, routes: { '/consent/save': () => jsonResponse(200, {}) } });
+  await settle();
+
+  page.consent.acceptAll();
+  await settle();
+
+  assert.strictEqual(page.consent._geoCacheKey(), 'cck_geo_1_1');
+  assert.strictEqual(page.storage.cck_reported_g2, undefined);
+});
+
 test('regression: the public API keeps its documented and legacy names', async () => {
   const page = boot({});
   await settle();

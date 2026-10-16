@@ -798,20 +798,42 @@
     },
 
     /**
-     * Namespaces storage per Craft site, so a decision made on one site of a
-     * shared-origin multi-site install is never read as consent for another.
+     * Namespaces storage by consent scope, so a decision made on one site of
+     * a shared-origin multi-site install is never read as consent for a site
+     * that does not share it.
      *
-     * On the first run for a site, an existing un-namespaced value is adopted
-     * and the old key removed — preserving consent for the ordinary
-     * single-site upgrade, while every *other* site on a shared origin
-     * correctly starts by asking, since only one site can claim the legacy key.
+     * The scope key is the site ID by default, and the site group (`g<id>`)
+     * when the site is configured to share consent across its group. A
+     * configuration without one — HTML cached before the setting existed —
+     * falls back to the site ID, which is the same key the default scope
+     * gives, so nothing already stored is lost.
      */
     _resolveStorageKeys: function () {
-      var siteId = this._config.siteId;
-      if (siteId === undefined || siteId === null) return;
+      var scope = this._config.scopeKey;
 
-      this._storageKey = LEGACY_STORAGE_KEY + '_' + siteId;
-      this._visitorKey = LEGACY_VISITOR_KEY + '_' + siteId;
+      if (typeof scope !== 'string' || !/^[A-Za-z0-9_-]{1,64}$/.test(scope)) {
+        scope = this._config.siteId;
+      }
+
+      if (scope === undefined || scope === null) return;
+
+      this._storageKey = LEGACY_STORAGE_KEY + '_' + scope;
+      this._visitorKey = LEGACY_VISITOR_KEY + '_' + scope;
+
+      // A decision stored under this site's key for the other Consent Scope
+      // setting predates the last change of that setting. Left in place it
+      // would count again if the setting were changed back — even after the
+      // visitor had made a different choice under the current key.
+      var stale = this._config.staleScopeKeys;
+      if (Array.isArray(stale)) {
+        for (var i = 0; i < stale.length; i++) {
+          if (typeof stale[i] !== 'string' || !/^[A-Za-z0-9_-]{1,64}$/.test(stale[i]) || stale[i] === String(scope)) continue;
+
+          var staleKey = LEGACY_STORAGE_KEY + '_' + stale[i];
+          if (Store.get(staleKey) !== null) Store.remove(staleKey);
+          if (Store.get(staleKey + '_pending') !== null) Store.remove(staleKey + '_pending');
+        }
+      }
 
       // The un-namespaced key from pre-multisite development builds is not
       // adopted. On a shared-origin multisite install it was taken by
@@ -863,6 +885,16 @@
 
       if (!known.length) return null;
 
+      // In a scope shared by several sites, the decision may have been made
+      // on a site with fewer categories. An optional category this site has
+      // and that decision was never asked about would otherwise stay denied
+      // without the visitor ever being asked, so the visitor is asked again.
+      if (cfg.scopeShared && migrated.offered) {
+        for (var i = 0; i < known.length; i++) {
+          if (locked.indexOf(known[i]) === -1 && migrated.offered.indexOf(known[i]) === -1) return null;
+        }
+      }
+
       var categories = migrated.categories.filter(function (key) {
         return known.indexOf(key) !== -1;
       });
@@ -894,7 +926,12 @@
         categories: stored.categories.filter(function (key) { return typeof key === 'string'; }),
         timestamp: typeof stored.timestamp === 'number' ? stored.timestamp : 0,
         policyVersion: typeof stored.policyVersion === 'string' ? stored.policyVersion : '',
-        source: typeof stored.source === 'string' ? stored.source : 'banner'
+        source: typeof stored.source === 'string' ? stored.source : 'banner',
+        // The categories the visitor was asked about; only written in a
+        // shared scope, and absent from anything stored before it was.
+        offered: Array.isArray(stored.offered)
+          ? stored.offered.filter(function (key) { return typeof key === 'string'; })
+          : null
       };
     },
 
@@ -1153,6 +1190,67 @@
      */
     isGeoBypassed: function () {
       return this._geoBypass && !this.hasStoredConsent();
+    },
+
+    /**
+     * Completes a decision about to be stored in a scope shared by several
+     * sites.
+     *
+     * `offered` records the optional categories the visitor has been asked
+     * about, so another site of the scope can tell whether it has one they
+     * never chose. Locked categories are left out: the visitor could not
+     * decline them here, so they are no choice about a site where the same
+     * category is optional.
+     *
+     * This site only asked about its own categories, so what the visitor
+     * chose on other sites of the scope is carried over from the decision
+     * already stored — otherwise a choice made here would discard a choice
+     * made there, and two sites with different categories would each ask
+     * again every time the visitor moved between them. "Reject all" is the
+     * exception: it withdraws everything, including other sites' categories.
+     */
+    _mergeShared: function (data, action) {
+      var locked = this._lockedCategories();
+      var offered = this._allCategories().filter(function (key) { return locked.indexOf(key) === -1; });
+      var categories = data.categories.slice();
+      var previous = this._previousSharedDecision();
+
+      if (previous) {
+        previous.offered.forEach(function (key) {
+          if (offered.indexOf(key) !== -1) return;
+
+          offered.push(key);
+
+          // The previous answer decides, even for a key locked here: being on
+          // here is no choice about the site where it is optional. Leaving it
+          // out of the stored list costs this site nothing, because every
+          // read adds the current locked categories back.
+          categories = categories.filter(function (c) { return c !== key; });
+          if (action !== 'reject_all' && previous.categories.indexOf(key) !== -1) categories.push(key);
+        });
+      }
+
+      data.offered = offered;
+      data.categories = unique(categories);
+    },
+
+    /**
+     * The stored decision of a shared scope, unfiltered by this site's
+     * categories, when it still counts — current policy version, not expired,
+     * and recorded with what it was asked about. Null otherwise.
+     */
+    _previousSharedDecision: function () {
+      var stored = Store.get(this._storageKey);
+      if (!stored || typeof stored !== 'object') return null;
+
+      var migrated = this._migrate(stored);
+      if (!migrated || !migrated.offered) return null;
+
+      var cfg = this._config;
+      if (cfg.policyVersion && migrated.policyVersion !== cfg.policyVersion) return null;
+      if (!isFresh(migrated.timestamp, cfg.consentExpiryDays)) return null;
+
+      return migrated;
     },
 
     /**
@@ -1523,6 +1621,8 @@
         source: source || 'banner'
       };
 
+      if (this._config.scopeShared) this._mergeShared(data, action);
+
       var persisted = Store.set(this._storageKey, data);
 
       activateGatedContent(categories);
@@ -1643,6 +1743,12 @@
       var attempts = typeof data.syncAttempts === 'number' ? data.syncAttempts : 0;
       var entry = assign(assign({}, data), { syncAttempts: attempts });
 
+      // Remembers the site the decision was made on, because in a shared
+      // scope the queue is shared too; see _retryPendingSync(). Written
+      // whatever the scope, so an entry queued before its site joined a
+      // shared scope still knows where it belongs.
+      if (entry.siteId === undefined && cfg.siteId !== undefined) entry.siteId = cfg.siteId;
+
       Store.set(pendingKey, entry);
 
       this._post(cfg.saveUrl, {
@@ -1705,6 +1811,12 @@
 
         return;
       }
+
+      // A decision queued on another site of a shared scope waits for that
+      // site. Sent from here it would be recorded against this site, and
+      // checked against this site's categories, as a decision this site
+      // never showed. A newer decision made here replaces it in the queue.
+      if (this._config.scopeShared && pending.siteId !== undefined && pending.siteId !== this._config.siteId) return;
 
       this._sync(pending);
     },

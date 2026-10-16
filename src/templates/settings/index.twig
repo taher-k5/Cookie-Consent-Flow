@@ -206,6 +206,38 @@
         value: settings.policyVersion,
     }) }}
 
+    {% if craft.app.sites.allSites|length > 1 %}
+        {{ forms.selectField({
+            label:        "Consent Scope"|t('cookie-consent-flow'),
+            instructions: "Choose whether each site asks for consent separately, or all sites in the same site group share one decision. Sharing works only for sites on the same domain. Consent records always show the site where the choice was made. Changing this setting asks every visitor again."|t('cookie-consent-flow'),
+            id:      'consentScope',
+            name:    'settings[consentScope]',
+            value:   settings.consentScope,
+            options: [
+                { value: 'site',  label: "Per site"|t('cookie-consent-flow') },
+                { value: 'group', label: "Per site group"|t('cookie-consent-flow') },
+            ],
+        }) }}
+
+        {% if settings.consentScope == 'group' %}
+            <p class="light readable">
+                {{ "Sites in a group share the decision only for categories they have in common: a site with an optional category the decision was not asked about asks again. Give the sites of a group the same category keys to avoid that."|t('cookie-consent-flow') }}
+            </p>
+
+            {# Browser storage is per origin, so sites of one group on
+               different domains or subdomains cannot share a decision. #}
+            {% if (groupsAcrossOrigins ?? [])|length %}
+                <div class="readable warning" role="note">
+                    <p>
+                        {{ "These site groups use more than one domain, and browsers keep consent separately for each domain, so their sites still ask separately: {groups}."|t('cookie-consent-flow', {
+                            groups: (groupsAcrossOrigins ?? [])|join(', '),
+                        }) }}
+                    </p>
+                </div>
+            {% endif %}
+        {% endif %}
+    {% endif %}
+
     <hr>
 
     <div class="field">

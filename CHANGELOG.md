@@ -1,5 +1,13 @@
 # Changelog
 
+## Unreleased
+
+### Features
+
+- Consent Scope setting, to share one consent decision across the sites of a
+  site group (for multi-language websites on one domain)
+- `EVENT_RESOLVE_CONSENT_SCOPE` event, to choose which sites share a decision
+
 ## 1.0.0 - 2026-10-03
 
 Initial release version.

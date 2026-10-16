@@ -31,7 +31,8 @@ can be recorded in the control panel.
   period
 - A dashboard, a Consent Overview dashboard widget and user permissions in
   the control panel
-- Multisite support: global settings with optional per-site overrides
+- Multisite support: global settings with optional per-site overrides, and
+  one shared decision for the language sites of a site group if you choose
 - Works with static page caching: the injected HTML is the same for every
   visitor
 - Keyboard-accessible banner and preference centre
@@ -86,7 +87,7 @@ Editors manage all settings in the control panel under **Cookie Consent**:
 | --- | --- |
 | **Banner** | Layout, content, colours, and geo-targeting |
 | **Cookies** | The cookies listed for each category, and detected cookies |
-| **Settings** | Categories, consent logging and retention, Google Consent Mode, privacy signals, consent expiry, and **Invalidate Existing Consent** |
+| **Settings** | Categories, consent logging and retention, Google Consent Mode, privacy signals, consent expiry, consent scope (multisite), and **Invalidate Existing Consent** |
 | **Multisite** | Per-site overrides (shown only on multisite installs) |
 | **Consent Records** | Consent history, statistics and exports |
 
@@ -303,10 +304,67 @@ override banner content, colours and layout, categories, cookie lists,
 geo-targeting and Google Consent Mode. You can copy the global settings to a
 site or go back to them at any time.
 
-Consent choices, visitor IDs and consent records are kept separate for each
-site, so consent given on one site does not count on another. When a site is
+By default, consent choices and visitor IDs are kept separate for each site,
+so consent given on one site does not count on another. When a site is
 deleted, its overrides, cookie lists and detected cookies are removed; its
 consent records are kept and are removed by retention.
+
+### Sharing consent across a site group
+
+A multi-language website is usually one site group with a site per language
+(`example.com/`, `example.com/en/`, `example.com/de/`). For the visitor it is
+one website, so asking again on every language is unnecessary. Under
+**Settings → Advanced**, set **Consent Scope** to **Per site group**, and a
+decision made on one language counts on every site in its group.
+
+- Consent records keep the site the decision was made on, so records,
+  exports, statistics and per-site permissions are unchanged.
+- Banner text, category labels and descriptions stay per-site overrides, so
+  each language keeps its own wording.
+- The policy version and consent expiry are global, so they are always the
+  same across a group.
+- Give the sites of a group the same category keys. A decision covers the
+  optional categories the visitor has been asked about: a site with an
+  optional category the visitor was not asked about asks again, rather than
+  leaving it silently off. That includes a category that was locked on the
+  site where the visitor decided. Once answered, it counts on every site.
+- A choice made on one site keeps what the visitor chose for categories only
+  other sites have. **Reject all** is the exception: it turns off every
+  optional category, on every site of the group.
+- Sharing works only between sites on the same domain. Browsers keep storage
+  separately for each origin (scheme, host and port), so sites of one group
+  on different domains or subdomains (`example.hr`, `en.example.com`) still
+  ask separately. With **Per site group** selected, the settings page lists
+  the groups this applies to.
+- Resetting consent on one site clears the decision for every site in its
+  group.
+- Changing the setting asks every visitor again, because the decision is then
+  stored under a different name. A decision stored under the previous setting
+  is removed, so it cannot count again if you change the setting back. The
+  visitor ID cookie is also named after the scope, so records made under each
+  setting use a different visitor ID.
+- If you use static page caching, clear the cache after changing the setting.
+  Until then, cached pages use the previous setting and may ask again.
+
+To group sites some other way, listen for `EVENT_RESOLVE_CONSENT_SCOPE` and
+set the key yourself. Sites with the same key share a decision. The key may
+use letters, numbers, dashes and underscores (up to 64 characters):
+
+```php
+use sfsinfotech\craftcookieconsentflow\Plugin;
+use sfsinfotech\craftcookieconsentflow\events\ResolveConsentScopeEvent;
+use yii\base\Event;
+
+Event::on(
+    Plugin::class,
+    Plugin::EVENT_RESOLVE_CONSENT_SCOPE,
+    function (ResolveConsentScopeEvent $event) {
+        if (in_array($event->site->handle, ['hr', 'en', 'de'], true)) {
+            $event->scopeKey = 'brand';
+        }
+    }
+);
+```
 
 ## Permissions
 
@@ -373,19 +431,24 @@ Resetting consent removes the decision from the browser and asks again. The
 visitor ID cookie is `httpOnly` and stays, so later records remain linked to
 earlier ones, and cookies set by other scripts are not deleted.
 
-PHP developers can listen for `EVENT_BEFORE_BANNER_RENDER` (cancellable) and
+PHP developers can listen for `EVENT_BEFORE_BANNER_RENDER` (cancellable),
 `EVENT_AFTER_CONSENT_SAVE`, which fires after a consent record has been
-saved.
+saved, and `EVENT_RESOLVE_CONSENT_SCOPE`, which chooses which sites share a
+decision (see [Multisite](#sharing-consent-across-a-site-group)).
 
 ## Cookies and storage used by the plugin
 
 | Name | Where | Purpose |
 | --- | --- | --- |
-| `cck_consent_{siteId}` | localStorage, or a first-party cookie (365 days) if localStorage can't be written | The visitor's decision |
-| `cck_consent_{siteId}_pending` | localStorage, or a first-party cookie (365 days) if localStorage can't be written | A decision not yet recorded on the server |
+| `cck_consent_{scope}` | localStorage, or a first-party cookie (365 days) if localStorage can't be written | The visitor's decision |
+| `cck_consent_{scope}_pending` | localStorage, or a first-party cookie (365 days) if localStorage can't be written | A decision not yet recorded on the server |
 | `cck_reported_{siteId}` | localStorage | Cookie names reported in the last day |
 | `cck_geo_{siteId}_{policyVersion}` | sessionStorage | The geo-targeting answer for the tab |
-| `cck_visitor_{siteId}` | `httpOnly` cookie (1 year) | Visitor ID, set only when a record is written |
+| `cck_visitor_{scope}` | `httpOnly` cookie (1 year) | Visitor ID, set only when a record is written |
+
+`{scope}` is the site ID by default, and `g{groupId}` when
+**Consent Scope** is **Per site group** (see
+[Multisite](#sharing-consent-across-a-site-group)).
 
 Recording a decision also starts a Craft session (`CraftSessionId` and the
 CSRF cookie). Before the visitor decides, the only thing stored is the

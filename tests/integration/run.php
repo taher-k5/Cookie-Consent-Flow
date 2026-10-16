@@ -28,10 +28,12 @@ use craft\helpers\Db;
 use craft\models\Site;
 use craft\services\Gc;
 use craft\services\Sites;
+use sfsinfotech\craftcookieconsentflow\helpers\ConsentScope;
 use sfsinfotech\craftcookieconsentflow\helpers\PluginConfig;
 use sfsinfotech\craftcookieconsentflow\helpers\Throttle;
 use sfsinfotech\craftcookieconsentflow\Plugin;
 use sfsinfotech\craftcookieconsentflow\records\ConsentLogRecord;
+use sfsinfotech\craftcookieconsentflow\services\ConsentModeService;
 use sfsinfotech\craftcookieconsentflow\services\ConsentService;
 use yii\base\Event;
 
@@ -547,6 +549,53 @@ if ($second !== null) {
         same((int) $second->id, (int) $row['siteId'], 'recorded against the second site');
         same('["necessary","uk_only"]', $row['categories'], "the second site's categories");
         expect(!in_array('uk_only', $service->getEffectiveSettings($GLOBALS['primary']->id)->getCategoryKeys(), true), 'not leaked to the primary site');
+    });
+
+    $check('scope: per site by default, shared by the site group when chosen, records keep their site', function () use ($plugin, $second) {
+        $service = $plugin->cookieSettings;
+        $primary = $GLOBALS['primary'];
+        $grouped = (int) $primary->groupId === (int) $second->groupId;
+        $uuid    = craft\helpers\StringHelper::UUID();
+
+        insertLog(['visitorUuid' => $uuid, 'siteId' => $second->id, 'action' => 'accept_all']);
+
+        try {
+            expect($service->saveGlobalSettings(['consentScope' => 'site']), 'per site');
+            fresh();
+
+            $own = ConsentScope::forSite($primary->id);
+            same((string) $primary->id, $own->key, 'the per-site key is the site ID, as before the setting');
+            same([(int) $primary->id], $own->siteIds, 'shared with nothing');
+            same('cck_visitor_' . $primary->id, $own->visitorCookieName(), 'the visitor cookie keeps its name');
+            same(null, $plugin->consent->getConsent($uuid, $primary->id), 'another site\'s decision is not this site\'s');
+
+            expect(!$service->saveGlobalSettings(['consentScope' => 'everything']), 'an unknown scope was saved');
+            expect($service->saveGlobalSettings(['consentScope' => 'group']), 'per site group');
+            fresh();
+
+            $group = ConsentScope::forSite($primary->id);
+            same('g' . $primary->groupId, $group->key, 'keyed by the site group');
+
+            $settings                     = clone $service->getEffectiveSettings($primary->id);
+            $settings->consentModeEnabled = true;
+            $replay = (new ConsentModeService())->renderScript($settings, false, null, $primary->id);
+            expect(str_contains($replay, '"cck_consent_g' . $primary->groupId . '"'), 'the head replay reads the group key');
+
+            if ($grouped) {
+                same($group->key, ConsentScope::forSite($second->id)->key, 'sites of one group share a key');
+                expect($group->isShared(), 'the scope is shared');
+                same('accept_all', $plugin->consent->getConsent($uuid, $primary->id)['action'] ?? null, 'the group\'s decision is found from either site');
+
+                $row = (new Query())->from('{{%cookieconsent_log}}')->where(['visitorUuid' => $uuid])->one();
+                same((int) $second->id, (int) $row['siteId'], 'the record keeps the site it was made on');
+            } else {
+                expect(ConsentScope::forSite($second->id)->key !== $group->key, 'sites of different groups share nothing');
+            }
+        } finally {
+            $service->saveGlobalSettings(['consentScope' => 'site']);
+            fresh();
+            Craft::$app->getDb()->createCommand()->delete('{{%cookieconsent_log}}', ['visitorUuid' => $uuid])->execute();
+        }
     });
 }
 

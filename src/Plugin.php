@@ -19,6 +19,7 @@ use craft\web\View;
 use sfsinfotech\craftcookieconsentflow\events\BeforeBannerRenderEvent;
 use sfsinfotech\craftcookieconsentflow\models\Settings;
 use sfsinfotech\craftcookieconsentflow\helpers\ConsentHelper;
+use sfsinfotech\craftcookieconsentflow\helpers\ConsentScope;
 use sfsinfotech\craftcookieconsentflow\helpers\Onboarding;
 use sfsinfotech\craftcookieconsentflow\helpers\Permissions;
 use sfsinfotech\craftcookieconsentflow\helpers\PluginConfig;
@@ -64,15 +65,16 @@ class Plugin extends BasePlugin
      *
      * It must never go down. Development builds of this plugin were installed
      * at 1.6.0 (the `main` branch) and 1.7.0, and a version below what a
-     * project config records makes Craft refuse `project-config/apply`. 1.8.0
-     * is above every version that was ever installed.
+     * project config records makes Craft refuse `project-config/apply`. 1.0.0
+     * shipped at 1.8.0.
      *
-     * During the build phase the schema lives entirely in `Install.php`, with
-     * no incremental migrations: a development install picks up schema
-     * changes by reinstalling the plugin. From the first published release,
-     * every schema change bumps this and ships its own migration.
+     * `Install.php` remains the whole schema. Since the first published
+     * release, every schema change also bumps this and ships a timestamped
+     * migration that calls `Install::reconcile()`:
+     *
+     * - 1.9.0 — `consentScope` setting (m261016_000000_consent_scope).
      */
-    public string $schemaVersion = '1.8.0';
+    public string $schemaVersion = '1.9.0';
     public bool $hasCpSettings   = true;
     public bool $hasCpSection     = true;
 
@@ -83,6 +85,14 @@ class Plugin extends BasePlugin
 
     /** Fired after a visitor's consent has been saved. */
     public const EVENT_AFTER_CONSENT_SAVE   = 'afterConsentSave';
+
+    /**
+     * Fired when a site's consent scope is resolved. Change
+     * `$event->scopeKey` to choose which sites share a decision.
+     *
+     * @see \sfsinfotech\craftcookieconsentflow\events\ResolveConsentScopeEvent
+     */
+    public const EVENT_RESOLVE_CONSENT_SCOPE = 'resolveConsentScope';
 
     // Bootstrap
     public function init(): void
@@ -858,6 +868,9 @@ class Plugin extends BasePlugin
      */
     public function buildRuntimeConfig(Settings $settings): array
     {
+        $siteId = (int) Craft::$app->getSites()->getCurrentSite()->id;
+        $scope  = ConsentScope::forSite($siteId);
+
         return [
             'saveUrl'           => \craft\helpers\UrlHelper::actionUrl('cookie-consent-flow/consent/save'),
             'reportCookiesUrl'  => \craft\helpers\UrlHelper::actionUrl('cookie-consent-flow/cookie-detection/report'),
@@ -870,7 +883,15 @@ class Plugin extends BasePlugin
             'allCategories'     => $settings->getCategoryKeys(),
             'lockedCategories'  => $settings->getLockedCategoryKeys(),
             'defaultCategories' => $settings->getDefaultCategoryKeys(),
-            'siteId'            => Craft::$app->getSites()->getCurrentSite()->id,
+            'siteId'            => $siteId,
+            // Names the browser storage that holds the decision; sites with
+            // the same key share one (see ConsentScope). The same for every
+            // visitor of the site, so as cacheable as the rest.
+            'scopeKey'          => $scope->key,
+            'scopeShared'       => $scope->isShared(),
+            // Where the other Consent Scope setting stored this site's
+            // decision; the runtime removes what it finds there.
+            'staleScopeKeys'    => $scope->staleKeys,
             'consentExpiryDays' => $settings->consentExpiryDays,
             'policyVersion'     => $settings->policyVersion,
             'geoEnabled'        => $settings->geoEnabled && !empty($settings->geoTargetCountries),

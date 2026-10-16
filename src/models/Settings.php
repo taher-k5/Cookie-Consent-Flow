@@ -199,6 +199,21 @@ class Settings extends Model
      */
     public string $policyVersion = '1';
 
+    // Consent scope
+    /** Each site asks for, and stores, its own decision. */
+    public const CONSENT_SCOPE_SITE = 'site';
+
+    /** The sites of one site group share a single decision. */
+    public const CONSENT_SCOPE_GROUP = 'group';
+
+    /**
+     * Which sites share a visitor's decision: `site` (each site asks on its
+     * own) or `group` (one decision for every site in a Craft site group, for
+     * a multi-language website). Global-only. Consent records keep the real
+     * site ID either way; see {@see \sfsinfotech\craftcookieconsentflow\helpers\ConsentScope}.
+     */
+    public string $consentScope = self::CONSENT_SCOPE_SITE;
+
     // Google Consent Mode v2
     /**
      * Master switch. When off, the plugin emits no `gtag('consent', …)`
@@ -904,6 +919,7 @@ class Settings extends Model
                 'boolean',
             ],
             [['consentModeType'], 'in', 'range' => ['advanced', 'basic']],
+            [['consentScope'], 'in', 'range' => [self::CONSENT_SCOPE_SITE, self::CONSENT_SCOPE_GROUP]],
             [['consentModeWaitForUpdate'], 'integer', 'min' => 0, 'max' => 10000],
             [['bannerLayout'], 'in', 'range' => ['bottom-bar', 'top-bar', 'center-popup', 'corner-popup']],
             [['cornerPosition'], 'in', 'range' => ['bottom-left', 'bottom-right']],

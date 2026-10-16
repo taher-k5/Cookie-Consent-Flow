@@ -88,6 +88,12 @@ return [
     'Consent Expiry (days)' => 'Consent Expiry (days)',
     'Policy Version' => 'Policy Version',
     'Invalidate Existing Consent' => 'Invalidate Existing Consent',
+    'Consent Scope' => 'Consent Scope',
+    'Choose whether each site asks for consent separately, or all sites in the same site group share one decision. Sharing works only for sites on the same domain. Consent records always show the site where the choice was made. Changing this setting asks every visitor again.' => 'Choose whether each site asks for consent separately, or all sites in the same site group share one decision. Sharing works only for sites on the same domain. Consent records always show the site where the choice was made. Changing this setting asks every visitor again.',
+    'Per site' => 'Per site',
+    'Per site group' => 'Per site group',
+    'Sites in a group share the decision only for categories they have in common: a site with an optional category the decision was not asked about asks again. Give the sites of a group the same category keys to avoid that.' => 'Sites in a group share the decision only for categories they have in common: a site with an optional category the decision was not asked about asks again. Give the sites of a group the same category keys to avoid that.',
+    'These site groups use more than one domain, and browsers keep consent separately for each domain, so their sites still ask separately: {groups}.' => 'These site groups use more than one domain, and browsers keep consent separately for each domain, so their sites still ask separately: {groups}.',
 
     // Geo-targeting
     'Geo-targeting' => 'Geo-targeting',

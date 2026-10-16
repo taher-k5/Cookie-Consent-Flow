@@ -139,18 +139,20 @@ class ConsentHelper
     }
 
     /**
-     * Prefix of the per-site visitor cookie (`cck_visitor_<siteId>`).
+     * Prefix of the visitor cookie (`cck_visitor_<scopeKey>`).
      */
     public const LEGACY_VISITOR_COOKIE = 'cck_visitor';
 
     /**
-     * Returns the per-site visitor cookie name. Namespacing by site ID
-     * prevents a visitor identifier (and therefore their stored consent
-     * lookup) from bleeding across separate Craft sites sharing one origin.
+     * Returns the visitor cookie name for a consent scope key — the site ID
+     * under the default per-site scope (see {@see ConsentScope}). Namespacing
+     * by scope prevents a visitor identifier (and therefore their stored
+     * consent lookup) from bleeding across Craft sites sharing one origin
+     * that are not meant to share a decision.
      */
-    public static function visitorCookieName(int $siteId): string
+    public static function visitorCookieName(int|string $scopeKey): string
     {
-        return self::LEGACY_VISITOR_COOKIE . '_' . $siteId;
+        return self::LEGACY_VISITOR_COOKIE . '_' . $scopeKey;
     }
 
     /**

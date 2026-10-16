@@ -9,6 +9,7 @@ use yii\db\ActiveQuery;
 use yii\db\Expression;
 use sfsinfotech\craftcookieconsentflow\events\AfterConsentSaveEvent;
 use sfsinfotech\craftcookieconsentflow\helpers\ConsentHelper;
+use sfsinfotech\craftcookieconsentflow\helpers\ConsentScope;
 use sfsinfotech\craftcookieconsentflow\helpers\PluginConfig;
 use sfsinfotech\craftcookieconsentflow\helpers\Throttle;
 use sfsinfotech\craftcookieconsentflow\Plugin;
@@ -119,7 +120,9 @@ class ConsentService extends Component
             ];
         }
 
-        // Resolve the visitor UUID from this site's own cookie only. The
+        // Resolve the visitor UUID from this site's consent-scope cookie only
+        // — the site's own under the default per-site scope, shared by its
+        // site group under the group scope (see ConsentScope). The
         // un-namespaced cookie of pre-multisite development builds is not
         // read: on a shared origin it would link one site's records to a
         // visitor identity issued by another.
@@ -132,7 +135,7 @@ class ConsentService extends Component
         $visitorUuid = null;
 
         if ($request instanceof \craft\web\Request) {
-            $visitorUuid = $request->getCookies()->getValue(ConsentHelper::visitorCookieName($siteId));
+            $visitorUuid = $request->getCookies()->getValue(ConsentScope::forSite($siteId)->visitorCookieName());
         }
 
         if (!is_string($visitorUuid) || !preg_match('/^[0-9a-f-]{36}$/iD', $visitorUuid)) {
@@ -258,10 +261,13 @@ class ConsentService extends Component
     }
 
     /**
-     * Returns the most recent consent record for a visitor UUID on a given
-     * site, or null. Site-scoped so a visitor's consent on one site is
-     * never reported as consent on another (defense-in-depth alongside the
-     * per-site visitor cookie namespacing in ConsentController).
+     * Returns the most recent consent record for a visitor UUID within a
+     * site's consent scope, or null. Scoped so a visitor's consent on one site
+     * is never reported as consent on a site that does not share it
+     * (defense-in-depth alongside the scope-namespaced visitor cookie). Under
+     * the default per-site scope that is the site itself; under the group
+     * scope, any site of its group, since that is where the shared decision
+     * may have been made.
      *
      * @return array{action: string, categories: string[], dateCreated: string}|null
      */
@@ -270,7 +276,7 @@ class ConsentService extends Component
         $siteId ??= Craft::$app->getSites()->getCurrentSite()->id;
 
         $record = ConsentLogRecord::find()
-            ->where(['visitorUuid' => $visitorUuid, 'siteId' => $siteId])
+            ->where(['visitorUuid' => $visitorUuid, 'siteId' => ConsentScope::forSite((int) $siteId)->siteIds])
             // `dateCreated` has one-second resolution; the id breaks the tie
             // so two decisions in the same second resolve to the later one.
             ->orderBy(['dateCreated' => SORT_DESC, 'id' => SORT_DESC])

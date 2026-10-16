@@ -131,7 +131,7 @@ final class SchemaConsistencyTest extends TestCase
      */
     public function testEveryShortStringColumnIsBoundedByTheModel(): void
     {
-        $enums    = ['bannerLayout', 'cornerPosition', 'consentModeType'];
+        $enums    = ['bannerLayout', 'cornerPosition', 'consentModeType', 'consentScope'];
         $bounded  = array_merge(Settings::SHORT_TEXT_FIELDS, $enums, ['policyVersion']);
         $columns  = self::migrationConstants()['STRING_FIELDS'];
 
@@ -155,31 +155,40 @@ final class SchemaConsistencyTest extends TestCase
      * Craft only runs migrations when the code's schema version is *higher*
      * than the installed one, and refuses to apply project config whose
      * recorded version differs. Builds were installed at 1.6.0 (`main`) and
-     * 1.7.0, so anything at or below those would leave those installs
-     * un-migrated and their project config unappliable.
+     * 1.7.0, and release 1.0.0 at 1.8.0, so anything at or below those would
+     * leave those installs un-migrated and their project config unappliable.
      */
     public function testSchemaVersionIsAboveEveryVersionEverInstalled(): void
     {
         $version = (new ReflectionClass(Plugin::class))->getProperty('schemaVersion')->getDefaultValue();
 
-        foreach (['1.0.0', '1.6.0', '1.7.0'] as $installed) {
+        foreach (['1.0.0', '1.6.0', '1.7.0', '1.8.0'] as $installed) {
             self::assertTrue(version_compare($version, $installed, '>'), "{$version} must be above {$installed}");
         }
     }
 
     /**
-     * Build phase: Install.php is the only migration, and the whole schema.
-     * An incremental migration may only appear together with the first
-     * published release (see CLAUDE.md), at which point this test changes.
+     * Since the first published release, Install.php is still the whole
+     * schema, and each schema change ships a timestamped migration that
+     * converges on it by calling reconcile() (see CLAUDE.md). A migration
+     * that edits the schema itself would let the two drift apart.
      */
-    public function testInstallIsTheOnlyMigration(): void
+    public function testEveryIncrementalMigrationConvergesOnInstall(): void
     {
         self::assertTrue(is_subclass_of(Install::class, \craft\db\Migration::class));
         self::assertTrue(method_exists(Install::class, 'reconcile'), 'the idempotent schema entry point');
 
-        $files = array_map('basename', glob(dirname(__DIR__, 2) . '/src/migrations/*.php') ?: []);
+        $files = glob(dirname(__DIR__, 2) . '/src/migrations/*.php') ?: [];
+        $incremental = array_values(array_filter($files, static fn(string $file): bool => basename($file) !== 'Install.php'));
 
-        self::assertSame(['Install.php'], $files, 'no release-only migration during the build phase');
+        self::assertNotSame([], $incremental, 'the 1.9.0 schema change ships a migration');
+
+        foreach ($incremental as $file) {
+            $name = basename($file, '.php');
+
+            self::assertMatchesRegularExpression('/^m\d{6}_\d{6}_[a-z0-9_]+$/D', $name, 'Craft migration naming');
+            self::assertStringContainsString('->reconcile()', (string) file_get_contents($file), "{$name} converges on Install.php");
+        }
     }
 
     /** The retired Fixed / Sticky column is neither created nor read. */

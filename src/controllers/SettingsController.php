@@ -4,6 +4,7 @@ namespace sfsinfotech\craftcookieconsentflow\controllers;
 
 use Craft;
 use craft\web\Controller;
+use sfsinfotech\craftcookieconsentflow\helpers\ConsentScope;
 use sfsinfotech\craftcookieconsentflow\helpers\Permissions;
 use sfsinfotech\craftcookieconsentflow\models\Settings;
 use sfsinfotech\craftcookieconsentflow\Plugin;
@@ -38,8 +39,9 @@ class SettingsController extends Controller
         $settings = Plugin::getInstance()->getSettings();
 
         return $this->renderTemplate('cookie-consent-flow/settings/index', [
-            'settings' => $settings,
-            'plugin'   => Plugin::getInstance(),
+            'settings'            => $settings,
+            'plugin'              => Plugin::getInstance(),
+            'groupsAcrossOrigins' => ConsentScope::groupsSpanningOrigins(),
         ]);
     }
 
@@ -362,9 +364,10 @@ class SettingsController extends Controller
                 : 'cookie-consent-flow/settings/index';
 
             return $this->renderTemplate($template, [
-                'settings'       => $plugin->getSettings(),
-                'plugin'         => $plugin,
-                'countryOptions' => Settings::getCountryOptions(),
+                'settings'            => $plugin->getSettings(),
+                'plugin'              => $plugin,
+                'countryOptions'      => Settings::getCountryOptions(),
+                'groupsAcrossOrigins' => ConsentScope::groupsSpanningOrigins(),
             ]);
         }
 

@@ -9,17 +9,15 @@ use sfsinfotech\craftcookieconsentflow\models\Settings;
 /**
  * Install migration — creates every table and column Cookie Consent Flow needs.
  *
- * **This is the single source of truth for the schema, and the single
- * canonical migration while the plugin is in its build phase.** Nothing has
- * been published, so schema changes are made here and nowhere else; there
- * are no incremental migrations. Every helper reconciles an existing table
- * rather than assuming an empty one, so running {@see reconcile()} against a
- * database partway to the current schema converges on it instead of failing.
+ * **This is the single source of truth for the schema.** Every helper
+ * reconciles an existing table rather than assuming an empty one, so running
+ * {@see reconcile()} against a database partway to the current schema
+ * converges on it instead of failing.
  *
- * Once a release is published this convention ends: from the next schema
- * change, add a timestamped migration that calls reconcile() and bump
- * `Plugin::$schemaVersion`, because installations will then hold consent
- * evidence that an uninstall/reinstall would destroy. See CLAUDE.md.
+ * 1.0.0 is published, so installations hold consent evidence that an
+ * uninstall/reinstall would destroy. Every schema change is therefore made
+ * here *and* ships a timestamped migration that calls reconcile(), with a
+ * bump of `Plugin::$schemaVersion`. See CLAUDE.md.
  *
  * The two data-migration paths below (`settingsData` JSON blob → relational
  * columns, and a leftover `categories` column) serve installs of the
@@ -48,6 +46,7 @@ class Install extends Migration
         'borderRadius', 'padding', 'maxWidth', 'maxHeight',
         'policyVersion',
         'consentModeType',
+        'consentScope',
     ];
 
     /**
