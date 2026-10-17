@@ -421,14 +421,14 @@ class Plugin extends BasePlugin
      *   which is what makes a decision made before logging in — or before
      *   registering — theirs. Not when an admin logs in as the user, or
      *   creates one in the control panel.
-     * - **User deleted:** with "delete", the records made while the user was
-     *   logged in, and their visitor-ID links, are deleted as the user is —
-     *   moving them to the trash included: Craft's own trash clean-up removes
-     *   users without any event a plugin could act on, so waiting for it
-     *   would leave the records behind. Their IDs are collected before the
-     *   user is deleted and removed after, so a deletion that does not happen
-     *   removes nothing. With "anonymise" the database clears `userId` when
-     *   the user is permanently deleted, and their visitor-ID links go too.
+     * - **User deleted** (moving them to the trash included — Craft's own
+     *   trash clean-up removes users without any event a plugin could act on,
+     *   so waiting for it would leave the person on their records for weeks):
+     *   their visitor-ID links are removed, and their records are either
+     *   kept without them ("anonymise") or deleted ("delete"). What to do is
+     *   decided before the user is deleted and done after, so a deletion that
+     *   does not happen changes nothing. The foreign keys repeat the
+     *   anonymising for any user removed some other way.
      * - **User page:** a "Consent records" line, for those who may view them.
      *
      * Every handler fails open: none can stop a login, a deletion or a page.
@@ -494,12 +494,9 @@ class Plugin extends BasePlugin
                 }
 
                 try {
-                    $ids = $this->userLinks->recordIdsToDeleteWithUser((int) $event->element->id);
-
-                    // Null when the site keeps records: nothing to do after.
-                    if ($ids !== null) {
-                        $pendingDeletes[(int) $event->element->id] = $ids;
-                    }
+                    // The record IDs to delete, or null when the site keeps
+                    // (anonymises) them instead.
+                    $pendingDeletes[(int) $event->element->id] = $this->userLinks->recordIdsToDeleteWithUser((int) $event->element->id);
                 } catch (\Throwable $e) {
                     Craft::error('Cookie Consent Flow could not prepare the deletion of a user\'s consent records: ' . $e->getMessage(), __METHOD__);
                 }
@@ -524,6 +521,19 @@ class Plugin extends BasePlugin
                 unset($pendingDeletes[$userId]);
 
                 try {
+                    if ($ids === null) {
+                        // Anonymise: the records stay, as proof of consent,
+                        // without the person — now, not when Craft's trash is
+                        // emptied weeks later. dateUpdated is left alone: it
+                        // is what marks a record attached at login.
+                        $anonymised = (int) \sfsinfotech\craftcookieconsentflow\records\ConsentLogRecord::updateAll(['userId' => null], ['userId' => $userId]);
+                        \sfsinfotech\craftcookieconsentflow\records\UserVisitorRecord::deleteAll(['userId' => $userId]);
+
+                        Craft::info("Cookie consent records anonymised with user #{$userId}: {$anonymised} record(s).", __METHOD__);
+
+                        return;
+                    }
+
                     $deleted = $ids === [] ? 0 : (int) \sfsinfotech\craftcookieconsentflow\records\ConsentLogRecord::deleteAll(['id' => $ids]);
                     \sfsinfotech\craftcookieconsentflow\records\UserVisitorRecord::deleteAll(['userId' => $userId]);
 

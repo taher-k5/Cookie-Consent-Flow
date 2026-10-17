@@ -107,7 +107,7 @@
 
     {{ forms.selectField({
         label:        "When a User Is Deleted"|t('cookie-consent-flow'),
-        instructions: "Anonymise keeps the user’s records as proof of consent, without the user, once the user is permanently deleted. Delete removes the records they made while logged in as soon as the user is deleted — moving them to the trash included — and restoring the user does not bring the records back."|t('cookie-consent-flow'),
+        instructions: "Applies as soon as the user is deleted, moving them to the trash included. Anonymise keeps the user’s records as proof of consent, without the user. Delete removes the records linked to them. Either way their browser links are removed, and restoring the user does not bring them back."|t('cookie-consent-flow'),
         id:      'userDeleteAction',
         name:    'settings[userDeleteAction]',
         value:   settings.userDeleteAction,

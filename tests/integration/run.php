@@ -780,6 +780,35 @@ $check('users: a guest decision is attached to the account at login, once, in pl
     }
 });
 
+$check('users: with "anonymise", trashing a user clears them from their records at once, keeping the records', function () use ($plugin) {
+    $service = $plugin->cookieSettings;
+    $user    = new craft\elements\User(['username' => 'anon-' . bin2hex(random_bytes(3)), 'email' => 'anon-' . bin2hex(random_bytes(3)) . '@example.test']);
+    expect(Craft::$app->getElements()->saveElement($user, false), 'create');
+    $browser = craft\helpers\StringHelper::UUID();
+
+    try {
+        expect($service->saveGlobalSettings(['linkUsers' => true, 'userDeleteAction' => 'anonymise']), 'settings');
+        fresh();
+
+        $mine = insertLog(['visitorUuid' => $browser, 'userId' => $user->id]);
+        $plugin->userLinks->link((int) $user->id, $browser);
+
+        expect(Craft::$app->getElements()->deleteElement($user), 'soft delete');
+
+        same(1, logCount(['id' => $mine]), 'the record was deleted');
+        same(null, (new Query())->select(['userId'])->from('{{%cookieconsent_log}}')->where(['id' => $mine])->scalar() ?: null, 'the record still names the trashed user');
+        same(0, (int) (new Query())->from('{{%cookieconsent_user_visitor}}')->where(['userId' => $user->id])->count(), 'the trashed user\'s links stayed');
+    } finally {
+        $service->saveGlobalSettings(['linkUsers' => false]);
+        fresh();
+        Craft::$app->getDb()->createCommand()->delete('{{%cookieconsent_log}}', ['visitorUuid' => $browser])->execute();
+        $trashed = craft\elements\User::find()->id($user->id)->trashed(true)->status(null)->one();
+        if ($trashed) {
+            Craft::$app->getElements()->deleteElement($trashed, true);
+        }
+    }
+});
+
 $check('users: with "delete", a deleted user\'s logged-in records go with them', function () use ($plugin) {
     $service = $plugin->cookieSettings;
     $user    = new craft\elements\User(['username' => 'del-' . bin2hex(random_bytes(3)), 'email' => 'del-' . bin2hex(random_bytes(3)) . '@example.test']);

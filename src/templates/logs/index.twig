@@ -293,6 +293,9 @@
         <div class="ccf-user-request">
             <p>
                 {{ "Records of {user}: made while logged in, and made logged out on a browser they logged in on."|t('cookie-consent-flow', { user: filterUser.friendlyName ~ ' (' ~ filterUser.email ~ ')' }) }}
+                {% if filterUser.trashed %}
+                    <span class="ccf-match ccf-match--shared">{{ "Deleted user"|t('cookie-consent-flow') }}</span>
+                {% endif %}
             </p>
             <p class="light">
                 <span class="ccf-match ccf-match--user">{{ "Logged in"|t('cookie-consent-flow') }}</span>
@@ -389,7 +392,11 @@
                         <td>
                             {% set recordUser = record.userId ? (users[record.userId] ?? null) : null %}
                             {% if recordUser %}
-                                <a href="{{ recordUser.cpEditUrl }}">{{ recordUser.friendlyName }}</a>
+                                {% if recordUser.trashed %}
+                                    {{ recordUser.friendlyName }} <span class="light">({{ "deleted user"|t('cookie-consent-flow') }})</span>
+                                {% else %}
+                                    <a href="{{ recordUser.cpEditUrl }}">{{ recordUser.friendlyName }}</a>
+                                {% endif %}
                             {% elseif record.userId %}
                                 <span class="light">{{ "Deleted user"|t('cookie-consent-flow') }}</span>
                             {% else %}

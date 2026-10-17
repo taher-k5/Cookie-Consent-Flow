@@ -436,7 +436,7 @@ return [
     'Link Consent Records to Logged-in Users' => 'Link Consent Records to Logged-in Users',
     'Records a decision made while logged in with the Craft user, and links each browser the user logs in on, so you can find, export or delete all of their records — including ones made before they logged in or registered. Linked records are personal data: mention this in your privacy policy. Anonymous visitors are unaffected.' => 'Records a decision made while logged in with the Craft user, and links each browser the user logs in on, so you can find, export or delete all of their records — including ones made before they logged in or registered. Linked records are personal data: mention this in your privacy policy. Anonymous visitors are unaffected.',
     'When a User Is Deleted' => 'When a User Is Deleted',
-    'Anonymise keeps the user’s records as proof of consent, without the user, once the user is permanently deleted. Delete removes the records they made while logged in as soon as the user is deleted — moving them to the trash included — and restoring the user does not bring the records back.' => 'Anonymise keeps the user’s records as proof of consent, without the user, once the user is permanently deleted. Delete removes the records they made while logged in as soon as the user is deleted — moving them to the trash included — and restoring the user does not bring the records back.',
+    'Applies as soon as the user is deleted, moving them to the trash included. Anonymise keeps the user’s records as proof of consent, without the user. Delete removes the records linked to them. Either way their browser links are removed, and restoring the user does not bring them back.' => 'Applies as soon as the user is deleted, moving them to the trash included. Anonymise keeps the user’s records as proof of consent, without the user. Delete removes the records linked to them. Either way their browser links are removed, and restoring the user does not bring them back.',
     'Anonymise records' => 'Anonymise records',
     'Delete records' => 'Delete records',
     'User' => 'User',
@@ -460,4 +460,5 @@ return [
     'decided as a guest, attached to the account at login or registration on {date}' => 'decided as a guest, attached to the account at login or registration on {date}',
     'Linked at login' => 'Linked at login',
     'decided as a guest, then attached to the account as they logged in or registered.' => 'decided as a guest, then attached to the account as they logged in or registered.',
+    'deleted user' => 'deleted user',
 ];

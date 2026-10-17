@@ -424,9 +424,10 @@ class UserLinkService extends Component
 
     /**
      * The records to delete with a user, when the site deletes them: those
-     * made while the user was logged in. Anonymous records on their browsers
-     * are not proof of anything about the user, and are left to retention.
-     * Null when the site keeps (anonymises) records instead.
+     * linked to the user (made while logged in, or attached at login).
+     * Anonymous records on their browsers are not proof of anything about the
+     * user, and are left to retention. Null when the site keeps (anonymises)
+     * the records instead.
      *
      * @return int[]|null
      */

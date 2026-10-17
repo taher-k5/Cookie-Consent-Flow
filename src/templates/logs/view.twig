@@ -63,7 +63,12 @@
                 <th scope="row">{{ "User"|t('cookie-consent-flow') }}</th>
                 <td>
                     {% if recordUser %}
-                        <a href="{{ recordUser.cpEditUrl }}">{{ recordUser.friendlyName }}</a>
+                        {# A user in the trash has no edit page to open. #}
+                        {% if recordUser.trashed %}
+                            {{ recordUser.friendlyName }} <span class="light">({{ "deleted user"|t('cookie-consent-flow') }})</span>
+                        {% else %}
+                            <a href="{{ recordUser.cpEditUrl }}">{{ recordUser.friendlyName }}</a>
+                        {% endif %}
                         {% if recordAttached %}
                             <span class="light">({{ "decided as a guest, attached to the account at login or registration on {date}"|t('cookie-consent-flow', { date: record.dateUpdated|datetime('short') }) }})</span>
                         {% else %}

@@ -42,7 +42,8 @@ in `README.md`; release notes belong in `CHANGELOG.md`.
   `cookieconsent_user_visitor` (FK `CASCADE`) at login, at a guest's own
   front-end registration, and at each logged-in decision. A user's records = `userId` match, plus `userId IS NULL` records
   of linked IDs; IDs linked to other users too are "shared" and never
-  deleted in bulk. At login and registration, each linked ID's latest
+  deleted in bulk. Deleting a user (trash included) anonymises or deletes
+  their records at once (`userDeleteAction`); the FKs only back that up. At login and registration, each linked ID's latest
   anonymous record per site, if still valid, gets the user in place
   (`attachToAccount()`); records are otherwise never updated, so a later
   `dateUpdated` marks it "Linked at login" (`wasAttached()`). User data in

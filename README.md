@@ -401,15 +401,17 @@ php craft cookie-consent-flow/records/delete --user=anna@example.com --dry-run=1
 php craft cookie-consent-flow/records/delete --user=anna@example.com --include-browsers=1 --force=1
 ```
 
-**When a User Is Deleted** chooses what happens to their records:
+**When a User Is Deleted** chooses what happens to their records, as soon as
+the user is deleted (moving them to the trash included):
 
-- **Anonymise records** (default): when the user is permanently deleted, the
-  records stay as proof of consent without the user.
+- **Anonymise records** (default): the records stay as proof of consent,
+  without the user.
 - **Delete records**: the records linked to them (**Logged in** and **Linked
-  at login**) and their browser links are deleted as soon as the user is
-  deleted, moving them to the trash included. Restoring the user does not
-  bring the records back. Logged-out records of their browsers are left to
+  at login**) are deleted. Logged-out records of their browsers are left to
   retention.
+
+Either way their browser links are removed, and restoring the user from the
+trash does not bring them back.
 
 Users in the trash can still be searched for and their records deleted.
 Export lists the `userId` column, and the user's `match`, only to those who
