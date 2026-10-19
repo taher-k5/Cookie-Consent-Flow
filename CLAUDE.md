@@ -18,6 +18,36 @@ in `README.md`; release notes belong in `CHANGELOG.md`.
 - `GeoService` uses ordered `GeoProviderInterface` providers and fails open:
   unknown country means show the banner. `HeaderGeoProvider` trusts no header
   until one is configured (`geoCountryHeader`).
+- `helpers/ConsentScope` decides which sites share a decision: the site ID
+  by default, `g<groupId>` under the global `consentScope = group`, or a key
+  set through `EVENT_RESOLVE_CONSENT_SCOPE`. The browser storage key, the
+  visitor cookie and the `<head>` replay all use the scope key; records keep
+  the real site ID. Resolution failures fall back to the per-site scope.
+- Data subject requests: `ConsentHelper::normalizeVisitorId()` is the one
+  gate for every visitor ID from outside (records search, deletion, the
+  browser-made ID). With `showConsentId` on, the runtime makes an ID in memory
+  before the first decision and posts it; `ConsentService::acceptsRequestedVisitorId()`
+  takes it only if no record has it, or this browser claimed it (a cached
+  HMAC of its CSRF cookie, else session, from its own earlier save: a retry
+  whose response was lost). Never by network: a CDN or carrier gives many
+  visitors one IP hash.
+  The runtime keeps it in `cck_cid_<scope>` from the first page view (as
+  OneTrust and Usercentrics do); it is still only a claim the server checks. `consent/id`
+  and the save response expose the ID only while the setting is on. Deletion (`DELETE_LOGS`, `records/delete`) is limited to accessible
+  sites and logged.
+- User linking (`UserLinkService`, `linkUsers` off by default): the user
+  comes only from Craft's session (never while impersonating). A logged-in
+  decision sets `cookieconsent_log.userId` (FK `SET NULL`); visitor IDs from
+  the validated `cck_visitor_*` cookies are linked in
+  `cookieconsent_user_visitor` (FK `CASCADE`) at login, at a guest's own
+  front-end registration, and at each logged-in decision. A user's records = `userId` match, plus `userId IS NULL` records
+  of linked IDs; IDs linked to other users too are "shared" and never
+  deleted in bulk. Deleting a user (trash included) anonymises or deletes
+  their records at once (`userDeleteAction`); the FKs only back that up. At login and registration, each linked ID's latest
+  anonymous record per site, if still valid, gets the user in place
+  (`attachToAccount()`); records are otherwise never updated, so a later
+  `dateUpdated` marks it "Linked at login" (`wasAttached()`). User data in
+  the CP needs `editUsers` or admin.
 - `helpers/PluginConfig` reads `config/cookie-consent-flow.php` — deployment
   facts only (`geoCountryHeader`, `automaticRetention`, `retentionBatchSize`);
   everything editors manage is in the database.
@@ -42,8 +72,14 @@ in `README.md`; release notes belong in `CHANGELOG.md`.
 2. Optional code runs only after its configured category is accepted. Locked
    categories are always added on both client and server.
 3. Unknown/stale categories are removed from stored and posted decisions.
-4. Settings, storage keys, visitor cookies, records, and overrides remain
-   site-aware.
+4. Settings, records, and overrides remain site-aware. Storage keys and
+   visitor cookies are scope-aware (`ConsentScope`); the default scope is the
+   site, under the exact names used before scopes existed. In a shared scope
+   a decision that was not asked about one of the site's optional categories
+   is not a decision there (`offered` holds the optional keys asked about,
+   merged across the scope's sites; "reject all" withdraws every one), a
+   queued sync is sent only from the site it was made on, and decisions under
+   the other setting's key (`staleScopeKeys`) are removed.
 5. Anonymous writes remain narrow, CSRF-protected, allow-listed, capped, and
    throttled. Error details go to Craft logs, not JSON responses.
 6. Settings/category/cookie replacement is transactional. Never delete child
@@ -72,20 +108,24 @@ in `README.md`; release notes belong in `CHANGELOG.md`.
 - `cookieconsent_detected_cookie`: observed cookie names only, never values.
 - `cookieconsent_log`: consent evidence and metadata.
 
-`Install.php` is the idempotent schema definition and, during the build phase,
-the **single canonical migration**: `Install::reconcile()` creates the complete
-schema on a fresh install and converges an existing table rather than
-assuming an empty one. There are no incremental migrations; a development
-install picks up schema changes by reinstalling the plugin.
+`Install.php` is the idempotent schema definition: `Install::reconcile()`
+creates the complete schema on a fresh install and converges an existing table
+rather than assuming an empty one.
 
-The schema version is **1.8.0** because development builds were installed at
-1.6.0 (`main`) and 1.7.0, and it must never go down — Craft refuses to apply
-project config recording a higher version.
+1.0.0 is published (schema 1.8.0), so every schema change now does three
+things in the same change, because uninstall/reinstall would destroy real
+consent evidence: update `Install.php`, add a timestamped migration
+(`mYYMMDD_HHMMSS_name.php`) whose `safeUp()` calls `reconcile()`, and bump
+`Plugin::$schemaVersion`. `SchemaConsistencyTest` checks the migrations
+converge on `Install.php`. The schema version must never go down — Craft
+refuses to apply project config recording a higher version.
 
-**This convention ends with the first published release.** From the next
-schema change after it: update `Install.php`, add a timestamped migration that
-calls `reconcile()`, and bump `Plugin::$schemaVersion`, in the same change,
-because uninstall/reinstall would then destroy real consent evidence.
+- 1.12.0 (release 1.0.5) — consent scope, consent ID, user linking
+  (`m261016_300000_consent_scope_id_users`). One migration per release. While
+  a release is unpublished, add its new schema to `Install.php` and give its
+  single migration a **new timestamp** (plus a schema bump): Craft never runs
+  an applied migration again, so a bump alone would leave development
+  installs without the new columns.
 
 ## Front-end contract
 
@@ -109,6 +149,7 @@ composer test       # PHPUnit
 composer test-js    # front-end runtime harness (node, no dependencies)
 composer check-all  # both
 php craft cookie-consent-flow/retention/clear --dry-run=1
+php craft cookie-consent-flow/records/delete --visitor=<id> --dry-run=1
 ```
 
 The unit bootstrap uses the nearest Craft Composer autoloader and a temporary

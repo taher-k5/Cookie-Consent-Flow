@@ -2,7 +2,7 @@
     "name": "sfs-infotech/craft-cookie-consent-flow",
     "description": "Cookie consent and compliance management for Craft CMS 5 \u2014 banners, categories, geo-targeting, consent logs, and multi-site support.",
     "type": "craft-plugin",
-    "version": "1.0.0",
+    "version": "1.0.5",
     "license": "proprietary",
     "keywords": [
         "craft",

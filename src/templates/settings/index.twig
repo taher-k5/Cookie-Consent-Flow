@@ -89,6 +89,34 @@
         max:    constant('sfsinfotech\\craftcookieconsentflow\\models\\Settings::DAYS_MAX'),
     }) }}
 
+    {{ forms.lightswitchField({
+        label:        "Show Consent ID to Visitors"|t('cookie-consent-flow'),
+        instructions: "Shows visitors the ID their consent records are saved under, with a copy button, in the preference centre. They can quote it to ask for or delete their records, and you can find the records by searching Consent Records for it. The ID is kept in the visitor’s browser from their first page view, so it stays the same across visits, and page scripts can read it while this is on."|t('cookie-consent-flow'),
+        id:   'showConsentId',
+        name: 'settings[showConsentId]',
+        on:   settings.showConsentId,
+    }) }}
+
+    {{ forms.lightswitchField({
+        label:        "Link Consent Records to Logged-in Users"|t('cookie-consent-flow'),
+        instructions: "Records a decision made while logged in with the Craft user, and links each browser the user logs in on, so you can find, export or delete all of their records — including ones made before they logged in or registered. Linked records are personal data: mention this in your privacy policy. Anonymous visitors are unaffected."|t('cookie-consent-flow'),
+        id:   'linkUsers',
+        name: 'settings[linkUsers]',
+        on:   settings.linkUsers,
+    }) }}
+
+    {{ forms.selectField({
+        label:        "When a User Is Deleted"|t('cookie-consent-flow'),
+        instructions: "Applies as soon as the user is deleted, moving them to the trash included. Anonymise keeps the user’s records as proof of consent, without the user. Delete removes the records linked to them. Either way their browser links are removed, and restoring the user does not bring them back."|t('cookie-consent-flow'),
+        id:      'userDeleteAction',
+        name:    'settings[userDeleteAction]',
+        value:   settings.userDeleteAction,
+        options: [
+            { value: 'anonymise', label: "Anonymise records"|t('cookie-consent-flow') },
+            { value: 'delete',    label: "Delete records"|t('cookie-consent-flow') },
+        ],
+    }) }}
+
 </div>{# /tab-logging #}
 
 {# ── Integrations: Google Consent Mode v2 ──────────────────────────────── #}
@@ -205,6 +233,38 @@
         name:  'settings[policyVersion]',
         value: settings.policyVersion,
     }) }}
+
+    {% if craft.app.sites.allSites|length > 1 %}
+        {{ forms.selectField({
+            label:        "Consent Scope"|t('cookie-consent-flow'),
+            instructions: "Choose whether each site asks for consent separately, or all sites in the same site group share one decision. Sharing works only for sites on the same domain. Consent records always show the site where the choice was made. Changing this setting asks every visitor again."|t('cookie-consent-flow'),
+            id:      'consentScope',
+            name:    'settings[consentScope]',
+            value:   settings.consentScope,
+            options: [
+                { value: 'site',  label: "Per site"|t('cookie-consent-flow') },
+                { value: 'group', label: "Per site group"|t('cookie-consent-flow') },
+            ],
+        }) }}
+
+        {% if settings.consentScope == 'group' %}
+            <p class="light readable">
+                {{ "Sites in a group share the decision only for categories they have in common: a site with an optional category the decision was not asked about asks again. Give the sites of a group the same category keys to avoid that."|t('cookie-consent-flow') }}
+            </p>
+
+            {# Browser storage is per origin, so sites of one group on
+               different domains or subdomains cannot share a decision. #}
+            {% if (groupsAcrossOrigins ?? [])|length %}
+                <div class="readable warning" role="note">
+                    <p>
+                        {{ "These site groups use more than one domain, and browsers keep consent separately for each domain, so their sites still ask separately: {groups}."|t('cookie-consent-flow', {
+                            groups: (groupsAcrossOrigins ?? [])|join(', '),
+                        }) }}
+                    </p>
+                </div>
+            {% endif %}
+        {% endif %}
+    {% endif %}
 
     <hr>
 

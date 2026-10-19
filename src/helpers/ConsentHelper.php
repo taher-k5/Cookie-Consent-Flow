@@ -28,6 +28,28 @@ class ConsentHelper
     }
 
     /**
+     * The shape of a visitor ID: a lower-case UUID (any version — IDs issued
+     * by {@see generateVisitorUuid()} do not all carry the v4 nibble).
+     */
+    public const VISITOR_ID_PATTERN = '/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/D';
+
+    /**
+     * A visitor ID as typed or posted, lower-cased and trimmed, or null when
+     * it is not one. Used for every visitor ID that arrives from outside —
+     * a records search, a deletion request, a browser-made ID.
+     */
+    public static function normalizeVisitorId(mixed $value): ?string
+    {
+        if (!is_string($value)) {
+            return null;
+        }
+
+        $value = strtolower(trim($value));
+
+        return preg_match(self::VISITOR_ID_PATTERN, $value) ? $value : null;
+    }
+
+    /**
      * A pseudonymous, keyed hash of the network a consent decision came from.
      * The raw IP is never stored, and neither is the full address in any
      * reversible form.
@@ -139,18 +161,20 @@ class ConsentHelper
     }
 
     /**
-     * Prefix of the per-site visitor cookie (`cck_visitor_<siteId>`).
+     * Prefix of the visitor cookie (`cck_visitor_<scopeKey>`).
      */
     public const LEGACY_VISITOR_COOKIE = 'cck_visitor';
 
     /**
-     * Returns the per-site visitor cookie name. Namespacing by site ID
-     * prevents a visitor identifier (and therefore their stored consent
-     * lookup) from bleeding across separate Craft sites sharing one origin.
+     * Returns the visitor cookie name for a consent scope key — the site ID
+     * under the default per-site scope (see {@see ConsentScope}). Namespacing
+     * by scope prevents a visitor identifier (and therefore their stored
+     * consent lookup) from bleeding across Craft sites sharing one origin
+     * that are not meant to share a decision.
      */
-    public static function visitorCookieName(int $siteId): string
+    public static function visitorCookieName(int|string $scopeKey): string
     {
-        return self::LEGACY_VISITOR_COOKIE . '_' . $siteId;
+        return self::LEGACY_VISITOR_COOKIE . '_' . $scopeKey;
     }
 
     /**

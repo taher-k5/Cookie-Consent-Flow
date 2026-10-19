@@ -5,6 +5,7 @@ namespace sfsinfotech\craftcookieconsentflow\controllers;
 use Craft;
 use craft\web\Controller;
 use sfsinfotech\craftcookieconsentflow\helpers\ConsentHelper;
+use sfsinfotech\craftcookieconsentflow\helpers\ConsentScope;
 use sfsinfotech\craftcookieconsentflow\helpers\Throttle;
 use sfsinfotech\craftcookieconsentflow\Plugin;
 use sfsinfotech\craftcookieconsentflow\services\ConsentService;
@@ -21,7 +22,7 @@ use yii\web\Response;
  */
 class ConsentController extends Controller
 {
-    protected array|int|bool $allowAnonymous = ['save', 'status', 'geo'];
+    protected array|int|bool $allowAnonymous = ['save', 'status', 'geo', 'id'];
 
     /** Consent saves permitted per client per minute. Generous for a human, not for a script. */
     private const SAVE_LIMIT = 20;
@@ -36,6 +37,9 @@ class ConsentController extends Controller
 
     /** Status lookups permitted per client per minute. Each one is a database read. */
     private const STATUS_LIMIT = 30;
+
+    /** Consent ID lookups permitted per client per minute. One per preference-centre opening is plenty. */
+    private const ID_LIMIT = 30;
 
     /** More categories than any real configuration has; anything beyond is not a browser. */
     private const MAX_CATEGORIES = 100;
@@ -80,8 +84,9 @@ class ConsentController extends Controller
     /**
      * POST /actions/cookie-consent-flow/consent/save
      *
-     * Body: `{ "action": "accept_all|reject_all|custom", "categories": [...], "source": "banner", "policyVersion": "…" }`
-     * Returns: `{ "success": true, "action": "…", "categories": [...], "recorded": true }`
+     * Body: `{ "action": "accept_all|reject_all|custom", "categories": [...], "source": "banner", "policyVersion": "…", "visitorId": "…" }`
+     * Returns: `{ "success": true, "action": "…", "categories": [...], "recorded": true }`, plus
+     * `"visitorId"` when "Show consent ID" is on.
      *
      * The authoritative copy of a visitor's decision is the one in their own
      * browser; this records it server-side as evidence. A failure here is
@@ -89,9 +94,12 @@ class ConsentController extends Controller
      * allowed to invalidate the decision the visitor already made.
      *
      * The response carries the decision *as recorded* — see
-     * ConsentService::normalizeDecision() — and no longer the visitor
-     * identifier, which stays in its httpOnly cookie where page scripts
-     * cannot read it.
+     * ConsentService::normalizeDecision(). The visitor identifier stays in its
+     * httpOnly cookie, where page scripts cannot read it, unless the site
+     * turned on "Show consent ID": then the response also carries it, so the
+     * preference centre can show the visitor the ID their record was saved
+     * under. `visitorId` in the body is the ID the browser made and showed
+     * before the decision; the service decides whether it may be used.
      */
     public function actionSave(): Response
     {
@@ -112,7 +120,8 @@ class ConsentController extends Controller
             $request->getBodyParam('action'),
             $request->getBodyParam('categories', []),
             $request->getBodyParam('source'),
-            $request->getBodyParam('policyVersion')
+            $request->getBodyParam('policyVersion'),
+            $request->getBodyParam('visitorId')
         );
 
         if (isset($payload['error'])) {
@@ -127,7 +136,8 @@ class ConsentController extends Controller
                 $payload['action'],
                 $payload['categories'],
                 $payload['source'],
-                $payload['policyVersion']
+                $payload['policyVersion'],
+                $payload['visitorId']
             );
         } catch (\Throwable $e) {
             // Log the detail server-side; tell the visitor only that it
@@ -137,23 +147,30 @@ class ConsentController extends Controller
             return $this->asJson(['success' => false, 'error' => 'server_error'])->setStatusCode(500);
         }
 
-        $response = $this->asJson([
+        $body = [
             'success'    => true,
             'action'     => $result['action'],
             'categories' => $result['categories'],
             'recorded'   => $result['recorded'],
-        ]);
+        ];
+
+        if ($result['recorded'] && $result['visitorUuid'] !== null && self::_showsConsentId()) {
+            $body['visitorId'] = $result['visitorUuid'];
+        }
+
+        $response = $this->_uncached($this->asJson($body));
 
         // The visitor identifier exists only to link a visitor's records to
         // each other. With logging off there are no records, so no
         // identifier is issued: a year-long tracking cookie with nothing to
         // link would be exactly the kind of cookie this plugin is for.
         //
-        // First-party and namespaced by site, so a shared-origin multi-site
-        // install never lets one site inherit another's visitor identity.
+        // First-party and namespaced by consent scope, so a shared-origin
+        // multi-site install never lets one site inherit the visitor identity
+        // of a site it does not share decisions with.
         if ($result['recorded'] && $result['visitorUuid'] !== null) {
             $response->getCookies()->add(new \yii\web\Cookie([
-                'name'     => ConsentHelper::visitorCookieName($result['siteId']),
+                'name'     => ConsentScope::forSite((int) $result['siteId'])->visitorCookieName(),
                 'value'    => $result['visitorUuid'],
                 'expire'   => time() + 365 * 24 * 3600,
                 'httpOnly' => true,
@@ -174,9 +191,12 @@ class ConsentController extends Controller
      * of the wrong shape is the client's error and gets a 400 with a code
      * saying which part was wrong.
      *
-     * @return array{action: string, categories: string[], source: string}|array{error: string}
+     * A `visitorId` of the wrong type is refused; a string that is not a
+     * visitor ID is dropped, and the server issues one as it always did.
+     *
+     * @return array{action: string, categories: string[], source: string, policyVersion: ?string, visitorId: ?string}|array{error: string}
      */
-    public static function validatePayload(mixed $action, mixed $categories, mixed $source, mixed $policyVersion = null): array
+    public static function validatePayload(mixed $action, mixed $categories, mixed $source, mixed $policyVersion = null, mixed $visitorId = null): array
     {
         if (!is_string($action) || !in_array($action, ConsentService::ACTIONS, true)) {
             return ['error' => 'invalid_action'];
@@ -210,12 +230,55 @@ class ConsentController extends Controller
             return ['error' => 'invalid_policy_version'];
         }
 
+        if ($visitorId !== null && !is_string($visitorId)) {
+            return ['error' => 'invalid_visitor_id'];
+        }
+
         return [
             'action'        => $action,
             'categories'    => array_values($categories),
             'source'        => $source,
             'policyVersion' => $policyVersion,
+            'visitorId'     => ConsentHelper::normalizeVisitorId($visitorId),
         ];
+    }
+
+    /**
+     * GET /actions/cookie-consent-flow/consent/id
+     *
+     * The visitor's own consent ID — the anonymous ID their records carry —
+     * read from their httpOnly visitor cookie, or null when they have none
+     * yet. Only while "Show consent ID" is on (and logging, without which no
+     * ID exists); otherwise always null, so the ID is never readable by page
+     * scripts on a site that has not chosen to show it.
+     *
+     * It returns nothing the caller's browser does not already hold, and the
+     * response is never cacheable, so one visitor's ID cannot reach another.
+     */
+    public function actionId(): Response
+    {
+        $this->requireAcceptsJson();
+
+        if (!Throttle::check('consent-id', self::ID_LIMIT)) {
+            return $this->_uncached($this->asJson(['id' => null, 'error' => 'rate_limited'])->setStatusCode(429));
+        }
+
+        if (!self::_showsConsentId()) {
+            return $this->_uncached($this->asJson(['id' => null]));
+        }
+
+        $siteId = (int) Craft::$app->getSites()->getCurrentSite()->id;
+        $value  = Craft::$app->getRequest()->getCookies()->getValue(ConsentScope::forSite($siteId)->visitorCookieName());
+
+        return $this->_uncached($this->asJson(['id' => ConsentHelper::normalizeVisitorId($value)]));
+    }
+
+    /** Whether this site shows visitors their consent ID. */
+    private static function _showsConsentId(): bool
+    {
+        $settings = Plugin::getInstance()->cookieSettings->getEffectiveSettings();
+
+        return $settings->showConsentId && $settings->logEnabled;
     }
 
     /**
@@ -237,7 +300,7 @@ class ConsentController extends Controller
         $request = Craft::$app->getRequest();
         $siteId  = Craft::$app->getSites()->getCurrentSite()->id;
 
-        $visitorUuid = $request->getCookies()->getValue(ConsentHelper::visitorCookieName($siteId));
+        $visitorUuid = $request->getCookies()->getValue(ConsentScope::forSite((int) $siteId)->visitorCookieName());
 
         if (!is_string($visitorUuid) || $visitorUuid === '') {
             return $this->_uncached($this->asJson(['consent' => null]));

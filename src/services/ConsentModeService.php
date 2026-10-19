@@ -4,6 +4,7 @@ namespace sfsinfotech\craftcookieconsentflow\services;
 
 use craft\base\Component;
 use sfsinfotech\craftcookieconsentflow\helpers\ConsentHelper;
+use sfsinfotech\craftcookieconsentflow\helpers\ConsentScope;
 use sfsinfotech\craftcookieconsentflow\models\Settings;
 
 /**
@@ -130,9 +131,15 @@ class ConsentModeService extends Component
      *                                 nonce. Place the snippet with
      *                                 `consentModeScript(nonce)` in that case.
      * @param int|null    $siteId      The site whose stored decision is replayed; the current one by default.
+     * @param ConsentScope|null $scope   The consent scope to read the decision from; the site's own by default.
      */
-    public function renderScript(Settings $settings, bool $markEmitted = true, ?string $nonce = null, ?int $siteId = null): string
-    {
+    public function renderScript(
+        Settings $settings,
+        bool $markEmitted = true,
+        ?string $nonce = null,
+        ?int $siteId = null,
+        ?ConsentScope $scope = null,
+    ): string {
         if (!$settings->consentModeEnabled || $this->_emitted) {
             return '';
         }
@@ -169,7 +176,10 @@ class ConsentModeService extends Component
         // gets a chance to act on the denied default. Read from the visitor's
         // own browser storage rather than rendered server-side, so this stays
         // identical in cached HTML for every visitor.
-        $lines[] = $this->_storageReplayJs($settings, $siteId ?? \Craft::$app->getSites()->getCurrentSite()->id);
+        $lines[] = $this->_storageReplayJs(
+            $settings,
+            $scope ?? ConsentScope::forSite($siteId ?? (int) \Craft::$app->getSites()->getCurrentSite()->id)
+        );
 
         $nonceAttr = $nonce !== null && $nonce !== ''
             ? ' nonce="' . htmlspecialchars($nonce, ENT_QUOTES) . '"'
@@ -179,10 +189,10 @@ class ConsentModeService extends Component
     }
 
     /**
-     * The inline replay routine: reads the stored decision for this site,
-     * validates it against the current policy version and expiry exactly the
-     * way the main runtime does, maps its categories onto signals, and sends
-     * a single `consent update`.
+     * The inline replay routine: reads the stored decision for this site's
+     * consent scope, validates it against the current policy version and
+     * expiry exactly the way the main runtime does, maps its categories onto
+     * signals, and sends a single `consent update`.
      *
      * Deliberately duplicated here rather than deferred to cookie-banner.js:
      * this must run in `<head>` before Google tags, whereas cookie-banner.js
@@ -199,16 +209,22 @@ class ConsentModeService extends Component
      * browser doing it at runtime — nothing visitor-specific is rendered into
      * this snippet, so it stays identical for every visitor and safe to cache.
      */
-    private function _storageReplayJs(Settings $settings, int $siteId): string
+    private function _storageReplayJs(Settings $settings, ConsentScope $scope): string
     {
+        $locked = $settings->getLockedCategoryKeys();
+
         $config = ConsentHelper::jsonForHtml([
-            'key'           => 'cck_consent_' . $siteId,
+            'key'           => $scope->storageKey(),
             'signals'       => $settings->getCategoryGcmSignals(),
             // getConsent() adds the *current* locked categories to every
             // valid stored decision; so must this, or a category locked
             // after a visitor decided stays denied here until the runtime
             // loads.
-            'locked'        => $settings->getLockedCategoryKeys(),
+            'locked'        => $locked,
+            // In a shared scope, getConsent() re-asks when this site has an
+            // optional category the decision was not asked about.
+            'shared'        => $scope->isShared(),
+            'optional'      => array_values(array_diff($settings->getCategoryKeys(), $locked)),
             'policyVersion' => $settings->policyVersion,
             'expiryDays'    => $settings->consentExpiryDays,
             // cookie-banner.js STORAGE_VERSION: envelopes newer than this are unreadable.
@@ -216,7 +232,8 @@ class ConsentModeService extends Component
         ]);
 
         // Validation mirrors cookie-banner.js getConsent() exactly — shape,
-        // envelope version, policy version, freshness, and the locked
+        // envelope version, policy version, freshness, in a shared scope the
+        // categories the decision was asked about, and the locked
         // categories added to what was stored — because the two
         // must agree about whether a stored decision exists. When they did
         // not (a missing action, a future envelope version, a timestamp in
@@ -233,6 +250,7 @@ if((typeof s.v==='number'?s.v:1)>c.storageVersion)return;
 if(c.policyVersion&&s.policyVersion!==c.policyVersion)return;
 if(c.expiryDays){var t=s.timestamp,n=Date.now();
 if(typeof t!=='number'||!(t>0)||t>n+864e5||n-t>c.expiryDays*864e5)return;}
+if(c.shared&&Array.isArray(s.offered)){for(var i=0;i<c.optional.length;i++){if(s.offered.indexOf(c.optional[i])===-1)return;}}
 var a=s.categories.concat(c.locked);
 var u={};for(var k in c.signals){if(!Object.prototype.hasOwnProperty.call(c.signals,k)||a.indexOf(k)===-1)continue;
 c.signals[k].forEach(function(g){u[g]='granted';});}

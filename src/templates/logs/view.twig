@@ -50,8 +50,44 @@
 
         <tr>
             <th scope="row">{{ "Visitor ID"|t('cookie-consent-flow') }}</th>
-            <td><code>{{ record.visitorUuid }}</code></td>
+            <td>
+                <code>{{ record.visitorUuid }}</code>
+                <a class="ccf-visitor-link" href="{{ cpUrl('cookie-consent-flow/logs', { site: 'all', visitor: record.visitorUuid }) }}">
+                    {{- "All records for this visitor"|t('cookie-consent-flow') -}}
+                </a>
+            </td>
         </tr>
+
+        {% if canViewUsers %}
+            <tr>
+                <th scope="row">{{ "User"|t('cookie-consent-flow') }}</th>
+                <td>
+                    {% if recordUser %}
+                        {# A user in the trash has no edit page to open. #}
+                        {% if recordUser.trashed %}
+                            {{ recordUser.friendlyName }} <span class="light">({{ "deleted user"|t('cookie-consent-flow') }})</span>
+                        {% else %}
+                            <a href="{{ recordUser.cpEditUrl }}">{{ recordUser.friendlyName }}</a>
+                        {% endif %}
+                        {% if recordAttached %}
+                            <span class="light">({{ "decided as a guest, attached to the account at login or registration on {date}"|t('cookie-consent-flow', { date: record.dateUpdated|datetime('short') }) }})</span>
+                        {% else %}
+                            <span class="light">({{ "decided while logged in"|t('cookie-consent-flow') }})</span>
+                        {% endif %}
+                    {% else %}
+                        <span class="light">{{ "Not logged in"|t('cookie-consent-flow') }}</span>
+                    {% endif %}
+                    {% if linkedUsers is not empty %}
+                        <p class="light">
+                            {{ "This browser was also used by:"|t('cookie-consent-flow') }}
+                            {% for linked in linkedUsers %}
+                                <a href="{{ cpUrl('cookie-consent-flow/logs', { site: 'all', user: linked.id }) }}">{{ linked.friendlyName }}</a>{% if not loop.last %}, {% endif %}
+                            {% endfor %}
+                        </p>
+                    {% endif %}
+                </td>
+            </tr>
+        {% endif %}
 
         <tr>
             <th scope="row">{{ "Source"|t('cookie-consent-flow') }}</th>
@@ -129,6 +165,17 @@
     <a class="btn" href="{{ backUrl }}">
         {{ "Back to Consent Records"|t('cookie-consent-flow') }}
     </a>
+
+    {% if canDelete %}
+        <form method="post" class="ccf-visitor-delete ccf-visitor-delete--inline"
+              data-cck-confirm="{{ 'Delete every consent record for this visitor, not only this one? This cannot be undone. Export them first if you need a copy.'|t('cookie-consent-flow') }}">
+            {{ csrfInput() }}
+            {{ actionInput('cookie-consent-flow/logs/delete-visitor') }}
+            {{ redirectInput(cpUrl('cookie-consent-flow/logs', { site: 'all', visitor: record.visitorUuid })) }}
+            {{ hiddenInput('visitorId', record.visitorUuid) }}
+            <button type="submit" class="btn caution">{{ "Delete records for this visitor"|t('cookie-consent-flow') }}</button>
+        </form>
+    {% endif %}
 </div>
 
 {% endblock %}

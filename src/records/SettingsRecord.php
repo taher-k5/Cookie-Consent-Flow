@@ -64,6 +64,10 @@ use craft\db\ActiveRecord;
  * @property int|null    $logRetentionDays Only meaningful on the global row.
  * @property int|null    $consentExpiryDays Only meaningful on the global row.
  * @property string|null $policyVersion Only meaningful on the global row.
+ * @property string|null $consentScope 'site' | 'group'. Only meaningful on the global row.
+ * @property bool|null   $showConsentId Only meaningful on the global row.
+ * @property bool|null   $linkUsers Only meaningful on the global row.
+ * @property string|null $userDeleteAction 'anonymise' | 'delete'. Only meaningful on the global row.
  * @property bool|null   $consentModeEnabled
  * @property string|null $consentModeType 'advanced' | 'basic'.
  * @property bool|null   $consentModeAutoInject

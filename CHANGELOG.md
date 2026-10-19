@@ -1,5 +1,28 @@
 # Changelog
 
+## 1.0.5 - 2026-10-19
+
+### Features
+
+- Consent Scope setting, to share one consent decision across the sites of a
+  site group (for multi-language websites on one domain)
+- `EVENT_RESOLVE_CONSENT_SCOPE` event, to choose which sites share a decision
+- Show Consent ID to Visitors setting: the preference centre shows the
+  visitor's consent ID with a copy button, the same across visits
+- Search consent records by visitor ID, and delete one visitor's records (new
+  permission, and the `records/delete` console command)
+- `CookieConsent.getConsentId()` and the `cookieConsent:consentId` event
+- Link Consent Records to Logged-in Users setting: find, export or delete all
+  of a user's records, including those made before they logged in or
+  registered (a guest decision is attached to the account at login), with a
+  choice of anonymising or deleting them when the user is deleted
+
+### Fixed
+
+- On multisite installs whose sites differ by path (`/` and `/en/`), consent
+  saves, geo-targeting and cookie reports from other sites were handled as the
+  primary site
+
 ## 1.0.0 - 2026-10-03
 
 Initial release version.

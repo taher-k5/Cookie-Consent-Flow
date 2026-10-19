@@ -801,6 +801,15 @@
        this asks the site's entire audience to consent again and cannot be
        undone.
     ------------------------------------------------------------------ */
+    // Forms that destroy data (deleting a visitor's consent records) ask
+    // first. Submitted as ordinary forms, so the server's own CSRF check and
+    // redirect apply.
+    document.querySelectorAll('form[data-cck-confirm]').forEach(function (form) {
+      form.addEventListener('submit', function (e) {
+        if (!window.confirm(form.getAttribute('data-cck-confirm'))) e.preventDefault();
+      });
+    });
+
     var invalidateBtn = document.getElementById('cck-invalidate-consent');
 
     if (invalidateBtn) {

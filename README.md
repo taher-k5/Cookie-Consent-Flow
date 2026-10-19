@@ -29,9 +29,13 @@ can be recorded in the control panel.
   changes
 - Consent records with filters, statistics, CSV/JSON export and a retention
   period
+- Data subject requests: visitors can see their consent ID, and you can find,
+  export or delete one visitor's records — or, on sites with user accounts,
+  all of one user's records
 - A dashboard, a Consent Overview dashboard widget and user permissions in
   the control panel
-- Multisite support: global settings with optional per-site overrides
+- Multisite support: global settings with optional per-site overrides, and
+  one shared decision for the language sites of a site group if you choose
 - Works with static page caching: the injected HTML is the same for every
   visitor
 - Keyboard-accessible banner and preference centre
@@ -42,8 +46,9 @@ can be recorded in the control panel.
 - Craft CMS `^5.0`
 - PHP `>=8.2.0`
 
-The plugin is tested on Craft 5.0.0 and the current 5.x release. Earlier
-Craft 5 releases have published security advisories, so run the latest 5.x.
+Version 1.0.0 was tested on Craft 5.0.0 and the then-current 5.x release;
+version 1.0.5 has been tested on Craft 5.10. Earlier Craft 5 releases have
+published security advisories, so run the latest 5.x.
 
 ## Installation
 
@@ -86,7 +91,7 @@ Editors manage all settings in the control panel under **Cookie Consent**:
 | --- | --- |
 | **Banner** | Layout, content, colours, and geo-targeting |
 | **Cookies** | The cookies listed for each category, and detected cookies |
-| **Settings** | Categories, consent logging and retention, Google Consent Mode, privacy signals, consent expiry, and **Invalidate Existing Consent** |
+| **Settings** | Categories, consent logging, retention and the visitor's consent ID, Google Consent Mode, privacy signals, consent expiry, consent scope (multisite), and **Invalidate Existing Consent** |
 | **Multisite** | Per-site overrides (shown only on multisite installs) |
 | **Consent Records** | Consent history, statistics and exports |
 
@@ -281,8 +286,8 @@ hash and the user agent.
 
 **Consent Records** shows outcome totals and acceptance rates for each
 category, and can filter by site, outcome, source, category, country, policy
-version and date range. You can export the filtered records as CSV or
-JSON, up to 100,000 records per export.
+version, date range and visitor ID. You can export the filtered records as CSV
+or JSON, up to 100,000 records per export.
 
 Set a retention period (365 days by default, at most 36,500, and `0` keeps
 records forever)
@@ -296,6 +301,128 @@ php craft cookie-consent-flow/retention/clear --force=1
 The command also accepts `--days=N` and `--site=handle` (or a site ID). You can also set
 `automaticRetention` to `true` to have Craft's garbage collection delete them.
 
+### Data subject requests
+
+Records are pseudonymous: the only link between a person and their records is
+the visitor ID. To let visitors find theirs, turn on **Show Consent ID to
+Visitors** under **Settings → Consent Logging** (off by default). The
+preference centre then shows "Your consent ID" with a **Copy** button, and a
+link to your privacy policy when one is set.
+
+- The ID is shown from the first page view and stays the same across page
+  loads and visits, as with OneTrust and Usercentrics. Before the visitor's
+  first decision it is made in the browser and stored there
+  (`cck_cid_{scope}`). Their first record is saved under it. If the server
+  cannot use it — another record already has it, and it was not this same
+  browser's — it issues a new ID, and the preference centre shows that one.
+- After the first decision the ID comes from the server, which reads it from
+  the visitor's signed, `httpOnly` cookie (`cck_visitor_{scope}`). It is never
+  written into the page HTML, so page caching is unaffected.
+- The server always decides which ID a record is saved under, so a copied or
+  edited value cannot join another visitor's records.
+- This stores an identifier before the visitor decides, so check the setting
+  against your own legal advice. With it off (the default), nothing
+  identifying is stored before a decision, and turning it off removes stored
+  IDs on the visitor's next page view.
+- While the setting is on, page scripts can read the ID too (see
+  `CookieConsent.getConsentId()` below). It identifies only the visitor's
+  consent records.
+- The ID belongs to one browser. A visitor who used another browser or
+  device, or cleared their cookies, has another ID for those records.
+
+When a visitor quotes their ID:
+
+- **Access:** paste it into **Visitor ID** on **Consent Records** and export
+  the result.
+- **Erasure:** with the **Delete a visitor's consent records** permission,
+  search for the ID and click **Delete records for this visitor**. It
+  deletes the records shown: on the selected site, or on every site you can
+  access. A record's page offers the same for every site you can access.
+  Records on other sites are never deleted, and each deletion is written to
+  the Craft log. From the command line:
+
+```bash
+php craft cookie-consent-flow/records/delete --visitor=<id> --dry-run=1
+php craft cookie-consent-flow/records/delete --visitor=<id> --force=1
+```
+
+The command also accepts `--site=handle` (or a site ID). Whether to delete
+proof-of-consent records when asked is your legal decision; export them first
+if you may need them.
+
+### Linking records to logged-in users
+
+On a site with front-end accounts (Craft's login and registration; Craft
+Solo allows only one user account, so this needs Craft Team or Pro), turn on
+**Link Consent Records to Logged-in Users** under **Settings → Consent
+Logging** (off by default; consent logging must be on too). The user always
+comes from Craft's own session, and the visitor ID from the plugin's signed
+visitor cookie — never from anything the browser claims. The plugin keeps
+two links:
+
+- A decision made while logged in records the Craft user.
+- Every visitor ID the user's browsers carry is linked to the user: when they
+  register on the front end, when they log in, and at each decision while
+  logged in. A visitor who decided anonymously and then registers or logs in
+  has that earlier decision linked straight away — Craft does not log a newly
+  registered user in by default, so registration links it too.
+  After they clear their cookies, the new visitor ID is linked the next time
+  they are logged in.
+
+A visitor who decided as a guest is not asked again when they log in or
+register — their browser already holds the decision — and that decision is
+**attached to their account**: its latest record on each site gets the user,
+as long as it is still in effect (current policy version, not expired, not
+already another user's). It stays one record, and what was decided, when and
+under which policy is unchanged. Older guest records of the browser are left
+as they were.
+
+Anonymous visitors are unaffected, and nothing is linked while an admin uses
+**Log in as** on a user.
+
+To answer a request from a user, enter their email, username or ID in
+**User** on **Consent Records** (shown to admins, and to users who may edit
+users). Each record is marked:
+
+| Mark | Meaning |
+| --- | --- |
+| **Logged in** | Decided while logged in as this user |
+| **Linked at login** | Decided as a guest, then attached to this user as they logged in or registered |
+| **Their browser** | Decided logged out, on a browser only this user logged in on |
+| **Shared browser** | Decided logged out, on a browser other users also logged in on: it may be someone else's |
+
+Export covers the result, with `userId` and a `match` column giving the mark.
+**Delete records for this user** deletes the **Logged in** and **Linked at
+login** records, and optionally the **Their browser** ones. **Shared
+browser** records are never deleted this way. From the command line:
+
+```bash
+php craft cookie-consent-flow/records/delete --user=anna@example.com --dry-run=1
+php craft cookie-consent-flow/records/delete --user=anna@example.com --include-browsers=1 --force=1
+```
+
+**When a User Is Deleted** chooses what happens to their records, as soon as
+the user is deleted (moving them to the trash included):
+
+- **Anonymise records** (default): the records stay as proof of consent,
+  without the user.
+- **Delete records**: the records linked to them (**Logged in** and **Linked
+  at login**) are deleted. Logged-out records of their browsers are left to
+  retention.
+
+Either way their browser links are removed, and restoring the user from the
+trash does not bring them back.
+
+Users in the trash can still be searched for and their records deleted.
+Export lists the `userId` column, and the user's `match`, only to those who
+may see users.
+
+Linked records identify a person, so they are personal data rather than
+pseudonymous: mention this in your privacy policy. A browser the user never
+logged in on cannot be linked to them. To those who may see consent records
+and users, each user's account page in the control panel shows how many
+consent records they have, with a link to them.
+
 ## Multisite
 
 Global settings apply to every site. On the **Multisite** page, each site can
@@ -303,18 +430,78 @@ override banner content, colours and layout, categories, cookie lists,
 geo-targeting and Google Consent Mode. You can copy the global settings to a
 site or go back to them at any time.
 
-Consent choices, visitor IDs and consent records are kept separate for each
-site, so consent given on one site does not count on another. When a site is
+By default, consent choices and visitor IDs are kept separate for each site,
+so consent given on one site does not count on another. When a site is
 deleted, its overrides, cookie lists and detected cookies are removed; its
 consent records are kept and are removed by retention.
+
+### Sharing consent across a site group
+
+A multi-language website is usually one site group with a site per language
+(`example.com/`, `example.com/en/`, `example.com/de/`). For the visitor it is
+one website, so asking again on every language is unnecessary. Under
+**Settings → Advanced**, set **Consent Scope** to **Per site group**, and a
+decision made on one language counts on every site in its group.
+
+- Consent records keep the site the decision was made on, so records,
+  exports, statistics and per-site permissions are unchanged.
+- Banner text, category labels and descriptions stay per-site overrides, so
+  each language keeps its own wording.
+- The policy version and consent expiry are global, so they are always the
+  same across a group.
+- Give the sites of a group the same category keys. A decision covers the
+  optional categories the visitor has been asked about: a site with an
+  optional category the visitor was not asked about asks again, rather than
+  leaving it silently off. That includes a category that was locked on the
+  site where the visitor decided. Once answered, it counts on every site.
+- A choice made on one site keeps what the visitor chose for categories only
+  other sites have. **Reject all** is the exception: it turns off every
+  optional category, on every site of the group.
+- Sharing works only between sites on the same domain. Browsers keep storage
+  separately for each origin (scheme, host and port), so sites of one group
+  on different domains or subdomains (`example.hr`, `en.example.com`) still
+  ask separately. With **Per site group** selected, the settings page lists
+  the groups this applies to.
+- Resetting consent on one site clears the decision for every site in its
+  group.
+- Changing the setting asks every visitor again, because the decision is then
+  stored under a different name. A decision stored under the previous setting
+  is removed, so it cannot count again if you change the setting back. The
+  visitor ID cookie is also named after the scope, so records made under each
+  setting use a different visitor ID.
+- If you use static page caching, clear the cache after changing the setting.
+  Until then, cached pages use the previous setting and may ask again.
+
+To group sites some other way, listen for `EVENT_RESOLVE_CONSENT_SCOPE` and
+set the key yourself. Sites with the same key share a decision. The key may
+use letters, numbers, dashes and underscores (up to 64 characters):
+
+```php
+use sfsinfotech\craftcookieconsentflow\Plugin;
+use sfsinfotech\craftcookieconsentflow\events\ResolveConsentScopeEvent;
+use yii\base\Event;
+
+Event::on(
+    Plugin::class,
+    Plugin::EVENT_RESOLVE_CONSENT_SCOPE,
+    function (ResolveConsentScopeEvent $event) {
+        if (in_array($event->site->handle, ['hr', 'en', 'de'], true)) {
+            $event->scopeKey = 'brand';
+        }
+    }
+);
+```
 
 ## Permissions
 
 - **Manage cookie consent configuration**
 - **View consent records**
   - **Export consent records**
+  - **Delete a visitor's consent records**
 
-Being able to view records does not include exporting them. The control panel
+Being able to view records does not include exporting or deleting them.
+Searching by user, and seeing which user a record belongs to, also needs
+permission to edit users (or an admin account). The control panel
 navigation shows only the pages a user can access. On multisite installs,
 records, exports, the dashboard and site overrides are also limited to the
 sites the user has access to in Craft; global settings apply to every site.
@@ -352,6 +539,7 @@ CookieConsent.openPreferences();
 CookieConsent.updateConsent({ analytics: true, marketing: false });
 CookieConsent.resetConsent();
 CookieConsent.onReady(function (decision) { /* null if undecided */ });
+CookieConsent.getConsentId().then(function (id) { /* null unless Show Consent ID is on */ });
 
 document.addEventListener('cookieConsent:changed', function (event) {
   console.log(event.detail);
@@ -359,54 +547,67 @@ document.addEventListener('cookieConsent:changed', function (event) {
 ```
 
 The events are `ready`, `loaded`, `shown`, `suppressed`, `preferences`,
-`changed`, `accepted`, `rejected`, `custom`, `reset` and `syncFailed`, each
-prefixed with `cookieConsent:`.
+`changed`, `accepted`, `rejected`, `custom`, `reset`, `syncFailed` and
+`consentId` (the visitor's consent ID became known), each prefixed with
+`cookieConsent:`.
 
 Pages may be cached, so don't use a visitor's consent state to change
 server-rendered HTML. Check consent in the browser instead.
 
 Buttons you add yourself work with `data-cck-action`, set to `accept-all`,
-`reject-all`, `open-preferences`, `close-preferences`, `save-preferences` or
-`reset-consent`.
+`reject-all`, `open-preferences`, `close-preferences`, `save-preferences`,
+`reset-consent` or `copy-consent-id`.
 
 Resetting consent removes the decision from the browser and asks again. The
 visitor ID cookie is `httpOnly` and stays, so later records remain linked to
 earlier ones, and cookies set by other scripts are not deleted.
 
-PHP developers can listen for `EVENT_BEFORE_BANNER_RENDER` (cancellable) and
+PHP developers can listen for `EVENT_BEFORE_BANNER_RENDER` (cancellable),
 `EVENT_AFTER_CONSENT_SAVE`, which fires after a consent record has been
-saved.
+saved, and `EVENT_RESOLVE_CONSENT_SCOPE`, which chooses which sites share a
+decision (see [Multisite](#sharing-consent-across-a-site-group)).
 
 ## Cookies and storage used by the plugin
 
 | Name | Where | Purpose |
 | --- | --- | --- |
-| `cck_consent_{siteId}` | localStorage, or a first-party cookie (365 days) if localStorage can't be written | The visitor's decision |
-| `cck_consent_{siteId}_pending` | localStorage, or a first-party cookie (365 days) if localStorage can't be written | A decision not yet recorded on the server |
+| `cck_consent_{scope}` | localStorage, or a first-party cookie (365 days) if localStorage can't be written | The visitor's decision |
+| `cck_consent_{scope}_pending` | localStorage, or a first-party cookie (365 days) if localStorage can't be written | A decision not yet recorded on the server |
 | `cck_reported_{siteId}` | localStorage | Cookie names reported in the last day |
 | `cck_geo_{siteId}_{policyVersion}` | sessionStorage | The geo-targeting answer for the tab |
-| `cck_visitor_{siteId}` | `httpOnly` cookie (1 year) | Visitor ID, set only when a record is written |
+| `cck_visitor_{scope}` | `httpOnly` cookie (1 year) | Visitor ID, set only when a record is written |
+| `cck_cid_{scope}` | localStorage, or a first-party cookie (365 days) if localStorage can't be written | The consent ID shown to the visitor; only with **Show Consent ID to Visitors** on |
+
+`{scope}` is the site ID by default, and `g{groupId}` when
+**Consent Scope** is **Per site group** (see
+[Multisite](#sharing-consent-across-a-site-group)).
 
 Recording a decision also starts a Craft session (`CraftSessionId` and the
-CSRF cookie). Before the visitor decides, the only thing stored is the
-geo-targeting answer, in sessionStorage, when geo-targeting is on: it holds
-`show` or `hide`, nothing about the visitor, and saves a lookup on every page
-view in that tab. With geo-targeting off, nothing is stored before a
-decision.
+CSRF cookie). Before the visitor decides, only two things can be stored:
+
+- the geo-targeting answer, in sessionStorage, when geo-targeting is on. It
+  holds `show` or `hide`, nothing about the visitor, and saves a lookup on
+  every page view in that tab;
+- the consent ID, when **Show Consent ID to Visitors** is on.
+
+With both off, nothing is stored before a decision.
 
 ## Caching and proxies
 
 The injected HTML is the same for every visitor. Exclude these URLs from your
-page cache:
+page cache. The plugin's own endpoints are requested on each site's base URL
+(for example `/en/actions/cookie-consent-flow/consent/save`), so exclude them
+under every site's path:
 
 - `actions/cookie-consent-flow/consent/save`
 - `actions/cookie-consent-flow/consent/geo`
 - `actions/cookie-consent-flow/consent/status`
+- `actions/cookie-consent-flow/consent/id`
 - `actions/cookie-consent-flow/cookie-detection/report`
 - `actions/users/session-info`
 
-These endpoints are rate limited per visitor, per minute: 20 saves, 30 status
-and 30 geo requests, and 10 cookie reports of at most 100 names each. Behind a
+These endpoints are rate limited per visitor, per minute: 20 saves, 30 status,
+30 consent ID and 30 geo requests, and 10 cookie reports of at most 100 names each. Behind a
 CDN or load balancer,
 list its IP ranges in Craft's `trustedHosts` so each visitor is identified
 exactly; without it, visitors are told apart by the forwarded address within

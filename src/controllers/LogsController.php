@@ -9,6 +9,7 @@ use sfsinfotech\craftcookieconsentflow\helpers\ConsentHelper;
 use sfsinfotech\craftcookieconsentflow\helpers\Permissions;
 use sfsinfotech\craftcookieconsentflow\Plugin;
 use sfsinfotech\craftcookieconsentflow\services\ConsentService;
+use sfsinfotech\craftcookieconsentflow\services\UserLinkService;
 use yii\web\BadRequestHttpException;
 use yii\web\NotFoundHttpException;
 use yii\web\Response;
@@ -39,6 +40,9 @@ class LogsController extends Controller
      * complete is worse than one that refuses — every format below states it.
      */
     private bool $_exportTruncated = false;
+
+    /** @var string[] The columns of the export being built; see EXPORT_COLUMNS. */
+    private array $_exportColumns = self::EXPORT_COLUMNS;
 
     public function beforeAction($action): bool
     {
@@ -107,8 +111,14 @@ class LogsController extends Controller
             $categoryStats[] = $data + ['key' => $key, 'label' => $categoryLabels[$key]];
         }
 
+        [$users, $matchTypes, $filterUser] = $this->_userContext($records, $filters);
+
         return $this->renderTemplate('cookie-consent-flow/logs/index', [
             'categoryStats' => $categoryStats,
+            'canViewUsers'  => self::canViewUsers(),
+            'users'         => $users,
+            'matchTypes'    => $matchTypes,
+            'filterUser'    => $filterUser,
             'plugin'      => $plugin,
             'records'     => $records,
             'total'       => $total,
@@ -122,6 +132,7 @@ class LogsController extends Controller
             // Retained for templates/links written against the old variable name.
             'filter'      => $filters['action'] ?? '',
             'canExport'   => Permissions::canAny(Permissions::EXPORT_LOGS),
+            'canDelete'   => Permissions::canAny(Permissions::DELETE_LOGS),
             'actions'     => ConsentService::ACTIONS,
             'sources'     => ConsentService::SOURCES,
             'categories'  => $plugin->cookieSettings->getEffectiveSettings($site?->id)->categories,
@@ -154,7 +165,7 @@ class LogsController extends Controller
         $request    = Craft::$app->getRequest();
         $backParams = [];
 
-        foreach (['site', 'filter', 'source', 'category', 'policyVersion', 'country', 'from', 'to', 'page'] as $key) {
+        foreach (['site', 'filter', 'source', 'category', 'policyVersion', 'country', 'visitor', 'user', 'from', 'to', 'page'] as $key) {
             $value = $request->getQueryParam($key);
 
             if (is_string($value) && $value !== '') {
@@ -173,7 +184,200 @@ class LogsController extends Controller
             'record'         => $record,
             'backUrl'        => \craft\helpers\UrlHelper::cpUrl('cookie-consent-flow/logs', $backParams),
             'categoryLabels' => $labels,
+            'canDelete'      => Permissions::canAny(Permissions::DELETE_LOGS),
+            'canViewUsers'   => self::canViewUsers(),
+            'recordAttached' => UserLinkService::wasAttached($record->dateCreated, $record->dateUpdated),
+            'recordUser'     => self::canViewUsers() && $record->hasAttribute('userId') && $record->userId
+                ? UserLinkService::findUser((string) $record->userId)
+                : null,
+            'linkedUsers'    => self::canViewUsers()
+                ? array_values(array_filter(array_map(
+                    static fn(int $id): ?\craft\elements\User => UserLinkService::findUser((string) $id),
+                    Plugin::getInstance()->userLinks->usersForVisitorIds([(string) $record->visitorUuid])[(string) $record->visitorUuid] ?? []
+                )))
+                : [],
         ]);
+    }
+
+    /**
+     * Whether the current user may see which Craft user a record belongs to,
+     * and search by user: only with linking on, and only for someone who may
+     * see Craft users anyway. Viewing consent records alone never opens the
+     * user directory.
+     */
+    public static function canViewUsers(): bool
+    {
+        if (!Plugin::getInstance()->userLinks->isEnabled()) {
+            return false;
+        }
+
+        $user = Craft::$app->getUser();
+
+        return ($user->getIdentity()?->admin ?? false) || $user->checkPermission('editUsers');
+    }
+
+    /** The site restriction for the current user, for callers outside a request to this controller. */
+    public static function scopeFiltersForCurrentUser(): array
+    {
+        $isAdmin = Craft::$app->getUser()->getIdentity()?->admin ?? false;
+
+        return self::scopeFilters(null, count(Craft::$app->getSites()->getAllSites()), $isAdmin, Permissions::accessibleSiteIds());
+    }
+
+    /**
+     * The users the records on screen belong to, and — when the list is one
+     * user's records — how each record belongs to them.
+     *
+     * @param array<int, mixed>    $records
+     * @param array<string, mixed> $filters
+     * @return array{0: array<int, \craft\elements\User>, 1: array<int, string>, 2: ?\craft\elements\User}
+     */
+    private function _userContext(array $records, array $filters): array
+    {
+        if (!self::canViewUsers()) {
+            return [[], [], null];
+        }
+
+        $users = [];
+        foreach ($records as $record) {
+            $id = (int) ($record['userId'] ?? 0);
+            if ($id > 0 && !isset($users[$id])) {
+                $users[$id] = UserLinkService::findUser((string) $id);
+            }
+        }
+
+        $filterUserId = (int) ($filters['userId'] ?? 0);
+        $filterUser   = $filterUserId > 0 ? UserLinkService::findUser((string) $filterUserId) : null;
+        $matchTypes   = [];
+
+        if ($filterUser !== null) {
+            $visitorIds = array_values(array_unique(array_map(static fn($r): string => (string) $r['visitorUuid'], $records)));
+            $byVisitor  = Plugin::getInstance()->userLinks->usersForVisitorIds($visitorIds);
+
+            foreach ($records as $record) {
+                $matchTypes[(int) $record['id']] = UserLinkService::matchType(
+                    isset($record['userId']) ? (int) $record['userId'] : null,
+                    (string) $record['visitorUuid'],
+                    $filterUserId,
+                    $byVisitor,
+                    UserLinkService::wasAttached($record['dateCreated'] ?? null, $record['dateUpdated'] ?? null)
+                );
+            }
+        }
+
+        return [array_filter($users), $matchTypes, $filterUser];
+    }
+
+    /**
+     * Deletes one user's consent records: those made while they were logged
+     * in, and — when asked — the anonymous records of browsers linked to them
+     * only. Anonymous records of a browser other users were also seen on are
+     * never deleted this way. Limited to the sites the user may access, or to
+     * the posted site, and logged.
+     */
+    public function actionDeleteUser(): Response
+    {
+        $this->requireCpRequest();
+        $this->requirePostRequest();
+        Permissions::requireAny(Permissions::DELETE_LOGS);
+
+        if (!self::canViewUsers()) {
+            throw new \yii\web\ForbiddenHttpException('User is not permitted to perform this action.');
+        }
+
+        $request = Craft::$app->getRequest();
+        $userId  = (int) $request->getRequiredBodyParam('userId');
+
+        if ($userId <= 0 || UserLinkService::findUser((string) $userId) === null) {
+            throw new BadRequestHttpException('Invalid user.');
+        }
+
+        $browsersToo = (bool) $request->getBodyParam('includeBrowsers');
+        $isAdmin     = Craft::$app->getUser()->getIdentity()?->admin ?? false;
+        $site        = $this->_resolveSite($request->getBodyParam('site'));
+        $siteIds     = $site !== null ? [(int) $site->id] : self::deletableSiteIds($isAdmin, Permissions::accessibleSiteIds());
+
+        $deleted = Plugin::getInstance()->consent->deleteUserRecords($userId, $browsersToo, $siteIds);
+
+        Craft::warning(
+            "Cookie consent records deleted for user #{$userId}: {$deleted} record(s)"
+            . ($browsersToo ? ' including their browsers\' anonymous records' : '')
+            . ($siteIds === null ? ' on every site' : ' on site(s) #' . implode(', #', $siteIds))
+            . ', by user #' . (Craft::$app->getUser()->getId() ?? 0),
+            __METHOD__
+        );
+
+        Craft::$app->getSession()->setSuccess(Craft::t('cookie-consent-flow', 'Deleted {count, plural, =1{# consent record} other{# consent records}} for this user.', [
+            'count' => $deleted,
+        ]));
+
+        return $this->redirectToPostedUrl(null, 'cookie-consent-flow/logs');
+    }
+
+    /**
+     * Deletes every consent record of one visitor ID — the erasure side of a
+     * data subject request.
+     *
+     * Limited to the sites this user may access, exactly like viewing: the
+     * same ID can carry records on several sites (one site group sharing
+     * consent), and a user restricted to one site must not remove another
+     * site's evidence. Records of a deleted site belong to no site permission,
+     * so only an admin removes those. A posted `site` narrows it to that one
+     * site, matching the list the deletion was started from.
+     *
+     * The result never mentions records on sites the user cannot access —
+     * not even how many there are.
+     *
+     * Each deletion is written to the Craft log with the acting user, because
+     * the records themselves no longer exist to show it happened.
+     */
+    public function actionDeleteVisitor(): Response
+    {
+        $this->requireCpRequest();
+        $this->requirePostRequest();
+        Permissions::requireAny(Permissions::DELETE_LOGS);
+
+        $request   = Craft::$app->getRequest();
+        $visitorId = ConsentHelper::normalizeVisitorId($request->getRequiredBodyParam('visitorId'));
+
+        if ($visitorId === null) {
+            throw new BadRequestHttpException('Invalid visitor ID.');
+        }
+
+        $isAdmin = Craft::$app->getUser()->getIdentity()?->admin ?? false;
+        $site    = $this->_resolveSite($request->getBodyParam('site'));
+        $siteIds = $site !== null
+            ? [(int) $site->id]
+            : self::deletableSiteIds($isAdmin, Permissions::accessibleSiteIds());
+
+        $deleted = Plugin::getInstance()->consent->deleteVisitorRecords($visitorId, $siteIds);
+
+        Craft::warning(
+            "Cookie consent records deleted for visitor {$visitorId}: {$deleted} record(s)"
+            . ($siteIds === null ? ' on every site' : ' on site(s) #' . implode(', #', $siteIds))
+            . ', by user #' . (Craft::$app->getUser()->getId() ?? 0),
+            __METHOD__
+        );
+
+        $message = Craft::t('cookie-consent-flow', 'Deleted {count, plural, =1{# consent record} other{# consent records}} for this visitor.', [
+            'count' => $deleted,
+        ]);
+
+        Craft::$app->getSession()->setSuccess($message);
+
+        return $this->redirectToPostedUrl(null, 'cookie-consent-flow/logs');
+    }
+
+    /**
+     * The sites a deletion may reach: every site, including deleted ones,
+     * for an admin; otherwise the sites the user may access.
+     *
+     * @param  int[] $accessibleSiteIds
+     * @return int[]|null Null for every site.
+     */
+    public static function deletableSiteIds(bool $isAdmin, array $accessibleSiteIds): ?array
+    {
+        return $isAdmin ? null : array_values(array_map('intval', $accessibleSiteIds));
     }
 
     /**
@@ -234,6 +438,17 @@ class LogsController extends Controller
             ->limit(self::EXPORT_LIMIT + 1)
             ->asArray();
 
+        // Which user a record belongs to is shown only to those who may see
+        // users. A user's own export also says how each record is theirs.
+        $showUsers    = self::canViewUsers();
+        $filterUserId = $showUsers ? (int) ($filters['userId'] ?? 0) : 0;
+        $userLinks    = Plugin::getInstance()->userLinks;
+        $byVisitor    = $filterUserId > 0 ? $userLinks->usersForVisitorIds($userLinks->visitorIdsForUser($filterUserId)) : [];
+
+        if ($showUsers) {
+            $this->_exportColumns = array_merge(self::EXPORT_COLUMNS, $filterUserId > 0 ? ['userId', 'match'] : ['userId']);
+        }
+
         $siteNames = [];
         foreach (Craft::$app->getSites()->getAllSites() as $site) {
             $siteNames[$site->id] = $site->name;
@@ -263,6 +478,20 @@ class LogsController extends Controller
                     'policyVersion' => $record['policyVersion'] ?? '',
                     'countryCode'   => $record['countryCode'] ?? '',
                 ];
+
+                if ($showUsers) {
+                    $rows[count($rows) - 1]['userId'] = isset($record['userId']) ? (int) $record['userId'] : '';
+                }
+
+                if ($filterUserId > 0) {
+                    $rows[count($rows) - 1]['match'] = UserLinkService::matchType(
+                        isset($record['userId']) ? (int) $record['userId'] : null,
+                        (string) $record['visitorUuid'],
+                        $filterUserId,
+                        $byVisitor,
+                        UserLinkService::wasAttached($record['dateCreated'] ?? null, $record['dateUpdated'] ?? null)
+                    );
+                }
 
                 if (count($rows) >= self::EXPORT_LIMIT) {
                     $this->_exportTruncated = true;
@@ -298,13 +527,13 @@ class LogsController extends Controller
     private function _csvDownload(array $rows, string $filename): Response
     {
         $handle = fopen('php://temp', 'r+');
-        self::_putCsvRow($handle, self::EXPORT_COLUMNS);
+        self::_putCsvRow($handle, $this->_exportColumns);
 
         foreach ($rows as $row) {
             $row['categories'] = implode(' ', $row['categories']);
             self::_putCsvRow($handle, array_map(
                 static fn(string $column): string => self::csvCell($row[$column] ?? ''),
-                self::EXPORT_COLUMNS
+                $this->_exportColumns
             ));
         }
 
@@ -520,6 +749,23 @@ class LogsController extends Controller
         $country = is_string($country) ? strtoupper(trim($country)) : '';
         if (preg_match('/^[A-Z]{2}$/D', $country)) {
             $filters['countryCode'] = $country;
+        }
+
+        // Kept even when it is not a visitor ID, so the search shows no
+        // records instead of quietly showing all of them.
+        $visitor = trim($str($request->getParam('visitor', '')));
+        if ($visitor !== '') {
+            $filters['visitorUuid'] = ConsentHelper::normalizeVisitorId($visitor) ?? $visitor;
+        }
+
+        // A user, by ID, username or email — only for those who may see
+        // users. Unknown matches nothing (0), rather than everything.
+        $user = trim($str($request->getParam('user', '')));
+        if ($user !== '' && self::canViewUsers()) {
+            $found = UserLinkService::findUser($user);
+
+            $filters['user']   = $user;
+            $filters['userId'] = $found?->id ? (int) $found->id : 0;
         }
 
         // The site restriction is deliberately not added here: these are

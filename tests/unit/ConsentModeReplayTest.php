@@ -3,6 +3,7 @@
 namespace sfsinfotech\craftcookieconsentflow\tests\unit;
 
 use PHPUnit\Framework\TestCase;
+use sfsinfotech\craftcookieconsentflow\helpers\ConsentScope;
 use sfsinfotech\craftcookieconsentflow\models\Settings;
 use sfsinfotech\craftcookieconsentflow\services\ConsentModeService;
 
@@ -29,10 +30,18 @@ final class ConsentModeReplayTest extends TestCase
      * Runs the replay against one stored value and returns the consent
      * updates it sent.
      *
+     * The value is stored under `$storedKey` only, so a replay reading the
+     * wrong key finds nothing. The scope defaults to site 1's own, the
+     * per-site scope.
+     *
      * @return array<int, array<string, string>>
      */
-    private function replay(?array $stored, ?string $cookie = null): array
-    {
+    private function replay(
+        ?array $stored,
+        ?string $cookie = null,
+        ?ConsentScope $scope = null,
+        string $storedKey = 'cck_consent_1',
+    ): array {
         $node = self::node();
         if ($node === null) {
             self::markTestSkipped('Node.js is required to execute the replay snippet (the same requirement as composer test-js).');
@@ -44,11 +53,11 @@ final class ConsentModeReplayTest extends TestCase
         $settings->policyVersion      = '2';
         $settings->consentExpiryDays  = 180;
 
-        $html   = (new ConsentModeService())->renderScript($settings, false, null, 1);
+        $html   = (new ConsentModeService())->renderScript($settings, false, null, 1, $scope ?? new ConsentScope('1', [1]));
         $script = preg_replace('#^<script[^>]*>|</script>$#', '', trim($html));
 
         $harness = 'var updates=[];var store=' . json_encode($stored === null ? null : json_encode($stored)) . ';'
-            . 'var localStorage={getItem:function(){return store;}};'
+            . 'var localStorage={getItem:function(k){return k===' . json_encode($storedKey) . '?store:null;}};'
             . 'var document={cookie:' . json_encode($cookie ?? '') . '};'
             . 'var window={};var dataLayer=[];'
             . 'var gtag=function(){if(arguments[0]==="consent"&&arguments[1]==="update")updates.push(arguments[2]);};'
@@ -168,5 +177,54 @@ final class ConsentModeReplayTest extends TestCase
         $updates = $this->replay(null, 'cck_consent_1=' . rawurlencode(json_encode(self::decision())));
 
         self::assertCount(1, $updates);
+    }
+
+    // -------------------------------------------------------------------------
+    // Consent scope
+    // -------------------------------------------------------------------------
+
+    /** A shared scope's decision is read from the scope's key, not the site's. */
+    public function testASharedScopeReadsTheScopeKey(): void
+    {
+        $group = new ConsentScope('g2', [1, 3]);
+
+        self::assertCount(1, $this->replay(self::decision(), null, $group, 'cck_consent_g2'));
+        self::assertSame([], $this->replay(self::decision(), null, $group, 'cck_consent_1'), 'the site key is not the scope');
+        self::assertSame([], $this->replay(self::decision(), null, null, 'cck_consent_g2'), 'nor the scope key the site');
+    }
+
+    /**
+     * Mirrors getConsent(): in a shared scope, a decision that was never
+     * asked about one of this site's optional categories is not a decision
+     * here, so nothing is granted while the banner asks.
+     */
+    public function testASharedDecisionMissingAnOptionalCategoryGrantsNothing(): void
+    {
+        $group   = new ConsentScope('g2', [1, 3]);
+        $offered = self::decision(['offered' => ['necessary', 'analytics', 'marketing']]);
+
+        self::assertSame([], $this->replay($offered, null, $group, 'cck_consent_g2'));
+    }
+
+    public function testASharedDecisionCoveringEveryOptionalCategoryIsReplayed(): void
+    {
+        $group = new ConsentScope('g2', [1, 3]);
+        $keys  = (new Settings())->getCategoryKeys();
+
+        self::assertCount(1, $this->replay(self::decision(['offered' => $keys]), null, $group, 'cck_consent_g2'));
+    }
+
+    /** Outside a shared scope the offered list is not consulted, as in getConsent(). */
+    public function testTheOfferedListIsIgnoredOutsideASharedScope(): void
+    {
+        self::assertCount(1, $this->replay(self::decision(['offered' => ['necessary']])));
+    }
+
+    /** A decision stored without an offered list (before it existed) still counts. */
+    public function testASharedDecisionWithoutAnOfferedListIsReplayed(): void
+    {
+        $group = new ConsentScope('g2', [1, 3]);
+
+        self::assertCount(1, $this->replay(self::decision(), null, $group, 'cck_consent_g2'));
     }
 }

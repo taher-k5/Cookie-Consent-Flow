@@ -17,6 +17,7 @@ use craft\db\ActiveRecord;
  * @property string      $source       'banner' | 'gpc' | 'dnt' | 'api' — how the decision was reached.
  * @property string|null $countryCode  ISO 3166-1 alpha-2, resolved via GeoService.
  * @property string      $userAgent    Raw User-Agent string (truncated to 500 chars).
+ * @property int|null    $userId       The logged-in Craft user, when "Link consent records to logged-in users" is on.
  * @property string      $dateCreated
  * @property string      $dateUpdated
  * @property string      $uid

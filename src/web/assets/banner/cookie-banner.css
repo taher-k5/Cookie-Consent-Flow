@@ -570,6 +570,79 @@
 /* --------------------------------------------------------------------------
    Preferences modal footer
    -------------------------------------------------------------------------- */
+/* Consent ID: shown only when the site turns it on, filled in by the runtime. */
+.cck-consent-id {
+  margin: 16px 0 0;
+  padding: 12px;
+  border: 1px solid var(--cck-banner-border, #e5e7eb);
+  border-radius: 8px;
+  font-size: 13px;
+  color: var(--cck-desc-color, #4b5563);
+}
+
+.cck-consent-id[hidden] {
+  display: none;
+}
+
+.cck-consent-id__row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+}
+
+.cck-consent-id__label {
+  font-weight: 600;
+  color: var(--cck-heading-color, #111827);
+}
+
+/* Set in full, so the site's own styles for code or monospace text cannot
+   recolour it: it follows the banner's own colours on every site. */
+.cck-consent-id .cck-consent-id__value {
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--cck-heading-color, #111827);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 12px;
+  font-weight: 400;
+  line-height: 1.5;
+  letter-spacing: 0;
+  word-break: break-all;
+  user-select: all;
+}
+
+.cck-consent-id__copy {
+  padding: 2px 10px;
+  border: 1px solid var(--cck-banner-border, #d1d5db);
+  border-radius: 6px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+
+.cck-consent-id__copy.is-copied {
+  border-color: var(--cck-accept-bg, #16a34a);
+  color: var(--cck-accept-bg, #16a34a);
+}
+
+.cck-consent-id__copy:focus-visible {
+  outline: 2px solid var(--cck-link-color, #2563eb);
+  outline-offset: 2px;
+}
+
+.cck-consent-id__note {
+  margin: 8px 0 0;
+}
+
+.cck-consent-id__link {
+  margin-inline-start: 4px;
+  color: var(--cck-link-color, #2563eb);
+}
+
 .cck-preferences__footer {
   display: flex;
   flex-wrap: wrap;

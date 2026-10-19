@@ -202,6 +202,9 @@ function boot(options) {
   // nothing — which would make every assertion below pass for the wrong reason.
   env.window.fetch = fetch;
 
+  // Browser APIs a test supplies (crypto, clipboard), or takes away.
+  Object.assign(env.window, options.window || {});
+
   const load = function () {
     new Function('window', 'document', 'fetch', 'CustomEvent', RUNTIME)(
       env.window,
@@ -885,6 +888,285 @@ test('regression: storage is namespaced per site', async () => {
 
   assert.ok(page.storage.cck_consent_4, 'written under this site');
   assert.strictEqual(page.storage.cck_consent_1, undefined, 'and not another');
+});
+
+// ---------------------------------------------------------------------------
+// Consent scope: sites of one group sharing a decision
+// ---------------------------------------------------------------------------
+
+const GROUP = { siteId: 1, scopeKey: 'g2', scopeShared: true };
+
+test('scope: the per-site scope keeps the site-ID key it always had', async () => {
+  const page = boot({ config: { siteId: 4, scopeKey: '4', scopeShared: false }, routes: { '/consent/save': () => jsonResponse(200, {}) } });
+  await settle();
+
+  page.consent.acceptAll();
+  await settle();
+
+  assert.ok(page.storage.cck_consent_4);
+  assert.strictEqual(JSON.parse(page.storage.cck_consent_4).offered, undefined, 'nothing new is stored outside a shared scope');
+});
+
+test('scope: a group scope stores the decision under the group key', async () => {
+  const page = boot({ config: GROUP, routes: { '/consent/save': () => jsonResponse(200, {}) } });
+  await settle();
+
+  page.consent.acceptAll();
+  await settle();
+
+  assert.ok(page.storage.cck_consent_g2, 'written under the group');
+  assert.strictEqual(page.storage.cck_consent_1, undefined, 'and not under the site');
+  assert.deepStrictEqual(JSON.parse(page.storage.cck_consent_g2).offered, ['analytics', 'marketing'], 'the optional categories asked about');
+});
+
+test('scope: a decision made on another site of the group is honoured', async () => {
+  const page = boot({
+    config: Object.assign({}, GROUP, { siteId: 3 }),
+    storage: { cck_consent_g2: validDecision({ offered: ['necessary', 'analytics', 'marketing'] }) }
+  });
+  await settle();
+
+  assert.strictEqual(page.consent.hasStoredConsent(), true);
+  assert.strictEqual(page.banner.hidden, true, 'the visitor is not asked again on another language');
+});
+
+test('scope: a site with an optional category the shared decision never offered asks again', async () => {
+  const page = boot({
+    config: Object.assign({}, GROUP, { allCategories: ['necessary', 'analytics', 'marketing', 'video'] }),
+    storage: { cck_consent_g2: validDecision({ offered: ['necessary', 'analytics', 'marketing'] }) }
+  });
+  await settle();
+
+  assert.strictEqual(page.consent.hasStoredConsent(), false);
+  assert.strictEqual(page.banner.hidden, false, 'the visitor is asked about video rather than it staying silently denied');
+  assert.deepStrictEqual(page.fetch.calls, [], 'and nothing is reported before they answer');
+});
+
+test('scope: a site with fewer categories keeps the shared decision and drops the rest', async () => {
+  const page = boot({
+    config: Object.assign({}, GROUP, { allCategories: ['necessary', 'analytics'] }),
+    storage: { cck_consent_g2: validDecision({ offered: ['necessary', 'analytics', 'marketing', 'video'], categories: ['necessary', 'analytics', 'video'] }) }
+  });
+  await settle();
+
+  assert.deepStrictEqual(page.consent.getConsent().categories, ['necessary', 'analytics']);
+});
+
+test('scope: an uncovered locked category does not ask again', async () => {
+  const page = boot({
+    config: Object.assign({}, GROUP, { allCategories: ['necessary', 'security', 'analytics'], lockedCategories: ['necessary', 'security'] }),
+    storage: { cck_consent_g2: validDecision({ offered: ['necessary', 'analytics'], categories: ['necessary'] }) }
+  });
+  await settle();
+
+  assert.strictEqual(page.consent.hasStoredConsent(), true, 'a locked category is on whatever was asked');
+  assert.ok(page.consent.getConsent().categories.indexOf('security') !== -1);
+});
+
+test('scope: a category locked where the visitor decided is asked about where it is optional', async () => {
+  // Locked on the deciding site, so the visitor had no say in it there.
+  const page = boot({
+    config: Object.assign({}, GROUP, { allCategories: ['necessary', 'functional', 'analytics'], lockedCategories: ['necessary'] }),
+    storage: { cck_consent_g2: validDecision({ offered: ['analytics'], categories: ['necessary', 'functional', 'analytics'] }) }
+  });
+  await settle();
+
+  assert.strictEqual(page.consent.hasStoredConsent(), false);
+  assert.strictEqual(page.banner.hidden, false);
+});
+
+test('scope: a decision queued on another site of the group is not sent from this one', async () => {
+  const page = boot({
+    config: Object.assign({}, GROUP, { siteId: 3 }),
+    storage: {
+      cck_consent_g2: validDecision({ offered: ['analytics', 'marketing'] }),
+      cck_consent_g2_pending: validDecision({ offered: ['analytics', 'marketing'], siteId: 1, syncAttempts: 1 })
+    },
+    routes: { '/consent/save': () => jsonResponse(200, { success: true }) }
+  });
+  await settle();
+
+  assert.deepStrictEqual(page.fetch.to('/consent/save'), [], 'it would be recorded against the wrong site');
+  assert.strictEqual(JSON.parse(page.storage.cck_consent_g2_pending).syncAttempts, 1, 'kept, untouched, for its own site');
+});
+
+test('scope: a decision queued on this site is retried here, and remembers its site', async () => {
+  const page = boot({
+    config: GROUP,
+    storage: {
+      cck_consent_g2: validDecision({ offered: ['analytics', 'marketing'] }),
+      cck_consent_g2_pending: validDecision({ offered: ['analytics', 'marketing'], siteId: 1 })
+    },
+    routes: { '/consent/save': () => jsonResponse(500, {}) }
+  });
+  await settle();
+
+  assert.strictEqual(page.fetch.to('/consent/save').length, 1);
+  assert.strictEqual(page.fetch.bodyTo('/consent/save')[0].siteId, undefined, 'the site is never posted');
+  assert.strictEqual(JSON.parse(page.storage.cck_consent_g2_pending).siteId, 1);
+});
+
+test('scope: a new decision queues with the site it was made on', async () => {
+  const page = boot({ config: Object.assign({}, GROUP, { siteId: 3 }), routes: { '/consent/save': () => jsonResponse(500, {}) } });
+  await settle();
+
+  page.consent.acceptAll();
+  await settle();
+
+  assert.strictEqual(JSON.parse(page.storage.cck_consent_g2_pending).siteId, 3);
+  assert.strictEqual(JSON.parse(page.storage.cck_consent_g2).siteId, undefined, 'the decision itself carries no site');
+});
+
+test('scope: switching to the group scope removes the per-site decision, so switching back cannot revive it', async () => {
+  const page = boot({
+    config: Object.assign({}, GROUP, { staleScopeKeys: ['1'] }),
+    storage: { cck_consent_1: validDecision(), cck_consent_1_pending: validDecision(), cck_consent_3: validDecision() }
+  });
+  await settle();
+
+  assert.strictEqual(page.storage.cck_consent_1, undefined);
+  assert.strictEqual(page.storage.cck_consent_1_pending, undefined);
+  assert.ok(page.storage.cck_consent_3, "another site's key is left alone");
+  assert.strictEqual(page.banner.hidden, false, 'the visitor is asked under the new scope');
+});
+
+test('scope: switching back to per site removes the group decision', async () => {
+  const page = boot({
+    config: { siteId: 1, scopeKey: '1', scopeShared: false, staleScopeKeys: ['g2'] },
+    storage: { cck_consent_g2: validDecision({ offered: ['analytics', 'marketing'] }) }
+  });
+  await settle();
+
+  assert.strictEqual(page.storage.cck_consent_g2, undefined);
+  assert.strictEqual(page.banner.hidden, false);
+});
+
+test('scope: the live key is never treated as stale', async () => {
+  const page = boot({ config: Object.assign({}, GROUP, { staleScopeKeys: ['g2', 'x;y'] }), storage: { cck_consent_g2: validDecision({ offered: ['analytics', 'marketing'] }) } });
+  await settle();
+
+  assert.strictEqual(page.consent.hasStoredConsent(), true);
+});
+
+test('scope: a choice on one site keeps the choices made for other sites of the group', async () => {
+  // Site A asked about analytics and marketing; the visitor accepted both.
+  const page = boot({
+    config: Object.assign({}, GROUP, { siteId: 3, allCategories: ['necessary', 'analytics', 'preferences'] }),
+    storage: { cck_consent_g2: validDecision({ offered: ['analytics', 'marketing'] }) },
+    routes: { '/consent/save': () => jsonResponse(200, {}) }
+  });
+  await settle();
+
+  page.consent.updateConsent({ analytics: false, preferences: true });
+  await settle();
+
+  const stored = JSON.parse(page.storage.cck_consent_g2);
+  assert.deepStrictEqual(stored.offered.slice().sort(), ['analytics', 'marketing', 'preferences']);
+  assert.ok(stored.categories.indexOf('marketing') !== -1, "site A's marketing choice survives");
+  assert.strictEqual(stored.categories.indexOf('analytics'), -1, 'and the choice made here applies');
+  assert.ok(stored.categories.indexOf('preferences') !== -1);
+});
+
+test('scope: reject all withdraws the other sites\' categories too', async () => {
+  const page = boot({
+    config: Object.assign({}, GROUP, { siteId: 3, allCategories: ['necessary', 'analytics'] }),
+    storage: { cck_consent_g2: validDecision({ offered: ['analytics', 'marketing'] }) },
+    routes: { '/consent/save': () => jsonResponse(200, {}) }
+  });
+  await settle();
+
+  page.consent.rejectAll();
+  await settle();
+
+  const stored = JSON.parse(page.storage.cck_consent_g2);
+  assert.deepStrictEqual(stored.categories, ['necessary']);
+  assert.ok(stored.offered.indexOf('marketing') !== -1, 'still asked about, now refused');
+});
+
+test('scope: a category locked here keeps the answer given where it is optional', async () => {
+  // Optional on the other site, where the visitor declined it; locked here.
+  const declined = validDecision({ action: 'custom', offered: ['analytics', 'functional'], categories: ['necessary', 'analytics'] });
+
+  for (const act of ['rejectAll', 'acceptAll']) {
+    const page = boot({
+      config: Object.assign({}, GROUP, { siteId: 3, allCategories: ['necessary', 'functional', 'analytics'], lockedCategories: ['necessary', 'functional'] }),
+      storage: { cck_consent_g2: declined },
+      routes: { '/consent/save': () => jsonResponse(200, {}) }
+    });
+    await settle();
+
+    page.consent[act]();
+    await settle();
+
+    const stored = JSON.parse(page.storage.cck_consent_g2);
+    assert.strictEqual(stored.categories.indexOf('functional'), -1, `${act}: being locked here granted it on the other site`);
+    assert.ok(stored.offered.indexOf('functional') !== -1, `${act}: and it is still answered there`);
+    assert.strictEqual(page.consent.hasConsent('functional'), true, `${act}: while here it stays on`);
+  }
+});
+
+test('scope: two sites with different categories stop asking once each has been answered', async () => {
+  const save = { '/consent/save': () => jsonResponse(200, {}) };
+  const a = boot({ config: Object.assign({}, GROUP, { siteId: 1, allCategories: ['necessary', 'marketing'] }), routes: save });
+  await settle();
+  a.consent.acceptAll();
+  await settle();
+
+  const storage = { cck_consent_g2: JSON.parse(a.storage.cck_consent_g2) };
+  const b = boot({ config: Object.assign({}, GROUP, { siteId: 3, allCategories: ['necessary', 'video'] }), storage: storage, routes: save });
+  await settle();
+  assert.strictEqual(b.banner.hidden, false, 'video was never asked about');
+  b.consent.acceptAll();
+  await settle();
+
+  const back = boot({ config: Object.assign({}, GROUP, { siteId: 1, allCategories: ['necessary', 'marketing'] }), storage: { cck_consent_g2: JSON.parse(b.storage.cck_consent_g2) } });
+  await settle();
+  assert.strictEqual(back.banner.hidden, true, 'returning to the first site does not ask again');
+  assert.strictEqual(back.consent.hasConsent('marketing'), true);
+});
+
+test('scope: an expired shared decision is not carried into a new one', async () => {
+  const page = boot({
+    config: Object.assign({}, GROUP, { siteId: 3, allCategories: ['necessary', 'analytics'] }),
+    storage: { cck_consent_g2: validDecision({ offered: ['analytics', 'marketing'], timestamp: Date.now() - 200 * 864e5 }) },
+    routes: { '/consent/save': () => jsonResponse(200, {}) }
+  });
+  await settle();
+
+  page.consent.acceptAll();
+  await settle();
+
+  const stored = JSON.parse(page.storage.cck_consent_g2);
+  assert.deepStrictEqual(stored.offered, ['analytics']);
+  assert.strictEqual(stored.categories.indexOf('marketing'), -1);
+});
+
+test('scope: the offered list is not consulted outside a shared scope', async () => {
+  const page = boot({ storage: { cck_consent_1: validDecision({ offered: ['necessary'] }) } });
+  await settle();
+
+  assert.strictEqual(page.consent.hasStoredConsent(), true, 'per-site behaviour is unchanged');
+});
+
+test('scope: an invalid scope key falls back to the site ID', async () => {
+  const page = boot({ config: { siteId: 5, scopeKey: 'a;b=c' }, routes: { '/consent/save': () => jsonResponse(200, {}) } });
+  await settle();
+
+  page.consent.acceptAll();
+  await settle();
+
+  assert.ok(page.storage.cck_consent_5);
+});
+
+test('scope: the geo cache and cookie report stay per site', async () => {
+  const page = boot({ config: GROUP, routes: { '/consent/save': () => jsonResponse(200, {}) } });
+  await settle();
+
+  page.consent.acceptAll();
+  await settle();
+
+  assert.strictEqual(page.consent._geoCacheKey(), 'cck_geo_1_1');
+  assert.strictEqual(page.storage.cck_reported_g2, undefined);
 });
 
 test('regression: the public API keeps its documented and legacy names', async () => {
@@ -2086,6 +2368,362 @@ test('final: buttons work where Element.closest is unavailable', async () => {
   await settle();
 
   assert.strictEqual(page.consent.getConsent().action, 'accept_all');
+});
+
+
+// ---------------------------------------------------------------------------
+// Consent ID: shown to the visitor so they can make a data subject request
+// ---------------------------------------------------------------------------
+
+const ID_A = '11111111-2222-4333-8444-555555555555';
+const ID_B = '99999999-8888-4777-8666-555555555555';
+const SHOW_ID = { showConsentId: true, consentIdUrl: '/actions/cookie-consent-flow/consent/id' };
+const CRYPTO = { crypto: { randomUUID: () => ID_A } };
+
+function withConsentIdBlock(doc) {
+  const block = doc.createElement('div');
+  block.setAttribute('data-cck-consent-id', '');
+  block.setAttribute('data-cck-copied', 'Copied');
+  block.setAttribute('data-cck-copy-failed', 'Copy failed');
+  block.hidden = true;
+
+  const value = doc.createElement('code');
+  value.setAttribute('data-cck-consent-id-value', '');
+  block.appendChild(value);
+
+  const copy = doc.createElement('button');
+  copy.setAttribute('data-cck-action', 'copy-consent-id');
+  copy.textContent = 'Copy';
+  block.appendChild(copy);
+
+  const status = doc.createElement('span');
+  status.setAttribute('data-cck-consent-id-status', '');
+  block.appendChild(status);
+
+  doc.body.appendChild(block);
+}
+
+function shownId(page) {
+  const block = page.document.querySelector('[data-cck-consent-id]');
+
+  return block.hidden ? null : page.document.querySelector('[data-cck-consent-id-value]').textContent;
+}
+
+test('consent id: off by default — nothing made, fetched, shown or sent', async () => {
+  const page = boot({ window: CRYPTO, extra: withConsentIdBlock, routes: { '/consent/save': () => jsonResponse(200, { visitorId: ID_B }) } });
+  await settle();
+
+  assert.strictEqual(await page.consent.getConsentId(), null);
+
+  page.consent.acceptAll();
+  await settle();
+
+  assert.strictEqual(shownId(page), null);
+  assert.strictEqual(page.fetch.bodyTo('/consent/save')[0].visitorId, undefined);
+  assert.deepStrictEqual(page.fetch.to('/consent/id'), []);
+});
+
+test('consent id: shown before the first decision, with no request, and only the ID stored', async () => {
+  const page = boot({ config: SHOW_ID, window: CRYPTO, extra: withConsentIdBlock });
+  await settle();
+
+  assert.strictEqual(shownId(page), ID_A);
+  assert.deepStrictEqual(page.fetch.calls, [], 'no request before the visitor decides');
+  assert.deepStrictEqual(Object.keys(page.storage), ['cck_cid_1'], 'nothing but the ID');
+});
+
+test('consent id: off — nothing at all is stored before a decision', async () => {
+  const page = boot({ window: CRYPTO, extra: withConsentIdBlock });
+  await settle();
+
+  assert.deepStrictEqual(Object.keys(page.storage), []);
+});
+
+test('consent id: sent with the first decision, and the server\'s answer is what is shown', async () => {
+  const page = boot({ config: SHOW_ID, window: CRYPTO, extra: withConsentIdBlock, routes: { '/consent/save': () => jsonResponse(200, { visitorId: ID_B }) } });
+  await settle();
+
+  page.consent.acceptAll();
+  await settle();
+
+  assert.strictEqual(page.fetch.bodyTo('/consent/save')[0].visitorId, ID_A);
+  assert.strictEqual(shownId(page), ID_B, 'the ID the record was saved under');
+  assert.strictEqual(await page.consent.getConsentId(), ID_B);
+  assert.deepStrictEqual(page.fetch.to('/consent/id'), [], 'no lookup once the server has answered');
+});
+
+test('consent id: a later decision on the same page sends no ID — the cookie decides', async () => {
+  const page = boot({ config: SHOW_ID, window: CRYPTO, extra: withConsentIdBlock, routes: { '/consent/save': () => jsonResponse(200, { visitorId: ID_A }) } });
+  await settle();
+
+  page.consent.acceptAll();
+  await settle();
+  page.consent.rejectAll();
+  await settle();
+
+  assert.strictEqual(page.fetch.bodyTo('/consent/save')[1].visitorId, undefined);
+});
+
+test('consent id: a retried decision asks for the same ID', async () => {
+  const failing = boot({ config: SHOW_ID, window: CRYPTO, routes: { '/consent/save': () => jsonResponse(500, {}) } });
+  await settle();
+  failing.consent.acceptAll();
+  await settle();
+
+  const queued = JSON.parse(failing.storage[PENDING]);
+  assert.strictEqual(queued.visitorId, ID_A, 'kept with the queued decision');
+
+  const retry = boot({
+    config: SHOW_ID,
+    window: { crypto: { randomUUID: () => ID_B } },
+    storage: { cck_consent_1: JSON.parse(failing.storage.cck_consent_1), [PENDING]: queued },
+    routes: { '/consent/save': () => jsonResponse(200, { visitorId: ID_A }) }
+  });
+  await settle();
+
+  assert.strictEqual(retry.fetch.bodyTo('/consent/save')[0].visitorId, ID_A);
+});
+
+test('consent id: after a decision it is fetched when the preference centre opens', async () => {
+  const page = boot({
+    config: SHOW_ID,
+    window: CRYPTO,
+    extra: withConsentIdBlock,
+    storage: { cck_consent_1: validDecision() },
+    routes: { '/consent/id': () => jsonResponse(200, { id: ID_B }) }
+  });
+  await settle();
+
+  assert.strictEqual(shownId(page), null, 'not made, because the server has one');
+  assert.deepStrictEqual(page.fetch.to('/consent/id'), [], 'and not fetched until needed');
+
+  page.consent.openPreferences();
+  await settle();
+
+  assert.strictEqual(shownId(page), ID_B);
+  assert.strictEqual(page.fetch.to('/consent/id').length, 1);
+
+  page.consent.closePreferences();
+  page.consent.openPreferences();
+  await settle();
+  assert.strictEqual(page.fetch.to('/consent/id').length, 1, 'fetched once');
+});
+
+test('consent id: a decision without a visitor cookie gets a made ID for its next record', async () => {
+  const page = boot({
+    config: SHOW_ID,
+    window: CRYPTO,
+    extra: withConsentIdBlock,
+    storage: { cck_consent_1: validDecision() },
+    routes: { '/consent/id': () => jsonResponse(200, { id: null }), '/consent/save': () => jsonResponse(200, { visitorId: ID_A }) }
+  });
+  await settle();
+
+  assert.strictEqual(await page.consent.getConsentId(), ID_A);
+
+  page.consent.rejectAll();
+  await settle();
+  assert.strictEqual(page.fetch.bodyTo('/consent/save')[0].visitorId, ID_A);
+});
+
+test('consent id: a made ID gives way to the visitor cookie the server still holds', async () => {
+  // Storage was cleared, but the httpOnly visitor cookie was not.
+  const page = boot({ config: SHOW_ID, window: CRYPTO, extra: withConsentIdBlock, routes: { '/consent/id': () => jsonResponse(200, { id: ID_B }) } });
+  await settle();
+
+  assert.strictEqual(shownId(page), ID_A);
+
+  page.consent.openPreferences();
+  await settle();
+
+  assert.strictEqual(shownId(page), ID_B);
+});
+
+test('consent id: without a random generator it appears once the server has issued one', async () => {
+  const page = boot({ config: SHOW_ID, window: { crypto: undefined }, extra: withConsentIdBlock, routes: { '/consent/save': () => jsonResponse(200, { visitorId: ID_B }) } });
+  await settle();
+
+  assert.strictEqual(shownId(page), null);
+
+  page.consent.acceptAll();
+  await settle();
+
+  assert.strictEqual(page.fetch.bodyTo('/consent/save')[0].visitorId, undefined);
+  assert.strictEqual(shownId(page), ID_B);
+});
+
+test('consent id: getRandomValues makes a valid version-4 ID', async () => {
+  const page = boot({
+    config: SHOW_ID,
+    window: { crypto: { getRandomValues: (bytes) => { for (let i = 0; i < bytes.length; i++) bytes[i] = 255; return bytes; } } },
+    extra: withConsentIdBlock
+  });
+  await settle();
+
+  assert.strictEqual(shownId(page), 'ffffffff-ffff-4fff-bfff-ffffffffffff');
+});
+
+test('consent id: anything that is not a visitor ID is ignored', async () => {
+  const page = boot({
+    config: SHOW_ID,
+    window: { crypto: { randomUUID: () => '<img src=x onerror=alert(1)>' } },
+    extra: withConsentIdBlock,
+    routes: { '/consent/save': () => jsonResponse(200, { visitorId: 'not-an-id' }) }
+  });
+  await settle();
+
+  page.consent.acceptAll();
+  await settle();
+
+  assert.strictEqual(shownId(page), null);
+  assert.strictEqual(page.fetch.bodyTo('/consent/save')[0].visitorId, undefined);
+});
+
+test('consent id: copy writes the ID to the clipboard and says so', async () => {
+  let written = null;
+  const page = boot({
+    config: SHOW_ID,
+    window: Object.assign({ navigator: { clipboard: { writeText: (text) => { written = text; return Promise.resolve(); } } } }, CRYPTO),
+    extra: withConsentIdBlock
+  });
+  await settle();
+
+  page.consent.copyConsentId();
+  await settle();
+
+  assert.strictEqual(written, ID_A);
+  assert.strictEqual(page.document.querySelector('[data-cck-consent-id-status]').textContent, 'Copied');
+
+  const button = page.document.querySelector('[data-cck-action="copy-consent-id"]');
+  assert.strictEqual(button.textContent, 'Copied', 'the button says so where the visitor is looking');
+  assert.deepStrictEqual(page.env.pendingTimers(), [2000], 'for two seconds');
+
+  page.env.runTimers();
+
+  assert.strictEqual(button.textContent, 'Copy', 'then reads Copy again');
+  assert.strictEqual(page.document.querySelector('[data-cck-consent-id-status]').textContent, '');
+});
+
+test('consent id: copying again restarts the two seconds instead of stacking', async () => {
+  const page = boot({
+    config: SHOW_ID,
+    window: Object.assign({ navigator: { clipboard: { writeText: () => Promise.resolve() } } }, CRYPTO),
+    extra: withConsentIdBlock
+  });
+  await settle();
+
+  page.consent.copyConsentId();
+  await settle();
+  page.consent.copyConsentId();
+  await settle();
+
+  assert.deepStrictEqual(page.env.pendingTimers(), [2000], 'one timer');
+  page.env.runTimers();
+  assert.strictEqual(page.document.querySelector('[data-cck-action="copy-consent-id"]').textContent, 'Copy');
+});
+
+test('consent id: a failed copy does not claim it was copied', async () => {
+  const page = boot({
+    config: SHOW_ID,
+    window: Object.assign({ navigator: { clipboard: { writeText: () => Promise.reject(new Error('denied')) } } }, CRYPTO),
+    extra: withConsentIdBlock
+  });
+  await settle();
+
+  page.consent.copyConsentId();
+  await settle();
+
+  assert.strictEqual(page.document.querySelector('[data-cck-action="copy-consent-id"]').textContent, 'Copy');
+  assert.strictEqual(page.document.querySelector('[data-cck-consent-id-status]').textContent, 'Copy failed');
+});
+
+test('remembered id: stored on the first page view, with no request', async () => {
+  const page = boot({ config: SHOW_ID, window: CRYPTO, extra: withConsentIdBlock });
+  await settle();
+
+  assert.strictEqual(JSON.parse(page.storage.cck_cid_1), ID_A);
+  assert.deepStrictEqual(page.fetch.calls, []);
+});
+
+test('remembered id: the same ID on the next page, and it is the one sent', async () => {
+  const page = boot({
+    config: SHOW_ID,
+    window: { crypto: { randomUUID: () => ID_B } },
+    extra: withConsentIdBlock,
+    storage: { cck_cid_1: ID_A },
+    routes: { '/consent/save': () => jsonResponse(200, { visitorId: ID_A }) }
+  });
+  await settle();
+
+  assert.strictEqual(shownId(page), ID_A, 'not a new one');
+
+  page.consent.acceptAll();
+  await settle();
+
+  assert.strictEqual(page.fetch.bodyTo('/consent/save')[0].visitorId, ID_A);
+});
+
+test('remembered id: the server\'s answer replaces it', async () => {
+  const page = boot({
+    config: SHOW_ID,
+    window: CRYPTO,
+    extra: withConsentIdBlock,
+    routes: { '/consent/save': () => jsonResponse(200, { visitorId: ID_B }) }
+  });
+  await settle();
+
+  page.consent.acceptAll();
+  await settle();
+
+  assert.strictEqual(JSON.parse(page.storage.cck_cid_1), ID_B);
+  assert.strictEqual(shownId(page), ID_B);
+});
+
+test('remembered id: a tampered value is not used', async () => {
+  const page = boot({ config: SHOW_ID, window: CRYPTO, extra: withConsentIdBlock, storage: { cck_cid_1: '<b>x</b>' } });
+  await settle();
+
+  assert.strictEqual(shownId(page), ID_A);
+  assert.strictEqual(JSON.parse(page.storage.cck_cid_1), ID_A);
+});
+
+test('remembered id: a remembered ID is still checked against the server once', async () => {
+  const page = boot({
+    config: SHOW_ID,
+    window: CRYPTO,
+    extra: withConsentIdBlock,
+    storage: { cck_cid_1: ID_A, cck_consent_1: validDecision() },
+    routes: { '/consent/id': () => jsonResponse(200, { id: ID_B }) }
+  });
+  await settle();
+
+  assert.strictEqual(shownId(page), ID_A);
+
+  page.consent.openPreferences();
+  await settle();
+
+  assert.strictEqual(shownId(page), ID_B, 'the visitor cookie decides');
+  assert.strictEqual(JSON.parse(page.storage.cck_cid_1), ID_B);
+});
+
+test('remembered id: kept per scope, and the other setting\'s key is removed', async () => {
+  const page = boot({
+    config: Object.assign({ staleScopeKeys: ['1'] }, SHOW_ID, GROUP),
+    window: CRYPTO,
+    extra: withConsentIdBlock,
+    storage: { cck_cid_1: ID_B }
+  });
+  await settle();
+
+  assert.strictEqual(page.storage.cck_cid_1, undefined);
+  assert.strictEqual(JSON.parse(page.storage.cck_cid_g2), ID_A);
+});
+
+test('remembered id: turning Show Consent ID off removes it', async () => {
+  const page = boot({ window: CRYPTO, storage: { cck_cid_1: ID_A } });
+  await settle();
+
+  assert.strictEqual(page.storage.cck_cid_1, undefined);
 });
 
 // ---------------------------------------------------------------------------

@@ -182,6 +182,41 @@ class Settings extends Model
     public bool $logEnabled       = true;
     public int  $logRetentionDays = 365;
 
+    /**
+     * Shows visitors their consent ID (the anonymous visitor ID their records
+     * carry) in the preference centre, with a copy button, so they can quote
+     * it in an access or erasure request. The ID is kept in the browser
+     * (`cck_cid_<scope>`) from the first page view, so it stays the same
+     * across page loads and visits, as OneTrust and Usercentrics do. Off by
+     * default: it stores an identifier before a decision, and makes the ID
+     * readable by page scripts. Has no effect while logging is off, when no
+     * ID exists. Global-only.
+     */
+    public bool $showConsentId = false;
+
+    // Linking records to logged-in users
+    /** Linked records stay, without the user, when the user is deleted. */
+    public const USER_DELETE_ANONYMISE = 'anonymise';
+
+    /** Linked records are deleted with the user. */
+    public const USER_DELETE_DELETE = 'delete';
+
+    /**
+     * Links consent records to logged-in Craft users: a decision made while
+     * logged in records the user, and every visitor ID a user's browsers
+     * carry is linked to the user (at login and at each decision), so all of
+     * their records can be found, exported or deleted. Off by default: linked
+     * records are personal data rather than pseudonymous. Global-only.
+     */
+    public bool $linkUsers = false;
+
+    /**
+     * What happens to a user's linked records when the user is deleted:
+     * `anonymise` keeps them, as proof of consent, without the user; `delete`
+     * removes them. Global-only.
+     */
+    public string $userDeleteAction = self::USER_DELETE_ANONYMISE;
+
     // Consent expiry & re-consent
     /**
      * Days after which stored consent is treated as stale and the banner is
@@ -198,6 +233,21 @@ class Settings extends Model
      * visitor to re-consent. Global-only, like the logging fields above.
      */
     public string $policyVersion = '1';
+
+    // Consent scope
+    /** Each site asks for, and stores, its own decision. */
+    public const CONSENT_SCOPE_SITE = 'site';
+
+    /** The sites of one site group share a single decision. */
+    public const CONSENT_SCOPE_GROUP = 'group';
+
+    /**
+     * Which sites share a visitor's decision: `site` (each site asks on its
+     * own) or `group` (one decision for every site in a Craft site group, for
+     * a multi-language website). Global-only. Consent records keep the real
+     * site ID either way; see {@see \sfsinfotech\craftcookieconsentflow\helpers\ConsentScope}.
+     */
+    public string $consentScope = self::CONSENT_SCOPE_SITE;
 
     // Google Consent Mode v2
     /**
@@ -899,11 +949,13 @@ class Settings extends Model
                     'bannerEnabled', 'geoEnabled', 'logEnabled', 'fullWidth', 'shadow',
                     'consentModeEnabled', 'consentModeAutoInject',
                     'consentModeUrlPassthrough', 'consentModeAdsDataRedaction',
-                    'respectGpc', 'respectDnt',
+                    'respectGpc', 'respectDnt', 'showConsentId', 'linkUsers',
                 ],
                 'boolean',
             ],
             [['consentModeType'], 'in', 'range' => ['advanced', 'basic']],
+            [['consentScope'], 'in', 'range' => [self::CONSENT_SCOPE_SITE, self::CONSENT_SCOPE_GROUP]],
+            [['userDeleteAction'], 'in', 'range' => [self::USER_DELETE_ANONYMISE, self::USER_DELETE_DELETE]],
             [['consentModeWaitForUpdate'], 'integer', 'min' => 0, 'max' => 10000],
             [['bannerLayout'], 'in', 'range' => ['bottom-bar', 'top-bar', 'center-popup', 'corner-popup']],
             [['cornerPosition'], 'in', 'range' => ['bottom-left', 'bottom-right']],

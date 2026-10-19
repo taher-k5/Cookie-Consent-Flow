@@ -5,6 +5,7 @@ namespace sfsinfotech\craftcookieconsentflow\services;
 use Craft;
 use craft\base\Component;
 use craft\helpers\Json;
+use sfsinfotech\craftcookieconsentflow\helpers\ConsentScope;
 use sfsinfotech\craftcookieconsentflow\models\Settings;
 use sfsinfotech\craftcookieconsentflow\Plugin;
 use sfsinfotech\craftcookieconsentflow\records\CookieCategoryRecord;
@@ -28,7 +29,7 @@ class SettingsService extends Component
         'bannerEnabled', 'fullWidth', 'shadow', 'geoEnabled', 'logEnabled',
         'consentModeEnabled', 'consentModeAutoInject',
         'consentModeUrlPassthrough', 'consentModeAdsDataRedaction',
-        'respectGpc', 'respectDnt',
+        'respectGpc', 'respectDnt', 'showConsentId', 'linkUsers',
     ];
 
     /** JSON-encoded array settings fields (whole-value in/out). */
@@ -627,6 +628,9 @@ class SettingsService extends Component
     {
         $this->_effectiveCache = [];
         $this->_settingsCache  = null;
+
+        // Scopes are derived from the Consent Scope setting.
+        ConsentScope::clearCache();
     }
 
     // Site-row lookups (shared with CookieDefinitionService — a site's
@@ -671,7 +675,8 @@ class SettingsService extends Component
             $this->_columnOverridableFields(),
             [
                 'logEnabled', 'logRetentionDays', 'consentExpiryDays', 'policyVersion',
-                'respectGpc', 'respectDnt',
+                'respectGpc', 'respectDnt', 'consentScope', 'showConsentId',
+                'linkUsers', 'userDeleteAction',
             ]
         );
     }
@@ -769,7 +774,7 @@ class SettingsService extends Component
     private function _setRowFieldsFromArray(SettingsRecord $record, array $data): void
     {
         foreach ($this->_allFields() as $field) {
-            if (array_key_exists($field, $data)) {
+            if (array_key_exists($field, $data) && $record->hasAttribute($field)) {
                 $record->$field = $this->_toColumnValue($field, $data[$field]);
             }
         }
@@ -789,11 +794,16 @@ class SettingsService extends Component
      * `logoAssetId` is the one column whose NULL is a real, meaningful value
      * ("no logo"), and its model default is already null — so it needs no
      * special case.
+     *
+     * A column that does not exist yet reads the same way. After an update
+     * the new code can run before the update's migration has added its
+     * column — a console command, a queue worker — and reading it then threw,
+     * so no setting at all could be loaded until the migration ran.
      */
     private function _applyRowToSettings(Settings $settings, SettingsRecord $row): void
     {
         foreach ($this->_allFields() as $field) {
-            if ($row->$field === null) {
+            if (!$row->hasAttribute($field) || $row->$field === null) {
                 continue;
             }
 
@@ -815,7 +825,7 @@ class SettingsService extends Component
         $overrides = [];
 
         foreach ($this->_columnOverridableFields() as $field) {
-            if ($row->$field !== null) {
+            if ($row->hasAttribute($field) && $row->$field !== null) {
                 $overrides[$field] = $this->_fromColumnValue($field, $row->$field);
             }
         }
